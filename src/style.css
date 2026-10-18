@@ -1,0 +1,588 @@
+:root {
+  --ink: #f4efe6;
+  --dim: rgba(244, 239, 230, 0.62);
+  --pink: #ff4fb0;
+  --cyan: #5ff3ff;
+  --amber: #ffcf7a;
+  --phosphor: #9dffc0;
+  --night: #05060d;
+  --mono: 'VT323', ui-monospace, monospace;
+  --type: 'Space Mono', ui-monospace, monospace;
+  --display: 'Archivo Black', 'Arial Black', sans-serif;
+  --hand: 'Caveat', cursive;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--night);
+  color: var(--ink);
+  font-family: var(--type);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+#scene {
+  position: fixed;
+  inset: 0;
+}
+#scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Letterbox: once you're inside, the frame closes in to a widescreen picture,
+   and the name, the rooms and the controls live in the black. */
+.letterbox {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: var(--bar, 0px);
+  background: #000;
+  z-index: 9;
+  pointer-events: none;
+}
+.letterbox.upper {
+  top: 0;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+}
+.letterbox.lower {
+  bottom: 0;
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Top bar: the name on the left, the rooms on the right. */
+.top {
+  position: fixed;
+  inset: 0 0 auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: max(var(--bar, 0px), 64px);
+  padding: 0 36px;
+  box-sizing: border-box;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.2s ease 0.4s;
+}
+.ready .top {
+  opacity: 1;
+}
+.top > * {
+  pointer-events: auto;
+}
+.brand {
+  font-family: var(--display);
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  text-decoration: none;
+  text-shadow: 0 0 18px rgba(255, 79, 176, 0.35);
+}
+nav {
+  display: flex;
+  gap: 8px;
+}
+nav button {
+  background: none;
+  border: 0;
+  padding: 8px 14px;
+  font-family: var(--mono);
+  font-size: 28px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(244, 239, 230, 0.78);
+  border-radius: 3px;
+  transition: background 0.2s, color 0.2s;
+}
+nav button:hover {
+  color: #fff;
+  text-shadow: 0 0 12px rgba(95, 243, 255, 0.6);
+}
+nav button[aria-current='true'] {
+  background: var(--ink);
+  color: #0b0b10;
+  text-shadow: none;
+}
+
+/* The gate: a CRT boot screen over the live city. */
+#gate {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 30;
+  background: radial-gradient(ellipse at center, rgba(5, 6, 13, 0.35), rgba(5, 6, 13, 0.85));
+  transition: opacity 1.4s ease, visibility 1.4s;
+}
+#gate.gone {
+  opacity: 0;
+  visibility: hidden;
+}
+.gate-box {
+  width: min(560px, calc(100vw - 32px));
+  padding: 34px 38px 28px;
+  background: linear-gradient(180deg, #1d3fd8, #1630b0);
+  border-radius: 18px;
+  box-shadow:
+    0 0 0 10px #15151a,
+    0 0 0 12px #2a2a30,
+    0 30px 80px rgba(0, 0, 0, 0.7),
+    inset 0 0 80px rgba(0, 0, 0, 0.35),
+    0 0 120px rgba(40, 80, 255, 0.25);
+  font-family: var(--mono);
+  color: #e8ecff;
+  position: relative;
+  overflow: hidden;
+}
+.gate-box::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 1px, transparent 1px 3px);
+  mix-blend-mode: multiply;
+}
+.gate-ch {
+  margin: 0;
+  text-align: right;
+  font-size: 24px;
+  opacity: 0.85;
+}
+#gate h1 {
+  margin: 6px 0 14px;
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 58px;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 14px rgba(200, 220, 255, 0.7);
+}
+.boot {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  min-height: 112px;
+  font-size: 24px;
+  line-height: 1.15;
+}
+.boot li::before {
+  content: '> ';
+}
+.bar {
+  height: 14px;
+  border: 2px solid #e8ecff;
+  padding: 2px;
+  margin-bottom: 22px;
+}
+.bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: repeating-linear-gradient(90deg, #e8ecff 0 10px, transparent 10px 13px);
+  transition: width 0.3s steps(8);
+}
+.gate-actions {
+  display: grid;
+  gap: 12px;
+}
+.gate-actions button {
+  background: transparent;
+  border: 2px solid #e8ecff;
+  padding: 10px;
+  font-family: var(--mono);
+  font-size: 32px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.gate-actions button:hover:not(:disabled),
+.gate-actions button:focus-visible {
+  background: #e8ecff;
+  color: #1630b0;
+  outline: none;
+}
+.gate-actions button:disabled {
+  opacity: 0.4;
+  cursor: progress;
+}
+.gate-actions .quiet {
+  font-size: 24px;
+  border-width: 1px;
+}
+.gate-note {
+  margin: 16px 0 0;
+  font-size: 20px;
+  opacity: 0.7;
+  text-align: center;
+}
+
+/* Bottom right: hints and switches. */
+.controls {
+  position: fixed;
+  left: 36px;
+  right: 30px;
+  bottom: 0;
+  height: max(var(--bar, 0px), 64px);
+  z-index: 10;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  opacity: 0;
+  transition: opacity 1.2s ease 0.8s;
+  pointer-events: none;
+}
+.inside .controls {
+  opacity: 1;
+  transition-delay: 0.6s;
+}
+.ready .controls {
+  pointer-events: auto;
+}
+.controls .buttons {
+  opacity: 0;
+  transition: opacity 1.2s ease 0.6s;
+}
+.ready .controls .buttons {
+  opacity: 1;
+}
+.hints {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 23px;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Subtitles while the camera flies in. */
+.hints.caption {
+  color: var(--amber);
+  text-shadow: 0 0 12px rgba(255, 207, 122, 0.35);
+}
+.hints.caption::after {
+  content: '_';
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+.buttons {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.buttons button {
+  background: rgba(10, 10, 16, 0.72);
+  border: 1px solid rgba(244, 239, 230, 0.18);
+  border-radius: 999px;
+  padding: 7px 16px 6px;
+  font-family: var(--mono);
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  backdrop-filter: blur(6px);
+}
+.buttons button:hover {
+  border-color: rgba(244, 239, 230, 0.5);
+}
+.buttons button[aria-pressed='true'] {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+#tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 20;
+  pointer-events: none;
+  padding: 4px 10px 3px;
+  font-family: var(--mono);
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(10, 10, 16, 0.85);
+  border: 1px solid rgba(95, 243, 255, 0.45);
+  color: var(--cyan);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+#tooltip.show {
+  opacity: 1;
+}
+
+/* About: a legal pad held up to the camera. */
+.notepad {
+  position: fixed;
+  right: 4vw;
+  top: 50%;
+  width: min(460px, 40vw);
+  transform: translateY(-50%) rotate(1.4deg);
+  z-index: 12;
+  padding: 44px 34px 40px 64px;
+  background:
+    linear-gradient(90deg, transparent 50px, rgba(201, 74, 58, 0.55) 50px 52px, transparent 52px),
+    repeating-linear-gradient(180deg, transparent 0 33px, rgba(80, 110, 170, 0.35) 33px 34px),
+    #f3e08f;
+  background-position: 0 0, 0 18px, 0 0;
+  color: #1d2140;
+  font-family: var(--hand);
+  font-size: 27px;
+  line-height: 34px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
+  animation: lift 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.notepad h2 {
+  margin: 0 0 6px;
+  font-family: var(--hand);
+  font-size: 52px;
+  line-height: 52px;
+  text-decoration: underline;
+  text-decoration-color: rgba(201, 74, 58, 0.7);
+  text-underline-offset: 6px;
+}
+.notepad p {
+  margin: 0 0 34px;
+}
+.notepad .sig {
+  text-align: right;
+  font-size: 30px;
+  margin: 0;
+}
+
+/* A project: a print-shop job ticket. */
+.ticket {
+  position: fixed;
+  left: 4vw;
+  bottom: calc(var(--bar, 0px) + 5vh);
+  width: min(420px, 38vw);
+  z-index: 12;
+  padding: 26px 28px 22px;
+  background: #efe4cc;
+  color: #1d1a16;
+  font-family: var(--type);
+  font-size: 15px;
+  line-height: 1.55;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  animation: lift 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ticket-no {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: #b0302a;
+}
+.ticket h2 {
+  margin: 4px 0 2px;
+  font-family: var(--display);
+  font-size: 34px;
+  line-height: 1.05;
+}
+.ticket-tag {
+  margin: 0 0 12px;
+  font-style: italic;
+}
+.ticket-meta {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #6d665c;
+}
+.ticket-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.ticket-open {
+  flex: 1;
+  background: #1d1a16;
+  color: #efe4cc;
+  text-decoration: none;
+  text-align: center;
+  padding: 10px 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.ticket-open[aria-disabled='true'] {
+  background: #bdb3a0;
+  pointer-events: none;
+}
+.ticket-actions button {
+  width: 42px;
+  height: 42px;
+  border: 1px solid #1d1a16;
+  background: none;
+  font-size: 22px;
+}
+
+#credits {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.6);
+}
+.credits-box {
+  width: min(560px, calc(100vw - 32px));
+  background: #0c0d14;
+  border: 1px solid rgba(95, 243, 255, 0.35);
+  padding: 28px 30px;
+  font-size: 15px;
+  line-height: 1.6;
+  box-shadow: 0 0 60px rgba(95, 243, 255, 0.12);
+}
+.credits-box h2 {
+  margin-top: 0;
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 36px;
+  letter-spacing: 0.1em;
+  color: var(--cyan);
+}
+.credits-box button {
+  margin-top: 8px;
+  background: none;
+  border: 1px solid var(--ink);
+  padding: 8px 18px;
+  font-family: var(--mono);
+  font-size: 22px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+@keyframes lift {
+  from {
+    opacity: 0;
+    translate: 0 30px;
+  }
+}
+
+/* The plain page: for phones, reduced motion, no WebGL, and screen readers. */
+#plain {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.lite #plain {
+  position: static;
+  width: auto;
+  height: auto;
+  clip: auto;
+  overflow: visible;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 64px 22px 80px;
+  line-height: 1.6;
+}
+.lite #scene,
+.lite .top,
+.lite .controls,
+.lite #gate {
+  display: none;
+}
+.lite body,
+body.lite {
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(255, 79, 176, 0.22), transparent 55%),
+    radial-gradient(ellipse at 90% 10%, rgba(95, 243, 255, 0.16), transparent 50%),
+    var(--night);
+  min-height: 100%;
+}
+.plain-kicker {
+  font-family: var(--mono);
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin: 0;
+}
+#plain h1 {
+  font-family: var(--display);
+  font-size: clamp(44px, 12vw, 84px);
+  line-height: 0.95;
+  margin: 8px 0 16px;
+  color: var(--ink);
+  text-shadow: 0 0 28px rgba(255, 79, 176, 0.45);
+}
+#plain h2 {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 32px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pink);
+  margin: 44px 0 10px;
+}
+#plain a {
+  color: var(--cyan);
+}
+#plain ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 14px;
+}
+#plain li {
+  background: #efe4cc;
+  color: #1d1a16;
+  padding: 18px 20px;
+}
+#plain li h3 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 26px;
+}
+#plain li a {
+  color: #b0302a;
+  font-weight: 700;
+}
+.plain-full {
+  font-size: 14px;
+  color: var(--dim);
+}
+
+@media (max-width: 900px) {
+  .top {
+    padding: 14px 16px;
+  }
+  nav button {
+    font-size: 22px;
+    padding: 6px 8px;
+  }
+  .hints {
+    display: none;
+  }
+  .notepad,
+  .ticket {
+    width: calc(100vw - 32px);
+    left: 16px;
+    right: 16px;
+  }
+}
