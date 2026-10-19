@@ -137,6 +137,61 @@ test('the things on the desk and walls', async ({ page }) => {
   expect(problems).toEqual([]);
 });
 
+test('looking around: turn to each wall and click what is there', async ({ page }) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const problems = watch(page);
+  await page.goto('/?shot=desk&full');
+  await page.waitForFunction(() => 'honors' in ((window as unknown as { __ew?: object }).__ew ?? {}));
+  const current = () => page.evaluate(() => (window as unknown as { __ew: { rig: { current: string } } }).__ew.rig.current);
+  const settled = () => page.waitForFunction(() => !(window as unknown as { __ew: { rig: { moving: boolean } } }).__ew.rig.moving, null, { timeout: 60_000 });
+  /** Where something in the room is on screen, so the mouse can click it for real. */
+  const onScreen = (path: string) =>
+    page.evaluate((path) => {
+      type V = { project(c: unknown): V; x: number; y: number };
+      const w = (window as unknown as { __ew: Record<string, unknown> & { camera: { position: { clone(): V } } } }).__ew;
+      const obj = path.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], w) as { getWorldPosition(v: V): V };
+      const p = obj.getWorldPosition(w.camera.position.clone()).project(w.camera);
+      const c = document.querySelector('#scene canvas')!;
+      return { x: ((p.x + 1) / 2) * c.clientWidth, y: ((1 - p.y) / 2) * c.clientHeight };
+    }, path);
+  const clickOn = async (path: string) => {
+    const pt = await onScreen(path);
+    await page.mouse.move(pt.x, pt.y);
+    await page.waitForTimeout(1200);
+    await page.mouse.click(pt.x, pt.y);
+  };
+
+  // Right from the desk: medals and diplomas.
+  await page.locator('#turn-right').click();
+  await settled();
+  expect(await current()).toBe('honors');
+  await expect(page.locator('#turn-right .label')).toHaveText('The library');
+  await clickOn('honors.medals.3');
+  await expect(page.locator('#card-title')).toHaveText('Medals', { timeout: 20_000 });
+  // Esc steps back to the wall, then to the desk.
+  await page.keyboard.press('Escape');
+  await settled();
+  expect(await current()).toBe('honors');
+  // Round the other way to the map wall: the shoes are under the map.
+  await page.keyboard.press('Escape');
+  await settled();
+  expect(await current()).toBe('desk');
+  await page.keyboard.press('ArrowLeft');
+  await settled();
+  expect(await current()).toBe('places');
+  await clickOn('shoes.group');
+  await expect(page.locator('#card-title')).toHaveText('Nike Vomero Plus', { timeout: 20_000 });
+  // And the map on the same wall, to scratch.
+  await page.keyboard.press('Escape');
+  await settled();
+  expect(await current()).toBe('places');
+  await clickOn('map.surface');
+  await settled();
+  expect(await current()).toBe('map');
+  expect(problems).toEqual([]);
+});
+
 test('the simple page has everything, and its books open', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 860 });
   const problems = watch(page);

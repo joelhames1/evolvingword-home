@@ -161,7 +161,7 @@ export const VISITED = [
   'Germany',
 ];
 
-/** The running shoes by the desk. Distances from Strava. */
+/** The running shoes under the map. Distances from Strava. */
 export const SHOES = {
   label: 'Nike Vomero Plus',
   lines: ['On the second pair now, about 595 miles in.', '335 miles run in 2026, as of October.'],

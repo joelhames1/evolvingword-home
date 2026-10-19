@@ -146,8 +146,9 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   shelf.group.position.set(0.35, 0, ROOM.z1);
   shelf.group.rotation.y = Math.PI;
   const shoes = buildShoes();
-  shoes.group.position.set(-1.45, 0, -0.62);
-  shoes.group.rotation.y = 0.55;
+  // Kicked off under the map, toes out into the room.
+  shoes.group.position.set(-1.95, 0, -0.1);
+  shoes.group.rotation.y = -0.35;
   log('POURING THE CAPPUCCINO', 80);
   scene.add(...kit.objects, desk.group, line.group, watch.group, pad.group, treats.group, rolodex.group, honors.group, map.group, shelf.group, shoes.group);
   scene.updateMatrixWorld(true);
@@ -165,7 +166,11 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   SHOTS.treats = { pos: v(0.74, 1.16, -0.92), target: v(0.74, 0.8, -1.5), fov: 32, near: 0.02, lean: 0.02, shift: CARD };
   SHOTS.work = { pos: rolodexAt.clone().add(v(-0.05, 0.16, 0.25)), target: rolodexAt.clone().add(v(0, 0.05, 0)), fov: 34, near: 0.02, lean: 0.01, shift: CARD };
   SHOTS.map = { pos: v(-0.55, 1.63, 0.15), target: v(ROOM.x0, 1.6, 0.15), fov: 40, lean: 0.03, shift: CARD };
-  SHOTS.about = { pos: v(0.85, 1.62, 0.2), target: v(ROOM.x1, 1.7, 0.12), fov: 50, lean: 0.05 };
+  // About is read at the desk: the picture slides left to make room for the notepad.
+  SHOTS.about = { pos: v(-0.15, 1.42, 1.15), target: v(-0.15, 1.3, -1.9), fov: 48, lean: 0.06, shift: -CARD };
+  // The walls you turn between: the desk faces the window, then round to the right.
+  SHOTS.honors = { pos: v(0.72, 1.6, 0.18), target: v(ROOM.x1, 1.58, 0.18), fov: 44, lean: 0.05 };
+  SHOTS.places = { pos: v(0.45, 1.5, 0.55), target: v(ROOM.x0, 1.0, 0.55), fov: 56, lean: 0.05 };
   SHOTS.diplomas = { pos: v(1.12, 1.64, -0.47), target: v(ROOM.x1, 1.64, -0.47), fov: 40, lean: 0.02, shift: CARD };
   SHOTS.medals = { pos: v(1.7, 1.72, 0.82), target: v(ROOM.x1, 1.72, 0.82), fov: 38, lean: 0.02, shift: CARD };
   SHOTS.library = { pos: v(0.35, 1.45, 1.05), target: v(0.35, 1.22, ROOM.z1), fov: 54, lean: 0.04, shift: 0.1 };
@@ -174,7 +179,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   // --- panels and captions ---------------------------------------------------------------
   const panels = { about: $('about'), project: $('project'), card: $('card') };
   const navButtons = [...document.querySelectorAll<HTMLButtonElement>('nav button')];
-  const navFor: Record<string, string> = { desk: 'desk', projects: 'projects', about: 'about', diplomas: 'about', medals: 'about', library: 'library', signal: 'signal' };
+  const navFor: Record<string, string> = { desk: 'desk', projects: 'projects', about: 'about', library: 'library', signal: 'signal' };
   let projectIndex = 0;
 
   type Body = string | { list: { head: string; text: string }[] } | { note: string };
@@ -237,11 +242,15 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   let lidAim = 0;
   let lastFrame = performance.now();
   // Where the card's right edge falls (see .card in style.css), so close-ups clear it.
-  const cardInset = () => window.innerWidth * 0.04 + Math.min(400, window.innerWidth * 0.36) + 24;
+  const cardInset = () => Math.max(window.innerWidth * 0.04, 72) + Math.min(400, window.innerWidth * 0.36) + 24;
+  // And the notepad's, on the right (see .notepad).
+  const padInset = () => Math.max(window.innerWidth * 0.04, 72) + Math.min(460, window.innerWidth * 0.4) + 24;
   rig.inset = cardInset();
+  rig.insetRight = padInset();
   window.addEventListener('resize', () => {
     if (lidAim > 0) lidAim = barFor();
     rig.inset = cardInset();
+    rig.insetRight = padInset();
   });
   const rootStyle = document.documentElement.style;
   const hints = $('hints');
@@ -309,11 +318,39 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
     shoes: () => {
       shoes.hop();
       window.setTimeout(() => sound.thud(), 180);
-      showCard('By the desk', SHOES.label, SHOES.lines);
+      showCard('Under the map', SHOES.label, SHOES.lines);
     },
   };
 
+  // --- looking around: four walls, and which wall each close-up belongs to -------------
+  const WALLS = ['desk', 'honors', 'library', 'places'] as const;
+  type Wall = (typeof WALLS)[number];
+  const WALL_NAMES: Record<Wall, string> = { desk: 'The desk', honors: 'Medals & diplomas', library: 'The library', places: 'Map, shirts & shoes' };
+  const PARENT: Record<string, Wall> = { honors: 'honors', diplomas: 'honors', medals: 'honors', library: 'library', places: 'places', map: 'places', shoes: 'places', projects: 'places' };
+  const wallOf = (shot: string): Wall => PARENT[shot] ?? 'desk';
+  const turnLeft = $<HTMLButtonElement>('turn-left');
+  const turnRight = $<HTMLButtonElement>('turn-right');
+  const neighbors = (shot: string) => {
+    const i = WALLS.indexOf(wallOf(shot));
+    return { left: WALLS[(i + 3) % 4], right: WALLS[(i + 1) % 4] };
+  };
+  const labelTurns = (shot: string) => {
+    const n = neighbors(shot);
+    turnLeft.querySelector('.label')!.textContent = WALL_NAMES[n.left];
+    turnRight.querySelector('.label')!.textContent = WALL_NAMES[n.right];
+    turnLeft.setAttribute('aria-label', `Turn left, to ${WALL_NAMES[n.left].toLowerCase()}`);
+    turnRight.setAttribute('aria-label', `Turn right, to ${WALL_NAMES[n.right].toLowerCase()}`);
+  };
+  const turn = (dir: 1 | -1) => {
+    const n = neighbors(rig.current);
+    goTo(dir > 0 ? n.right : n.left);
+  };
+  turnLeft.addEventListener('click', () => turn(-1));
+  turnRight.addEventListener('click', () => turn(1));
+  labelTurns('desk');
+
   function goTo(name: ShotName, page: Page = 'signal') {
+    labelTurns(name);
     sound.click();
     panels.about.hidden = true;
     panels.project.hidden = true;
@@ -579,8 +616,10 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
     }
     const k = e.key.toLowerCase();
     if (k === 'escape') {
+      // Out of a close-up to the wall it's on; from a wall, back to the desk.
       $('credits').hidden = true;
-      goTo('desk');
+      const wall = wallOf(rig.current);
+      goTo(rig.current === wall ? 'desk' : wall);
     } else if (k === '1') goTo('projects');
     else if (k === '2') goTo('about');
     else if (k === '3') goTo('signal');
@@ -598,7 +637,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
       } else if (rig.current === 'work') {
         rolodex.flip(dir);
         sound.flick();
-      }
+      } else turn(dir);
     }
   });
 
@@ -687,6 +726,9 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
       touch.enabled = true;
       say(HINTS, false);
       watchSpeed();
+      // Name the walls either side for a moment, so it's clear you can turn.
+      document.body.classList.add('show-turns');
+      window.setTimeout(() => document.body.classList.remove('show-turns'), 6000);
     });
   };
 
@@ -710,6 +752,6 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
     // Ready: a beat to let the first frame settle, then in we go.
     window.setTimeout(() => enter(opts.sound), reduced ? 0 : 400);
   }
-  (window as unknown as { __ew: unknown }).__ew = { worldId, rig, flap: board, kit, terminal, goTo, world, watch, pad, treats, rolodex, map, reader, openBook, ...kit.debug };
+  (window as unknown as { __ew: unknown }).__ew = { worldId, rig, sound, flap: board, kit, terminal, goTo, world, watch, pad, treats, rolodex, map, honors, shoes, shelf, camera, reader, openBook, ...kit.debug };
 }
 

@@ -105,6 +105,10 @@ export function buildShoes(): Shoes {
   rightShoe.position.set(0.04, 0, 0.07);
   rightShoe.rotation.y = -0.12;
   group.add(leftShoe, rightShoe);
+  // A generous invisible hit area round the pair, so the gap between them counts too.
+  const hit = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.32), new THREE.MeshBasicMaterial({ visible: false }));
+  hit.position.set(0.02, 0.07, 0);
+  group.add(hit);
   let hopAt = -10;
   let now = 0;
   return {

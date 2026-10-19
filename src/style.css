@@ -465,6 +465,71 @@ nav button[aria-current='true'] {
 .ready .controls .buttons {
   opacity: 1;
 }
+/* Turning between the walls: a chevron at each edge, the wall's name beside it. */
+.turn {
+  position: fixed;
+  top: 50%;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  translate: 0 -50%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #f4efe6;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+.ready .turn {
+  opacity: 1;
+  pointer-events: auto;
+}
+.turn.left {
+  left: 14px;
+}
+.turn.right {
+  right: 14px;
+}
+.turn .chev {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(244, 239, 230, 0.32);
+  background: rgba(8, 8, 14, 0.55);
+  font: 400 28px/1 var(--type);
+  backdrop-filter: blur(4px);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.turn .label {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(8, 8, 14, 0.62);
+  font-family: var(--type);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.turn:hover .chev,
+.turn:focus-visible .chev {
+  background: rgba(244, 239, 230, 0.92);
+  color: #0b0b10;
+}
+.turn:hover .label,
+.turn:focus-visible .label,
+.show-turns .turn .label {
+  opacity: 1;
+}
+.turn:focus-visible {
+  outline: none;
+}
+
 .hints {
   margin: 0;
   font-family: var(--mono);
@@ -538,7 +603,7 @@ nav button[aria-current='true'] {
 /* About: a legal pad held up to the camera. */
 .notepad {
   position: fixed;
-  right: 4vw;
+  right: max(4vw, 72px);
   top: 50%;
   width: min(460px, 40vw);
   transform: translateY(-50%) rotate(1.4deg);
@@ -722,7 +787,8 @@ nav button[aria-current='true'] {
 .lite .top,
 .lite .controls,
 .lite #gate,
-.lite #slow {
+.lite #slow,
+.lite .turn {
   display: none;
 }
 html.lite,
@@ -1208,7 +1274,7 @@ html.lite body {
 /* A card for things in the room: a museum label crossed with an index card. */
 .card {
   position: fixed;
-  left: 4vw;
+  left: max(4vw, 72px);
   bottom: calc(var(--bar, 0px) + 5vh);
   width: min(400px, 36vw);
   max-height: calc(100vh - 2 * var(--bar, 0px) - 10vh);

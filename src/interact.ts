@@ -90,7 +90,7 @@ export class Interactions {
         if (!(m instanceof THREE.MeshStandardMaterial)) continue;
         if (on) {
           if (!this.saved.has(m)) this.saved.set(m, m.emissive.clone());
-          m.emissive.set('#3a2412');
+          m.emissive.set('#4e3016');
         } else if (this.saved.has(m)) {
           m.emissive.copy(this.saved.get(m)!);
           this.saved.delete(m);

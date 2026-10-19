@@ -9,6 +9,17 @@ The studio is the same in every world: the watch, the pen and pad, the coffee an
 
 Everything is made in code as the page runs: no photos, no 3D models, no audio files. The mountains, the lake and its reflections, the city, the trains and the gondola are all generated.
 
+## Looking around
+
+You start at the desk, facing the window. The room has four walls, and the **‹ ›** buttons at the edges of the screen (or the left and right arrow keys) turn you to the next one; each button says where it goes.
+
+- **The desk**: the window and the word board, the CRT, the watch, the pad, the treats, the Rolodex. **About** (`2`) is a card at the desk.
+- **Medals & diplomas** (the right wall).
+- **The library** (the back wall): the bookshelf.
+- **Map, shirts & shoes** (the left wall): the scratch map, the project shirts on their drying line, and the running shoes on the floor under the map.
+
+Click anything that glows to step up to it. `Esc` steps back: from a close-up to the wall it's on, from a wall to the desk.
+
 ## What's in the room
 
 - **The word board** (the split-flap board by the lake, the billboard in the city) runs Richard Dawkins' "weasel program" from *The Blind Watchmaker*: copy the phrase with random mistakes, keep the best copy, repeat. Press **E** (or click the board) to type your own phrase on the CRT and watch it get bred out of noise.
@@ -19,11 +30,12 @@ Everything is made in code as the page runs: no photos, no 3D models, no audio f
 - **The medals** (5K, 10K, half, full: the best race at each distance, from Strava) swing when clicked. **The diplomas** hang next to them.
 - **The scratch map** starts with the visited countries scratched off (places too small for the outline map, like Singapore, are dots). Drag across the foil to scratch more; it remembers per browser.
 - **The bookshelf** has public-domain books you can open and page through: Dante's Inferno, Purgatorio and Paradiso (Longfellow), the Odyssey (Pope), Poe, the Rubáiyát (FitzGerald), Shakespeare, Dickinson, Frost, Whitman, the Romantics, Yeats and Thoreau. Long books open on a contents page and remember where you left off.
-- **The project shirts** hang on a drying line along the left wall.
-- **The tape deck** plays a lo-fi loop synthesized with Web Audio over the world's weather: wind and far-off cowbells by the lake, rain and a neon hum in the city. The globes have a sound switch; it's on unless you turn it off.
+- **The project shirts** hang on a drying line along the left wall, next to the map.
+- **The running shoes** sit on the floor under the map. Click them for the pair and their miles.
+- **The tape deck** plays music synthesized with Web Audio over the world's weather, and each world has its own band. By the lake it's slow, swung electric piano over brushes and a round bass, with a celesta falling like snow, and wind and far-off cowbells outside. In the city it's slow analog synth pads that swell over each bar, an arpeggio drifting in a long echo, a plucked synth bass and a quiet drum machine, with rain and a neon hum outside and the patrol spinner's whoosh. Both are mixed to sit under everything else. The globes have a sound switch; it's on unless you turn it off.
 - **Lo-fi** mode drops the picture to chunky pixels and scanlines.
 
-Keys: `1` projects, `2` about, `3` signal, `E` evolve a word, `B` books, `M` map, `W` window, `L` lamp, `T` tape, arrows to flip through projects, the Rolodex and books, `Esc` back to the desk.
+Keys: left and right arrows turn to the next wall (and flip through projects, the Rolodex and book pages when you're looking at them), `Esc` steps back, `1` projects, `2` about, `3` signal, `E` evolve a word, `B` books, `M` map, `W` window, `L` lamp, `T` tape.
 
 ## The simple page
 
@@ -55,7 +67,7 @@ Handy while tuning the look (they use the software renderer, so no GPU is needed
 - `node scripts/stills.mjs http://localhost:5173` renders the pictures inside the globes.
 - `node scripts/og.mjs vista shots/og.png http://localhost:5173` renders the link-preview still (save it as `public/og.jpg`).
 - `node scripts/lightaudit.mjs shots/audit http://localhost:5173/?shot=desk&full` shoots the desk with each light switched off in turn.
-- `?shot=<name>&full` skips the globes and jumps straight to a shot: `vista`, `desk`, `window`, `board`, `projects`, `about`, `signal`, `watch`, `pad`, `treats`, `work`, `map`, `diplomas`, `medals`, `library`, `shoes`. Add `&world=city` for the city.
+- `?shot=<name>&full` skips the globes and jumps straight to a shot: `vista`, `desk`, `window`, `board`, `projects`, `about`, `signal`, `watch`, `pad`, `treats`, `work`, `honors`, `diplomas`, `medals`, `library`, `places`, `map`, `shoes`. Add `&world=city` for the city.
 - `WORLD=city node scripts/shots.mjs shots http://localhost:5173` shoots the city instead; the `chooser` shot is the globes.
 
 ## Adding a world

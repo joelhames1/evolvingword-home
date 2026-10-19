@@ -1,20 +1,42 @@
 // All the sound is synthesized live with Web Audio: the weather outside (wind
 // and far-off cowbells by the lake; rain, a neon hum and passing spinners in
-// the city), vinyl crackle, a lo-fi band (electric piano, bass, soft drums)
-// playing a slow chord loop with a little tape wobble, and the small sounds of
-// things in the room. No audio files.
+// the city), vinyl crackle, a band for each world (by the lake, electric piano
+// over brushes with a celesta falling like snow; in the city, slow analog pads,
+// an echoing arpeggio and a quiet drum machine), all with a little tape wobble,
+// and the small sounds of things in the room. No audio files.
 
 /** What's outside the window, for the ambience. */
 export type Weather = 'alps' | 'city';
 
-const CHORDS = [
-  { bass: 43, notes: [58, 62, 65, 69] }, // Gm9
-  { bass: 48, notes: [58, 64, 69, 74] }, // C13
-  { bass: 41, notes: [57, 60, 64, 67] }, // Fmaj9
-  { bass: 38, notes: [53, 57, 60, 64] }, // Dm9
-];
-const PENTATONIC = [65, 67, 69, 72, 74, 77, 79, 81];
-const BPM = 74;
+type Chord = { bass: number; notes: number[] };
+
+/** Each world's band: the lake plays warm lo-fi, the city slow synth. */
+const SCORES: Record<Weather, { bpm: number; swing: number; chords: Chord[]; sparkle: number[] }> = {
+  // Electric piano over brushes and a shaker; a celesta now and then, like snow.
+  alps: {
+    bpm: 70,
+    swing: 0.16,
+    chords: [
+      { bass: 41, notes: [57, 60, 64, 67] }, // Fmaj9
+      { bass: 40, notes: [55, 59, 62, 67] }, // Em7
+      { bass: 38, notes: [53, 57, 60, 64] }, // Dm9
+      { bass: 46, notes: [57, 62, 65, 69] }, // Bbmaj7
+    ],
+    sparkle: [72, 74, 76, 79, 81, 84, 86, 88],
+  },
+  // Slow detuned pads, an echoing arpeggio, a plucked bass and a soft drum machine.
+  city: {
+    bpm: 84,
+    swing: 0.04,
+    chords: [
+      { bass: 36, notes: [55, 58, 62, 63] }, // Cm9
+      { bass: 44, notes: [55, 60, 63, 67] }, // Abmaj7
+      { bass: 41, notes: [56, 60, 63, 67] }, // Fm9
+      { bass: 43, notes: [55, 60, 62, 67] }, // Gsus4
+    ],
+    sparkle: [],
+  },
+};
 
 const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 
@@ -24,6 +46,8 @@ export class Sound {
   private musicBus!: GainNode;
   private ambience!: GainNode;
   private windGain!: GainNode;
+  private verbIn!: GainNode;
+  private echoIn!: GainNode;
   private weather: Weather = 'alps';
   private wow!: GainNode;
   private noise!: AudioBuffer;
@@ -73,6 +97,25 @@ export class Sound {
     this.ambience = ctx.createGain();
     this.ambience.gain.value = 1;
     this.ambience.connect(this.master);
+
+    // A soft room for the band (bigger in the city), and an echo for the city's arpeggio.
+    const verb = ctx.createConvolver();
+    verb.buffer = this.impulse(this.weather === 'city' ? 3.4 : 1.6);
+    this.verbIn = ctx.createGain();
+    const verbOut = ctx.createGain();
+    verbOut.gain.value = this.weather === 'city' ? 0.55 : 0.3;
+    this.verbIn.connect(verb).connect(verbOut).connect(this.musicBus);
+    const echo = ctx.createDelay(1.5);
+    echo.delayTime.value = (60 / SCORES[this.weather].bpm) * 0.75;
+    const echoTone = ctx.createBiquadFilter();
+    echoTone.type = 'lowpass';
+    echoTone.frequency.value = 1600;
+    const feedback = ctx.createGain();
+    feedback.gain.value = 0.4;
+    this.echoIn = ctx.createGain();
+    this.echoIn.connect(echo).connect(echoTone).connect(feedback).connect(echo);
+    echoTone.connect(this.musicBus);
+    echoTone.connect(this.verbIn);
 
     this.noise = this.noiseBuffer(4);
     if (this.weather === 'city') {
@@ -305,30 +348,50 @@ export class Sound {
 
   private schedule() {
     const ctx = this.ctx!;
-    const sixteenth = 60 / BPM / 4;
+    const score = SCORES[this.weather];
+    const sixteenth = 60 / score.bpm / 4;
     while (this.nextAt < ctx.currentTime + 0.15) {
       const s = this.step % 16;
       const bar = Math.floor(this.step / 16);
-      // Swing: every other sixteenth lands late.
-      const at = this.nextAt + (s % 2 ? sixteenth * 0.18 : 0);
-      if (this.musicOn) this.playStep(at, s, bar);
+      // Swing: every other sixteenth lands a little late.
+      const at = this.nextAt + (s % 2 ? sixteenth * score.swing : 0);
+      if (this.musicOn) {
+        if (this.weather === 'city') this.playCity(at, s, bar, sixteenth * 16);
+        else this.playLake(at, s, bar);
+      }
       this.nextAt += sixteenth;
       this.step++;
     }
   }
 
-  private playStep(at: number, s: number, bar: number) {
-    const chord = CHORDS[bar % CHORDS.length];
-    if (s === 0 || s === 7 || (s === 10 && bar % 2)) this.kick(at, s === 0 ? 1 : 0.7);
-    if (s === 4 || s === 12) this.snare(at);
-    if (s % 2 === 0) this.hat(at, s % 4 === 0 ? 0.5 : 0.3, s === 14 && bar % 4 === 3);
-    if (s === 0) chord.notes.forEach((n, i) => this.keys(at + i * 0.018, n, 0.11, 2.6));
-    if (s === 6) chord.notes.slice(1).forEach((n, i) => this.keys(at + i * 0.014, n, 0.06, 1.2));
-    if (s === 0) this.bass(at, chord.bass, 1.4);
-    if (s === 11) this.bass(at, chord.bass + (bar % 2 ? 7 : 12), 0.5);
-    if ((s === 3 || s === 9 || s === 14) && Math.random() < 0.3) {
-      this.keys(at, PENTATONIC[Math.floor(Math.random() * PENTATONIC.length)], 0.045, 1.6);
+  /** The lake: Rhodes chords, a round bass, brushes, and a celesta like falling snow. */
+  private playLake(at: number, s: number, bar: number) {
+    const { chords, sparkle } = SCORES.alps;
+    const chord = chords[bar % chords.length];
+    if (s === 0 || (s === 10 && bar % 2)) this.kick(at, s === 0 ? 0.75 : 0.45);
+    if (s === 4 || s === 12) this.brush(at, s === 12 ? 1 : 0.8);
+    if (s % 2 === 0) this.shaker(at, s % 4 === 0 ? 0.8 : 0.5);
+    if (s === 0) chord.notes.forEach((n, i) => this.keys(at + i * 0.022, n, 0.1, 3.2));
+    if (s === 8 && bar % 2 === 0) chord.notes.slice(1).forEach((n, i) => this.keys(at + i * 0.016, n, 0.05, 1.4));
+    if (s === 0) this.bass(at, chord.bass, 1.6);
+    if (s === 11) this.bass(at, chord.bass + 7, 0.6);
+    if ((s === 2 || s === 7 || s === 13) && Math.random() < 0.22) this.bell(at, sparkle[Math.floor(Math.random() * sparkle.length)], 0.028);
+  }
+
+  /** The city: a pad that swells over each bar, an arpeggio in the echo, a plucked bass, a quiet drum machine. */
+  private playCity(at: number, s: number, bar: number, barLength: number) {
+    const { chords } = SCORES.city;
+    const chord = chords[bar % chords.length];
+    if (s === 0) this.pad(at, [...chord.notes, chord.notes[0] + 12], barLength * 1.15);
+    if (s % 2 === 0) {
+      const order = [0, 1, 2, 3, 2, 1, 3, 1];
+      this.arp(at, chord.notes[order[(s / 2) % order.length]] + 12, s === 0 ? 0.034 : 0.024);
     }
+    if (s === 0 || s === 8) this.synthBass(at, chord.bass, 0.45);
+    if (s === 3 || s === 11) this.synthBass(at, chord.bass + (s === 11 && bar % 2 ? 12 : 0), 0.2);
+    if (s === 0 || s === 8) this.kick(at, 0.6);
+    if (s === 4 || s === 12) this.snap(at);
+    if (s % 2 === 1) this.hat(at, 0.22, false);
   }
 
   private env(at: number, peak: number, attack: number, decay: number) {
@@ -386,25 +449,6 @@ export class Sound {
     o.stop(at + 0.4);
   }
 
-  private snare(at: number) {
-    const ctx = this.ctx!;
-    const n = ctx.createBufferSource();
-    n.buffer = this.noise;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 1700;
-    bp.Q.value = 0.8;
-    const g = this.env(at, 0.22, 0.002, 0.18);
-    n.connect(bp).connect(g).connect(this.musicBus);
-    n.start(at, Math.random() * 3, 0.25);
-    const body = ctx.createOscillator();
-    body.frequency.value = 185;
-    const bg = this.env(at, 0.12, 0.002, 0.08);
-    body.connect(bg).connect(this.musicBus);
-    body.start(at);
-    body.stop(at + 0.12);
-  }
-
   private hat(at: number, vel: number, open: boolean) {
     const ctx = this.ctx!;
     const n = ctx.createBufferSource();
@@ -415,6 +459,160 @@ export class Sound {
     const g = this.env(at, 0.07 * vel, 0.001, open ? 0.22 : 0.045);
     n.connect(hp).connect(g).connect(this.musicBus);
     n.start(at, Math.random() * 3, open ? 0.3 : 0.08);
+  }
+
+  /** A bell: a celesta-ish sine with an inharmonic partial, straight into the room. */
+  private bell(at: number, midi: number, vel: number) {
+    const ctx = this.ctx!;
+    const g = this.env(at, vel, 0.002, 1.8);
+    g.connect(this.musicBus);
+    g.connect(this.verbIn);
+    for (const [mult, amp] of [
+      [1, 1],
+      [4.07, 0.22],
+    ]) {
+      const o = ctx.createOscillator();
+      o.frequency.value = hz(midi) * mult;
+      const og = ctx.createGain();
+      og.gain.value = amp;
+      o.connect(og).connect(g);
+      o.start(at);
+      o.stop(at + 1.9);
+    }
+  }
+
+  /** Brushes on a snare: filtered noise with a soft swept attack. */
+  private brush(at: number, vel: number) {
+    const ctx = this.ctx!;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(2600, at);
+    bp.frequency.exponentialRampToValueAtTime(1200, at + 0.2);
+    bp.Q.value = 0.6;
+    const g = this.env(at, 0.09 * vel, 0.03, 0.22);
+    n.connect(bp).connect(g).connect(this.musicBus);
+    g.connect(this.verbIn);
+    n.start(at, Math.random() * 3, 0.3);
+  }
+
+  private shaker(at: number, vel: number) {
+    const ctx = this.ctx!;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 6200;
+    bp.Q.value = 1.2;
+    const g = this.env(at, 0.03 * vel, 0.012, 0.06);
+    n.connect(bp).connect(g).connect(this.musicBus);
+    n.start(at, Math.random() * 3, 0.1);
+  }
+
+  /** A slow analog pad: three detuned saws a note, through a low filter that breathes. */
+  private pad(at: number, notes: number[], len: number) {
+    const ctx = this.ctx!;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 0.7;
+    lp.frequency.setValueAtTime(380, at);
+    lp.frequency.linearRampToValueAtTime(1100, at + len * 0.45);
+    lp.frequency.linearRampToValueAtTime(500, at + len);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.05, at + Math.min(1.6, len * 0.4));
+    g.gain.setValueAtTime(0.05, at + len * 0.7);
+    g.gain.linearRampToValueAtTime(0, at + len + 0.6);
+    lp.connect(g);
+    g.connect(this.musicBus);
+    g.connect(this.verbIn);
+    for (const n of notes) {
+      for (const cents of [-9, 0, 8]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = hz(n);
+        o.detune.value = cents;
+        this.wow.connect(o.detune);
+        o.connect(lp);
+        o.onended = () => this.wow.disconnect(o.detune);
+        o.start(at);
+        o.stop(at + len + 0.7);
+      }
+    }
+  }
+
+  /** A soft square pluck, mostly heard in the echo. */
+  private arp(at: number, midi: number, vel: number) {
+    const ctx = this.ctx!;
+    const o = ctx.createOscillator();
+    o.type = 'square';
+    o.frequency.value = hz(midi);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(2400, at);
+    lp.frequency.exponentialRampToValueAtTime(500, at + 0.25);
+    const g = this.env(at, vel, 0.004, 0.3);
+    o.connect(lp).connect(g);
+    g.connect(this.musicBus);
+    g.connect(this.echoIn);
+    o.start(at);
+    o.stop(at + 0.4);
+  }
+
+  /** A synth bass: saw and sub, with a filter that snaps shut. */
+  private synthBass(at: number, midi: number, len: number) {
+    const ctx = this.ctx!;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 2;
+    lp.frequency.setValueAtTime(900, at);
+    lp.frequency.exponentialRampToValueAtTime(180, at + len);
+    const g = this.env(at, 0.2, 0.005, len + 0.15);
+    lp.connect(g).connect(this.musicBus);
+    for (const [type, mult, amp] of [
+      ['sawtooth', 1, 0.7],
+      ['sine', 0.5, 1],
+    ] as const) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = hz(midi) * mult;
+      const og = ctx.createGain();
+      og.gain.value = amp;
+      o.connect(og).connect(lp);
+      o.start(at);
+      o.stop(at + len + 0.2);
+    }
+  }
+
+  /** The drum machine's snare: a short noise snap into a long room. */
+  private snap(at: number) {
+    const ctx = this.ctx!;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1300;
+    bp.Q.value = 0.9;
+    const g = this.env(at, 0.12, 0.002, 0.12);
+    n.connect(bp).connect(g);
+    g.connect(this.musicBus);
+    const wet = ctx.createGain();
+    wet.gain.value = 1.4;
+    g.connect(wet).connect(this.verbIn);
+    n.start(at, Math.random() * 3, 0.2);
+  }
+
+  /** A made-up room: stereo noise that dies away. */
+  private impulse(seconds: number) {
+    const ctx = this.ctx!;
+    const len = Math.floor(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+    }
+    return buf;
   }
 
   // --- little sounds --------------------------------------------------------------

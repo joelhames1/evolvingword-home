@@ -313,12 +313,19 @@ export function buildRoom(): Room {
   const radMat = new THREE.MeshStandardMaterial({ color: '#3d3a35', roughness: 0.5, metalness: 0.3 });
   for (let i = 0; i < 16; i++) group.add(box(0.05, 0.55, 0.1, radMat, -0.9 + i * 0.12, 0.42, z0 + 0.12, true));
   group.add(box(1.95, 0.04, 0.06, radMat, 0, 0.16, z0 + 0.12));
-  const curtainGeo = new THREE.PlaneGeometry(0.75, 2.5, 48, 1);
-  const pos = curtainGeo.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.sin(pos.getX(i) * 26) * 0.045 + Math.sin(pos.getX(i) * 9) * 0.02);
+  // The curtain hangs beside the window, gathered, clear of the desk and just
+  // overlapping the frame; its folds deepen and flare a little toward the hem.
+  const curtainGeo = new THREE.PlaneGeometry(0.5, 2.58, 40, 10);
+  const cpos = curtainGeo.attributes.position;
+  for (let i = 0; i < cpos.count; i++) {
+    const x = cpos.getX(i);
+    const low = 1 - (cpos.getY(i) + 1.29) / 2.58;
+    cpos.setX(i, x * (1 + low * 0.12));
+    cpos.setZ(i, Math.sin(x * 46) * (0.03 + low * 0.012) + Math.sin(x * 15) * 0.014);
+  }
   curtainGeo.computeVertexNormals();
   const curtain = new THREE.Mesh(curtainGeo, new THREE.MeshStandardMaterial({ color: '#4a2f2a', roughness: 0.95, side: THREE.DoubleSide }));
-  curtain.position.set(W.x0 + 0.05, 1.45, z0 + 0.18);
+  curtain.position.set(W.x0 - 0.2, 1.42, z0 + 0.1);
   curtain.castShadow = true;
   group.add(curtain);
   group.add(box(ww + 0.9, 0.03, 0.03, frameMat, cx, 2.72, z0 + 0.2));

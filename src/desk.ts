@@ -265,7 +265,7 @@ export function buildDesk(crtTexture: THREE.Texture): Desk {
     stem.rotation.z = (pr() - 0.5) * 0.3;
     plant.add(stem);
   }
-  plant.position.set(-2.02, 0, -1.55);
+  plant.position.set(-2.05, 0, -1.3);
   group.add(plant);
 
   const spots = { crt: new THREE.Vector3(deckX, top + 0.33, z + 0.22) };

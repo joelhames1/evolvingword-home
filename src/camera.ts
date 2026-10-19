@@ -13,7 +13,7 @@ export interface Shot {
   lean?: number;
   /** Near clipping distance; small for close-ups. */
   near?: number;
-  /** Slide the picture right by this share of its width, to clear a card on the left. */
+  /** Slide the picture right by this share of its width, to clear a card on the left (negative: left, for the notepad). */
   shift?: number;
 }
 
@@ -60,8 +60,9 @@ export class Rig {
   current: ShotName = 'desk';
   /** How much of the frame's height the letterbox leaves showing (1 = all). */
   visible = 1;
-  /** Pixels a card covers on the left; shifted shots clear at least this. */
+  /** Pixels a card covers on the left (or the notepad on the right); shifted shots clear at least this. */
   inset = 0;
+  insetRight = 0;
 
   constructor(
     private camera: THREE.PerspectiveCamera,
@@ -153,7 +154,8 @@ export class Rig {
     // Slide the picture sideways (a lens shift, not a turn) to make room for a card.
     const w = window.innerWidth;
     const h = window.innerHeight;
-    const offset = this.shift > 0 ? Math.round(Math.max(this.shift * w, (this.inset / 2) * Math.min(1, this.shift / 0.08))) : 0;
+    const sideways = (inset: number, k: number) => Math.round(Math.max(k * w, (inset / 2) * Math.min(1, k / 0.08)));
+    const offset = this.shift > 0 ? sideways(this.inset, this.shift) : this.shift < 0 ? -sideways(this.insetRight, -this.shift) : 0;
     const view = cam.view;
     const shifted = view?.enabled ? view.offsetX : 0;
     if (Math.abs(cam.fov - fov) > 1e-4 || cam.near !== this.near || -offset !== shifted || (view?.enabled && view.fullWidth !== w)) {
