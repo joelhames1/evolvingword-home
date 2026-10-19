@@ -1,6 +1,7 @@
 // The way in: a row of snow globes, one per world, each holding a still of its
 // view with its own weather falling inside the glass. Pick one and it shakes,
 // then you dive into it while the world loads behind.
+import { unlockAudio } from './audio-unlock';
 import { WORLDS, type WorldId, type WorldInfo } from './worlds';
 
 const WORLD_KEY = 'ew.world';
@@ -151,6 +152,9 @@ export function choose(): Promise<{ world: WorldId; sound: boolean }> {
         if (picked) return;
         picked = true;
         rememberWorld(w.id);
+        // The world's sound starts once it's built, too late to count as this
+        // click; opening the audio now is what lets it play then.
+        if (sound) unlockAudio();
         sky.shake();
         root.classList.add('picked');
         wrap.classList.add('picked');

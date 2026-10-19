@@ -5,6 +5,8 @@
 // an echoing arpeggio and a quiet drum machine), all with a little tape wobble,
 // and the small sounds of things in the room. No audio files.
 
+import { unlockedAudio } from './audio-unlock';
+
 /** What's outside the window, for the ambience. */
 export type Weather = 'alps' | 'city';
 
@@ -66,11 +68,27 @@ export class Sound {
     this.weather = weather;
   }
 
-  /** Must be called from a click or key press: browsers only allow sound after one. */
+  /**
+   * Browsers only allow sound after a click or key press. The globe you clicked
+   * usually opened the audio already (audio-unlock.ts); if the browser is still
+   * holding it back, the first click or key press in the room lets it go.
+   */
   start() {
     if (this.ctx) return;
-    const ctx = new AudioContext();
+    const ctx = unlockedAudio() ?? new AudioContext();
     this.ctx = ctx;
+    if (ctx.state === 'suspended') {
+      const wake = () => {
+        if (this.muted) return;
+        void ctx.resume().then(() => {
+          if (ctx.state !== 'running') return;
+          window.removeEventListener('pointerdown', wake, true);
+          window.removeEventListener('keydown', wake, true);
+        });
+      };
+      window.addEventListener('pointerdown', wake, true);
+      window.addEventListener('keydown', wake, true);
+    }
     this.master = ctx.createGain();
     this.master.gain.value = 0;
     const comp = ctx.createDynamicsCompressor();
