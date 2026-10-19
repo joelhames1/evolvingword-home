@@ -84,6 +84,14 @@ export class Rig {
     this.leanIn = 1;
     this.path = null;
     this.moving = false;
+    this.finish();
+  }
+
+  /** A flight cut short by a jump or a new flight still counts as over, so whatever waits on it carries on. */
+  private finish() {
+    const done = this.done;
+    this.done = null;
+    done?.();
   }
 
   go(name: ShotName, opts: { via?: THREE.Vector3[]; duration?: number } = {}): Promise<void> {
@@ -113,6 +121,7 @@ export class Rig {
     this.lean = s.lean ?? 0.1;
     this.leanIn = 0;
     this.moving = true;
+    this.finish();
     return new Promise((resolve) => (this.done = resolve));
   }
 
@@ -132,8 +141,7 @@ export class Rig {
         this.moving = false;
         this.pos.copy(cam.position);
         this.near = this.toNear;
-        this.done?.();
-        this.done = null;
+        this.finish();
       }
     } else {
       this.smoothPointer.lerp(this.pointer, 0.04);

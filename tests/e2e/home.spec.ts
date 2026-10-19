@@ -192,6 +192,53 @@ test('looking around: turn to each wall and click what is there', async ({ page 
   expect(problems).toEqual([]);
 });
 
+test('turning during the flight in still leaves everything clickable', async ({ page }) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const problems = watch(page);
+  // In through the globes, the way a visitor comes, not straight to a shot.
+  await page.goto('/');
+  await page.getByRole('button', { name: /The Lake House/ }).click();
+  // The arrow goes in the instant the flight starts (the body turns "inside" as the camera sets off),
+  // before another frame is drawn, so it really does cut the flight short however slow the frames are.
+  const before = await page.evaluate(
+    () =>
+      new Promise<{ moving: boolean; ready: boolean }>((resolve) => {
+        const press = () => {
+          const rig = (window as unknown as { __ew: { rig: { moving: boolean } } }).__ew.rig;
+          const state = { moving: rig.moving, ready: document.body.classList.contains('ready') };
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+          resolve(state);
+        };
+        if (document.body.classList.contains('inside')) return press();
+        const seen = new MutationObserver(() => {
+          if (!document.body.classList.contains('inside')) return;
+          seen.disconnect();
+          press();
+        });
+        seen.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+      }),
+  );
+  expect(before).toEqual({ moving: true, ready: false });
+  // Taking over counts as arriving: the room wakes up instead of waiting for a flight that's been cancelled.
+  await expect(page.locator('body')).toHaveClass(/ready/, { timeout: 60_000 });
+  await page.waitForFunction(() => !(window as unknown as { __ew: { rig: { moving: boolean } } }).__ew.rig.moving, null, { timeout: 60_000 });
+  expect(await page.evaluate(() => (window as unknown as { __ew: { rig: { current: string } } }).__ew.rig.current)).toBe('honors');
+  await expect(page.locator('#turn-left')).toBeVisible();
+  const pt = await page.evaluate(() => {
+    type V = { project(c: unknown): V; x: number; y: number };
+    const w = (window as unknown as { __ew: { honors: { medals: { getWorldPosition(v: V): V }[] }; camera: { position: { clone(): V } } } }).__ew;
+    const p = w.honors.medals[2].getWorldPosition(w.camera.position.clone()).project(w.camera);
+    const c = document.querySelector('#scene canvas')!;
+    return { x: ((p.x + 1) / 2) * c.clientWidth, y: ((1 - p.y) / 2) * c.clientHeight };
+  });
+  await page.mouse.move(pt.x, pt.y);
+  await page.waitForTimeout(1200);
+  await page.mouse.click(pt.x, pt.y);
+  await expect(page.locator('#card-title')).toHaveText('Medals', { timeout: 20_000 });
+  expect(problems).toEqual([]);
+});
+
 test('the simple page has everything, and its books open', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 860 });
   const problems = watch(page);

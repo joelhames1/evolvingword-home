@@ -364,6 +364,8 @@ nav button[aria-current='true'] {
 #gate.gone {
   opacity: 0;
   visibility: hidden;
+  /* Visibility only flips once the fade ends; clicks go through from the start. */
+  pointer-events: none;
 }
 .gate-box {
   width: min(560px, calc(100vw - 32px));
