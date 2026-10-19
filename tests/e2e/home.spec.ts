@@ -45,7 +45,7 @@ test('desktop: the gate, the flight in, and the rooms', async ({ page }) => {
   expect(problems).toEqual([]);
 });
 
-test('evolving a word: type on the CRT, watch the billboard breed it', async ({ page }) => {
+test('evolving a word: type on the CRT, watch the board breed it', async ({ page }) => {
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   const problems = watch(page);
@@ -56,16 +56,76 @@ test('evolving a word: type on the CRT, watch the billboard breed it', async ({ 
   await page.keyboard.type('hello 31');
   await page.keyboard.press('Enter');
   await expect(page.locator('#hints')).toContainText('HELLO 31', { timeout: 10_000 });
+  // The camera turns up to the board over the window.
+  await page.waitForFunction(() => (window as unknown as { __ew: { rig: { current: string } } }).__ew.rig.current === 'board');
   const done = await page.waitForFunction(
     () => {
-      const e = (window as unknown as { __ew: { city: { evolution(): { done: boolean; target: string; custom: boolean } } } }).__ew.city.evolution();
+      const e = (window as unknown as { __ew: { flap: { evolution(): { done: boolean; target: string; custom: boolean } } } }).__ew.flap.evolution();
       return e.custom && e.done ? e.target : null;
     },
     null,
     { timeout: 100_000 },
   );
-  expect(await done.jsonValue()).toBe('HELLO 31');
+  expect((await done.jsonValue())?.trim()).toBe('HELLO 31');
   await expect(page.locator('#hints')).toContainText('GENERATIONS', { timeout: 10_000 });
+  expect(problems).toEqual([]);
+});
+
+type Ew = {
+  rig: { current: string; moving: boolean };
+  goTo(name: string): void;
+  watch: { press(b: 'start' | 'reset'): boolean; elapsed(): number };
+  pad: { next(): string; writing(): boolean };
+  treats: { discs: unknown[]; eat(d: unknown): number; left(): number; sip(): number; sipsLeft(): number };
+  rolodex: { flip(dir?: 1 | -1): number; index(): number };
+  map: { countryAt(u: number, v: number): string | null; visited(): number };
+  reader: { isOpen(): boolean };
+};
+
+test('the things on the desk and walls', async ({ page }) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const problems = watch(page);
+  await page.goto('/?shot=desk&full');
+  await page.waitForFunction(() => 'world' in ((window as unknown as { __ew?: object }).__ew ?? {}));
+  const ew = <T,>(fn: (w: Ew) => T) => page.evaluate(`(${fn.toString()})(window.__ew)`) as Promise<T>;
+
+  // The watch: start the chronograph, and it runs.
+  expect(await ew((w) => w.watch.press('start'))).toBe(true);
+  await page.waitForTimeout(1500);
+  expect(await ew((w) => w.watch.elapsed())).toBeGreaterThan(0);
+  await ew((w) => (w.watch.press('start'), w.watch.press('reset')));
+  expect(await ew((w) => w.watch.elapsed())).toBe(0);
+
+  // Chocolate disappears; the cappuccino goes down.
+  const before = await ew((w) => w.treats.left());
+  expect(await ew((w) => w.treats.eat(w.treats.discs[0]))).toBe(before - 1);
+  expect(await ew((w) => w.treats.sip())).toBe(2);
+
+  // The pen starts a poem; the Rolodex turns.
+  expect(await ew((w) => w.pad.next())).toBeTruthy();
+  expect(await ew((w) => w.pad.writing())).toBe(true);
+  expect(await ew((w) => w.rolodex.flip(1))).toBe(1);
+
+  // The map knows where things are, and starts with some already scratched.
+  expect(await ew((w) => w.map.visited())).toBeGreaterThan(0);
+  expect(await ew((w) => w.map.countryAt(0.5, 0.5))).toBeNull();
+
+  // A close-up brings its card; the library opens a book you can page through.
+  await page.keyboard.press('m');
+  await expect(page.locator('#card-title')).toHaveText('Places I have been', { timeout: 20_000 });
+  await page.keyboard.press('b');
+  await expect(page.locator('#card-title')).toHaveText('Take one down', { timeout: 20_000 });
+  await page.locator('#card-actions button', { hasText: 'Sonnets' }).click();
+  await expect(page.locator('#reader')).toBeVisible();
+  await expect(page.locator('#reader .page.left')).toContainText('Shakespeare');
+  await expect(page.locator('#reader .page.right')).toContainText("summer's day");
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#reader .page.left')).toContainText('disgrace');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#reader')).toBeHidden();
+  expect(await ew((w) => w.reader.isOpen())).toBe(false);
+
   expect(problems).toEqual([]);
 });
 

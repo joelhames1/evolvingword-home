@@ -2,7 +2,7 @@
 // node scripts/og.mjs <shot> <out.png> [base]   (then save it as public/og.jpg)
 import fs from 'node:fs';
 import { chromium } from '@playwright/test';
-const [shot = 'street', out = 'shots/og.png', base = 'http://localhost:5180'] = process.argv.slice(2);
+const [shot = 'vista', out = 'shots/og.png', base = 'http://localhost:5180'] = process.argv.slice(2);
 const browser = await chromium.launch({
   executablePath: fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined,
   args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],

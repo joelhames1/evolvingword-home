@@ -1,5 +1,5 @@
 // Projects hang on a drying line across the room, pegged up like fresh prints.
-// The window and the neon are behind them, so they glow at the edges.
+// The window is behind them, so they glow at the edges.
 import * as THREE from 'three';
 import { PROJECTS, type Project } from './projects';
 import { canvas, label, texture } from './textures';

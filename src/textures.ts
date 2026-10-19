@@ -77,6 +77,85 @@ export function plaster(seed: number, base = '#8a7a68', w = 512, h = 512): THREE
   return texture(c, { repeat: [3, 2] });
 }
 
+/** Knotty pine paneling, boards running up and down: the chalet look. */
+export function paneling(seed: number, base = '#a8743f'): THREE.CanvasTexture {
+  const [c, g] = canvas(1024, 1024);
+  const r = rng(seed);
+  const boards = 8;
+  const bw = 1024 / boards;
+  for (let i = 0; i < boards; i++) {
+    const x0 = i * bw;
+    const tint = (r() - 0.5) * 26;
+    const col = new THREE.Color(base).offsetHSL(0, 0, tint / 255);
+    g.fillStyle = `#${col.getHexString()}`;
+    g.fillRect(x0, 0, bw, 1024);
+    for (let k = 0; k < 34; k++) {
+      const x = x0 + r() * bw;
+      const amp = 2 + r() * 5;
+      g.strokeStyle = `rgba(${r() < 0.6 ? '70,35,12' : '220,170,110'},${0.06 + r() * 0.12})`;
+      g.lineWidth = 0.6 + r() * 2;
+      g.beginPath();
+      for (let y = 0; y <= 1024; y += 16) g.lineTo(x + Math.sin(y * 0.012 + k) * amp, y);
+      g.stroke();
+    }
+    for (let k = 0; k < 2; k++) {
+      if (r() < 0.45) continue;
+      const kx = x0 + 15 + r() * (bw - 30);
+      const ky = r() * 1024;
+      const grad = g.createRadialGradient(kx, ky, 1, kx, ky, 12 + r() * 8);
+      grad.addColorStop(0, 'rgba(60,28,10,0.95)');
+      grad.addColorStop(0.5, 'rgba(90,45,18,0.5)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(kx, ky, 12, 20, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.fillStyle = 'rgba(35,18,6,0.7)';
+    g.fillRect(x0, 0, 3, 1024);
+    g.fillStyle = 'rgba(255,220,170,0.08)';
+    g.fillRect(x0 + 3, 0, 2, 1024);
+  }
+  return texture(c, { repeat: [1, 1] });
+}
+
+/** A wool rug with an eighties pattern. */
+export function rug(): THREE.CanvasTexture {
+  const [c, g] = canvas(1024, 768);
+  g.fillStyle = '#5a1f24';
+  g.fillRect(0, 0, 1024, 768);
+  g.strokeStyle = '#d9a441';
+  g.lineWidth = 14;
+  g.strokeRect(40, 40, 944, 688);
+  g.strokeStyle = '#1f3a4d';
+  g.lineWidth = 22;
+  g.strokeRect(78, 78, 868, 612);
+  for (let y = 0; y < 5; y++)
+    for (let x = 0; x < 7; x++) {
+      const cx = 160 + x * 117;
+      const cy = 170 + y * 107;
+      g.save();
+      g.translate(cx, cy);
+      g.rotate(Math.PI / 4);
+      g.fillStyle = (x + y) % 2 ? '#d9a441' : '#2f6b6b';
+      g.fillRect(-26, -26, 52, 52);
+      g.fillStyle = '#5a1f24';
+      g.fillRect(-12, -12, 24, 24);
+      g.restore();
+    }
+  const r = rng(5);
+  for (let i = 0; i < 9000; i++) {
+    g.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '0,0,0'},${r() * 0.06})`;
+    g.fillRect(r() * 1024, r() * 768, 2, 2);
+  }
+  for (let x = 0; x < 1024; x += 8) {
+    g.fillStyle = '#e8dcc0';
+    g.fillRect(x, 0, 3, 14);
+    g.fillRect(x, 754, 3, 14);
+  }
+  return texture(c);
+}
+
 /** Dark floorboards, slightly uneven. */
 export function boards(seed: number): THREE.CanvasTexture {
   const [c, g] = canvas(1024, 1024);

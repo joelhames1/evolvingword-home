@@ -1,6 +1,7 @@
-// All the sound is synthesized live with Web Audio: rain against the glass,
-// vinyl crackle, a neon hum, and a lo-fi band (electric piano, bass, soft
-// drums) playing a slow chord loop with a little tape wobble. No audio files.
+// All the sound is synthesized live with Web Audio: wind around the chalet,
+// vinyl crackle, cowbells far off in the valley, a lo-fi band (electric piano,
+// bass, soft drums) playing a slow chord loop with a little tape wobble, and
+// the small sounds of things in the room. No audio files.
 
 const CHORDS = [
   { bass: 43, notes: [58, 62, 65, 69] }, // Gm9
@@ -18,9 +19,10 @@ export class Sound {
   private master!: GainNode;
   private musicBus!: GainNode;
   private ambience!: GainNode;
-  private rainGain!: GainNode;
+  private windGain!: GainNode;
   private wow!: GainNode;
   private noise!: AudioBuffer;
+  private penGain!: GainNode;
   private timer = 0;
   private step = 0;
   private nextAt = 0;
@@ -64,9 +66,9 @@ export class Sound {
     this.ambience.connect(this.master);
 
     this.noise = this.noiseBuffer(4);
-    this.startRain();
+    this.startWind();
     this.startCrackle();
-    this.startHum();
+    this.startPen();
 
     this.nextAt = ctx.currentTime + 0.2;
     this.timer = window.setInterval(() => this.schedule(), 25);
@@ -88,59 +90,10 @@ export class Sound {
     this.musicBus.gain.setTargetAtTime(on ? 0.55 : 0, this.ctx.currentTime, 0.3);
   }
 
-  /** 0 inside, 1 out in the street: the rain gets loud and the band fades. */
+  /** 0 at the desk, 1 with your nose to the glass: the wind gets louder. */
   setOutside(k: number) {
     if (!this.ctx) return;
-    this.rainGain.gain.setTargetAtTime(0.1 + k * 0.35, this.ctx.currentTime, 0.5);
-  }
-
-  /** A spinner passing the window, left to right: turbine whine, rushing air, a low hum that drops as it goes. */
-  flyby(seconds: number) {
-    if (!this.ctx || this.muted) return;
-    const ctx = this.ctx;
-    const now = ctx.currentTime;
-    const mid = now + seconds / 2;
-    const end = now + seconds;
-    const pan = ctx.createStereoPanner();
-    pan.pan.setValueAtTime(-0.9, now);
-    pan.pan.linearRampToValueAtTime(0.9, end);
-    const out = ctx.createGain();
-    out.gain.setValueAtTime(0.0001, now);
-    out.gain.exponentialRampToValueAtTime(0.5, mid);
-    out.gain.exponentialRampToValueAtTime(0.0001, end);
-    out.connect(pan).connect(this.ambience);
-    // Rushing air.
-    const air = ctx.createBufferSource();
-    air.buffer = this.noise;
-    air.loop = true;
-    const band = ctx.createBiquadFilter();
-    band.type = 'bandpass';
-    band.Q.value = 1.4;
-    band.frequency.setValueAtTime(260, now);
-    band.frequency.exponentialRampToValueAtTime(900, mid);
-    band.frequency.exponentialRampToValueAtTime(220, end);
-    air.connect(band).connect(out);
-    air.start(now);
-    air.stop(end);
-    // Engine hum, dropping in pitch as it passes.
-    for (const [base, type, level] of [
-      [62, 'sawtooth', 0.12],
-      [124.5, 'triangle', 0.08],
-    ] as const) {
-      const osc = ctx.createOscillator();
-      osc.type = type;
-      osc.frequency.setValueAtTime(base * 1.06, now);
-      osc.frequency.setValueAtTime(base * 1.06, mid - 0.6);
-      osc.frequency.linearRampToValueAtTime(base * 0.94, mid + 0.6);
-      const low = ctx.createBiquadFilter();
-      low.type = 'lowpass';
-      low.frequency.value = 520;
-      const g = ctx.createGain();
-      g.gain.value = level;
-      osc.connect(low).connect(g).connect(out);
-      osc.start(now);
-      osc.stop(end);
-    }
+    this.windGain.gain.setTargetAtTime(0.08 + k * 0.12, this.ctx.currentTime, 0.5);
   }
 
   private noiseBuffer(seconds: number, brown = false) {
@@ -165,32 +118,59 @@ export class Sound {
     return s;
   }
 
-  private startRain() {
+  private startWind() {
     const ctx = this.ctx!;
-    const bed = this.loop(this.noiseBuffer(5, true));
+    const bed = this.loop(this.noiseBuffer(6, true));
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = 1400;
-    this.rainGain = ctx.createGain();
-    this.rainGain.gain.value = 0.1;
-    bed.connect(lp).connect(this.rainGain).connect(this.ambience);
+    lp.frequency.value = 520;
+    lp.Q.value = 1.6;
+    // Gusts: the filter and the level both breathe, slowly and out of step.
+    const gust = ctx.createOscillator();
+    gust.frequency.value = 0.07;
+    const gustDepth = ctx.createGain();
+    gustDepth.gain.value = 260;
+    gust.connect(gustDepth).connect(lp.frequency);
+    gust.start();
+    this.windGain = ctx.createGain();
+    this.windGain.gain.value = 0.08;
+    const swell = ctx.createOscillator();
+    swell.frequency.value = 0.043;
+    const swellDepth = ctx.createGain();
+    swellDepth.gain.value = 0.03;
+    swell.connect(swellDepth).connect(this.windGain.gain);
+    swell.start();
+    bed.connect(lp).connect(this.windGain).connect(this.ambience);
     bed.start();
-    // Patter on the glass: brighter, choppier.
-    const patter = this.loop(this.noise);
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 3800;
-    bp.Q.value = 0.7;
-    const pg = ctx.createGain();
-    pg.gain.value = 0.035;
-    const flutter = ctx.createOscillator();
-    flutter.frequency.value = 7.3;
-    const fg = ctx.createGain();
-    fg.gain.value = 0.015;
-    flutter.connect(fg).connect(pg.gain);
-    flutter.start();
-    patter.connect(bp).connect(pg).connect(this.rainGain);
-    patter.start();
+    this.cowbells();
+  }
+
+  /** Now and then, a few cowbells somewhere down the valley. */
+  private cowbells() {
+    const ctx = this.ctx!;
+    const ring = () => {
+      if (!this.ctx) return;
+      const t0 = ctx.currentTime + 0.1;
+      const n = 2 + Math.floor(Math.random() * 5);
+      for (let i = 0; i < n; i++) {
+        const at = t0 + i * (0.25 + Math.random() * 0.5);
+        const f = 520 + Math.random() * 260;
+        for (const [mult, amp] of [
+          [1, 1],
+          [2.76, 0.5],
+          [5.4, 0.25],
+        ]) {
+          const o = ctx.createOscillator();
+          o.frequency.value = f * mult;
+          const g = this.env(at, 0.006 * amp, 0.004, 0.9);
+          o.connect(g).connect(this.ambience);
+          o.start(at);
+          o.stop(at + 1);
+        }
+      }
+      window.setTimeout(ring, 25000 + Math.random() * 35000);
+    };
+    window.setTimeout(ring, 9000);
   }
 
   private startCrackle() {
@@ -209,24 +189,6 @@ export class Sound {
     g.gain.value = 0.22;
     s.connect(hp).connect(g).connect(this.musicBus);
     s.start();
-  }
-
-  private startHum() {
-    const ctx = this.ctx!;
-    const g = ctx.createGain();
-    g.gain.value = 0.006;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 240;
-    bp.Q.value = 3;
-    for (const f of [60, 120.4]) {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = f;
-      o.connect(bp);
-      o.start();
-    }
-    bp.connect(g).connect(this.ambience);
   }
 
   // --- the band ---------------------------------------------------------------
@@ -403,6 +365,162 @@ export class Sound {
     g.gain.linearRampToValueAtTime(0, h + 1.8);
     n.connect(bp).connect(g).connect(this.ambience);
     n.start(h + 0.95, 0, 0.9);
+  }
+
+  /** The nib on paper: a soft scratch that runs while the pen writes. */
+  private startPen() {
+    const ctx = this.ctx!;
+    const n = this.loop(this.noise);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 2600;
+    bp.Q.value = 1.2;
+    const wobble = ctx.createOscillator();
+    wobble.frequency.value = 9;
+    const wd = ctx.createGain();
+    wd.gain.value = 900;
+    wobble.connect(wd).connect(bp.frequency);
+    wobble.start();
+    this.penGain = ctx.createGain();
+    this.penGain.gain.value = 0;
+    n.connect(bp).connect(this.penGain).connect(this.ambience);
+    n.start();
+  }
+
+  pen(on: boolean) {
+    if (!this.ctx) return;
+    this.penGain.gain.setTargetAtTime(on && !this.muted ? 0.035 : 0, this.ctx.currentTime, 0.05);
+  }
+
+  /** A short burst of filtered noise: the building block of most room sounds. */
+  private burst(freq: number, q: number, vol: number, len: number, delay = 0, type: BiquadFilterType = 'bandpass') {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx;
+    const at = ctx.currentTime + delay;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    f.Q.value = q;
+    const g = this.env(at, vol, 0.002, len);
+    n.connect(f).connect(g).connect(this.ambience);
+    n.start(at, Math.random() * 3, len + 0.1);
+  }
+
+  /** A bite of chocolate: a snap, then a little crunch. */
+  crunch() {
+    this.burst(3200, 0.9, 0.12, 0.05);
+    for (let i = 1; i < 5; i++) this.burst(1400 + Math.random() * 1800, 1.2, 0.05, 0.04, 0.05 + i * 0.06);
+  }
+
+  /** A sip of cappuccino. */
+  sip() {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx;
+    const at = ctx.currentTime;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 2;
+    bp.frequency.setValueAtTime(700, at);
+    bp.frequency.linearRampToValueAtTime(1600, at + 0.35);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.06, at + 0.08);
+    g.gain.linearRampToValueAtTime(0.0, at + 0.4);
+    n.connect(bp).connect(g).connect(this.ambience);
+    n.start(at, Math.random() * 3, 0.5);
+  }
+
+  /** The steam wand, for a refill. */
+  steam() {
+    this.burst(5200, 0.6, 0.05, 1.1, 0, 'highpass');
+  }
+
+  /** A watch pusher: a crisp mechanical click. */
+  pusher() {
+    this.burst(6000, 3, 0.09, 0.02);
+    this.burst(2400, 4, 0.05, 0.03, 0.012);
+  }
+
+  /** One tick of a watch, very small. */
+  tick() {
+    this.burst(7200, 6, 0.012, 0.012);
+  }
+
+  /** Paper: a page turning, or a sheet torn off the pad. */
+  page() {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx;
+    const at = ctx.currentTime;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(1800, at);
+    bp.frequency.exponentialRampToValueAtTime(4200, at + 0.25);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.05, at + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.32);
+    n.connect(bp).connect(g).connect(this.ambience);
+    n.start(at, Math.random() * 3, 0.4);
+  }
+
+  /** A coin on foil. Call it often; it keeps itself quiet. */
+  private lastScratch = 0;
+  scratch() {
+    if (!this.ctx || performance.now() - this.lastScratch < 45) return;
+    this.lastScratch = performance.now();
+    this.burst(4800 + Math.random() * 2000, 1.4, 0.03, 0.05);
+  }
+
+  /** Split-flaps falling: a quick clatter, one click per flap. */
+  flaps(n: number) {
+    for (let i = 0; i < Math.min(n, 6); i++) this.burst(3800 + Math.random() * 1500, 5, 0.018, 0.012, i * 0.012);
+  }
+
+  /** A medal swinging against its neighbor. */
+  jingle() {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx;
+    const at = ctx.currentTime;
+    for (const [f, d] of [
+      [2637, 0],
+      [3520, 0.07],
+      [3136, 0.16],
+    ]) {
+      const o = ctx.createOscillator();
+      o.frequency.value = f;
+      const g = this.env(at + d, 0.02, 0.002, 0.5);
+      o.connect(g).connect(this.ambience);
+      o.start(at + d);
+      o.stop(at + d + 0.6);
+    }
+  }
+
+  /** A card flicking past on the Rolodex. */
+  flick() {
+    this.burst(2600, 2, 0.06, 0.03);
+  }
+
+  /** Shoes landing on the floorboards. */
+  thud() {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx;
+    const at = ctx.currentTime;
+    for (const d of [0, 0.12]) {
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(140, at + d);
+      o.frequency.exponentialRampToValueAtTime(60, at + d + 0.1);
+      const g = this.env(at + d, 0.12, 0.003, 0.14);
+      o.connect(g).connect(this.ambience);
+      o.start(at + d);
+      o.stop(at + d + 0.2);
+    }
   }
 
   stop() {

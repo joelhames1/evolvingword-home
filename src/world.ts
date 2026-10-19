@@ -1,5 +1,5 @@
 // The renderer, the scene, the camera and the film look laid over everything:
-// bloom on the neon, grain, a vignette, a touch of lens fringing, and a
+// bloom on the lamps, grain, a vignette, a touch of lens fringing, and a
 // "lo-fi" switch that drops it to chunky 90s pixels and scanlines.
 import * as THREE from 'three';
 import {
@@ -47,9 +47,8 @@ export function createWorld(host: HTMLElement, quality: Quality): World {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#05060d');
-  scene.fog = new THREE.FogExp2('#0b0f22', 0.012);
 
-  const camera = new THREE.PerspectiveCamera(42, host.clientWidth / host.clientHeight, 0.02, 900);
+  const camera = new THREE.PerspectiveCamera(42, host.clientWidth / host.clientHeight, 0.05, 3200);
 
   const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling: quality === 'high' ? 4 : 0 });
   composer.addPass(new RenderPass(scene, camera));

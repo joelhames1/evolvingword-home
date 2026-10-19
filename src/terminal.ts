@@ -35,7 +35,7 @@ const GREEN = '#9dffc0';
 const DIM = '#4a8f68';
 const AMBER = '#ffcf7a';
 
-export function buildTerminal(on: { open: (url: string) => void; go: (page: Page) => void; evolve: (text: string) => void; contact: string }): Terminal {
+export function buildTerminal(on: { open: (url: string) => void; go: (page: Page | 'library') => void; evolve: (text: string) => void; contact: string }): Terminal {
   const [c, g] = canvas(W, H);
   const tex = texture(c);
   let current: Page = 'menu';
@@ -51,12 +51,13 @@ export function buildTerminal(on: { open: (url: string) => void; go: (page: Page
     menu: () => [
       { text: 'EVOLVING WORD', big: true },
       { text: '' },
-      { text: 'A LITTLE STUDIO AT THE EDGE OF THE CITY.', color: DIM },
+      { text: 'A LITTLE STUDIO BY THE LAKE.', color: DIM },
       { text: '' },
       { text: '[1] PROJECTS', action: () => on.go('projects'), key: '1' },
       { text: '[2] ABOUT', action: () => on.go('about'), key: '2' },
       { text: '[3] SIGNAL  (WRITE TO US)', action: () => on.go('signal'), key: '3' },
       { text: '[4] EVOLVE A WORD', action: () => on.go('evolve'), key: '4' },
+      { text: '[5] LIBRARY', action: () => on.go('library'), key: '5' },
     ],
     evolve: () => [
       { text: 'EVOLVE', big: true },
@@ -94,7 +95,7 @@ export function buildTerminal(on: { open: (url: string) => void; go: (page: Page
     about: () => [
       { text: 'ABOUT', big: true },
       { text: '' },
-      { text: 'THE NOTEPAD HAS IT. ->', color: DIM },
+      { text: 'THE WALL ON THE RIGHT HAS IT. ->', color: DIM },
       { text: '' },
       { text: '[M] MAIN MENU', action: () => on.go('menu'), key: 'm' },
     ],

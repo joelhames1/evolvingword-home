@@ -4,10 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Evolving Word</title>
-    <meta name="description" content="A little studio at the edge of the city, where family and friends make things together. Home of Our Studio: design together, print together." />
+    <meta name="description" content="A little studio by a mountain lake: poems, races, books, a scratch map of the world, and Our Studio, where family and friends design together and print together." />
     <meta name="theme-color" content="#05060d" />
     <meta property="og:title" content="Evolving Word" />
-    <meta property="og:description" content="A little studio at the edge of the city. Step inside." />
+    <meta property="og:description" content="A little studio by a mountain lake. Step inside." />
     <meta property="og:image" content="https://evolvingword.com/og.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -28,6 +28,7 @@
         <button data-go="desk" aria-current="true">Studio</button>
         <button data-go="projects">Projects</button>
         <button data-go="about">About</button>
+        <button data-go="library">Library</button>
         <button data-go="signal">Signal</button>
       </nav>
     </header>
@@ -48,12 +49,28 @@
 
     <aside id="about" class="notepad" hidden aria-labelledby="about-title">
       <h2 id="about-title">About</h2>
-      <p>Evolving Word is where we make things together.</p>
-      <p>It started with a shirt for a trip and turned into a little studio: a place where family and friends dream something up, argue happily about the details, and then actually make it.</p>
-      <p>Everything here is built with AI as a collaborator: the words, the pictures, even this room. The rain is code. So is the music on the tape deck.</p>
-      <p>More projects are on the press.</p>
+      <div id="about-body"></div>
       <p class="sig">Evolving Word</p>
     </aside>
+
+    <aside id="card" class="card" hidden aria-live="polite">
+      <p class="card-kicker" id="card-kicker"></p>
+      <h2 id="card-title"></h2>
+      <div id="card-body"></div>
+      <div class="card-actions" id="card-actions"></div>
+    </aside>
+
+    <div id="reader" class="reader" hidden role="dialog">
+      <div class="book">
+        <div class="page left"></div>
+        <div class="page right"></div>
+      </div>
+      <div class="reader-bar">
+        <button class="reader-prev" aria-label="Previous pages">‹ Back</button>
+        <button class="reader-close">Close the book</button>
+        <button class="reader-next" aria-label="Next pages">Next ›</button>
+      </div>
+    </div>
 
     <aside id="project" class="ticket" hidden aria-live="polite">
       <p class="ticket-no" id="project-no"></p>
@@ -71,7 +88,7 @@
     <div id="tooltip" role="presentation"></div>
 
     <footer class="controls" id="controls">
-      <p class="hints" id="hints">1 projects · 2 about · 3 signal · E evolve a word · W window · L lamp · T tape</p>
+      <p class="hints" id="hints">Click anything that glows · 1 projects · 2 about · B books · M map · E evolve a word · W window · T tape</p>
       <div class="buttons">
         <button id="credits-btn">Credits</button>
         <button id="lofi-btn" aria-pressed="false">Lo-fi</button>
@@ -82,16 +99,16 @@
     <div id="credits" hidden role="dialog" aria-labelledby="credits-title">
       <div class="credits-box">
         <h2 id="credits-title">Credits</h2>
-        <p>Everything you see and hear is made in your browser as you watch: no photos, no 3D models, no audio files. The rain, the city, the billboard and the music on the tape are all code.</p>
-        <p>The billboard runs Richard Dawkins' "weasel program" from <em>The Blind Watchmaker</em> (1986): random letters, copied with mistakes, the best copy kept, generation after generation, until they spell something.</p>
-        <p>Built with three.js. Type: Archivo Black, VT323, Caveat and Space Mono (SIL Open Font License). Made with Claude.</p>
+        <p>Everything you see and hear is made in your browser as you watch: no photos, no 3D models, no audio files. The mountains, the lake, the music on the tape and the scratch map are all code.</p>
+        <p>The board over the window runs Richard Dawkins' "weasel program" from <em>The Blind Watchmaker</em> (1986): random letters, copied with mistakes, the best copy kept, generation after generation, until they spell something.</p>
+        <p>The books on the shelf are in the public domain. The world map is drawn from Natural Earth data (public domain). Built with three.js and d3-geo. Type: Archivo Black, VT323, Caveat, Space Mono, EB Garamond and UnifrakturMaguntia (SIL Open Font License). Made with Claude.</p>
         <button id="credits-close">Close</button>
       </div>
     </div>
 
     <main id="plain">
       <section class="plain-hero">
-        <p class="plain-kicker">A little studio at the edge of the city</p>
+        <p class="plain-kicker">A little studio by a mountain lake</p>
         <h1>Evolving Word</h1>
         <p>Where family and friends make things together, then make them for real.</p>
         <p class="plain-full"><a href="?full">Step inside the full scene</a> (best on a laptop or desktop)</p>
@@ -102,7 +119,31 @@
       </section>
       <section aria-labelledby="plain-about">
         <h2 id="plain-about">About</h2>
-        <p>Evolving Word started with a shirt for a trip and turned into a little studio: a place to dream something up together, argue happily about the details, and then actually make it. Everything here is built with AI as a collaborator.</p>
+        <div id="plain-about-body"></div>
+      </section>
+      <section aria-labelledby="plain-writing">
+        <h2 id="plain-writing">Writing</h2>
+        <div id="plain-poems"></div>
+      </section>
+      <section aria-labelledby="plain-running">
+        <h2 id="plain-running">Running</h2>
+        <ul id="plain-medals" class="plain-plain"></ul>
+      </section>
+      <section aria-labelledby="plain-work">
+        <h2 id="plain-work">Work</h2>
+        <ul id="plain-work-list" class="plain-plain"></ul>
+      </section>
+      <section aria-labelledby="plain-education">
+        <h2 id="plain-education">Education</h2>
+        <ul id="plain-diplomas" class="plain-plain"></ul>
+      </section>
+      <section aria-labelledby="plain-travel">
+        <h2 id="plain-travel">Places</h2>
+        <p id="plain-places"></p>
+      </section>
+      <section aria-labelledby="plain-reading">
+        <h2 id="plain-reading">On the shelf</h2>
+        <ul id="plain-books" class="plain-plain"></ul>
       </section>
       <section aria-labelledby="plain-signal">
         <h2 id="plain-signal">Signal</h2>

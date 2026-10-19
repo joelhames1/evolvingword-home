@@ -56,6 +56,6 @@ describe('cleaning what people type', () => {
   it('stops at the longest phrase the billboard can hold', () => {
     const long = clean('the quick brown fox jumps over the lazy dog');
     expect(long.length).toBeLessThanOrEqual(MAX_PHRASE);
-    expect(long).toBe('THE QUICK BROWN FO');
+    expect(long).toBe('THE QUICK BROWN');
   });
 });

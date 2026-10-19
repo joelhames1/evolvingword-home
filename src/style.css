@@ -121,7 +121,7 @@ nav button[aria-current='true'] {
   text-shadow: none;
 }
 
-/* The gate: a CRT boot screen over the live city. */
+/* The gate: a CRT boot screen over the live valley. */
 #gate {
   position: fixed;
   inset: 0;
@@ -585,4 +585,202 @@ body.lite {
     left: 16px;
     right: 16px;
   }
+}
+
+/* A card for things in the room: a museum label crossed with an index card. */
+.card {
+  position: fixed;
+  left: 4vw;
+  bottom: calc(var(--bar, 0px) + 5vh);
+  width: min(400px, 36vw);
+  max-height: calc(100vh - 2 * var(--bar, 0px) - 10vh);
+  overflow: auto;
+  z-index: 12;
+  padding: 24px 28px 20px;
+  background: #f4eedf;
+  color: #1d1a16;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 19px;
+  line-height: 1.45;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.55);
+  border-top: 6px solid #7a2a22;
+  animation: lift 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.card-kicker {
+  margin: 0;
+  font-family: var(--type);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #7a2a22;
+}
+.card h2 {
+  margin: 4px 0 8px;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-weight: 600;
+  font-size: 32px;
+  line-height: 1.1;
+}
+.card p {
+  margin: 0 0 10px;
+}
+.card .note {
+  font-family: var(--type);
+  font-size: 13px;
+  color: #6d665c;
+}
+.card ul {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.card li {
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+.card li strong {
+  display: block;
+}
+.card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.card-actions button,
+.card-actions a {
+  background: #1d1a16;
+  color: #f4eedf;
+  border: 0;
+  padding: 8px 14px;
+  font-family: var(--type);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.card-actions button.quiet {
+  background: transparent;
+  color: #1d1a16;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+/* The book reader: an open book over a dimmed room. */
+.reader {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  background: rgba(8, 6, 4, 0.72);
+  backdrop-filter: blur(3px);
+}
+.reader .book {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: min(1060px, 92vw);
+  height: min(640px, 76vh);
+  background: #3a2414;
+  padding: 14px;
+  border-radius: 6px;
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.7);
+}
+.reader .page {
+  position: relative;
+  overflow: hidden;
+  padding: 44px 52px 48px;
+  background: #f5eedb;
+  color: #2a2118;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 19px;
+  line-height: 1.42;
+}
+.reader .page.left {
+  box-shadow: inset -18px 0 30px -18px rgba(0, 0, 0, 0.35);
+}
+.reader .page.right {
+  box-shadow: inset 18px 0 30px -18px rgba(0, 0, 0, 0.35);
+}
+.reader h3 {
+  margin: 0 0 18px;
+  font-weight: 600;
+  font-size: 22px;
+  font-variant: small-caps;
+  letter-spacing: 0.04em;
+}
+.reader p {
+  margin: 0;
+}
+.reader p.verse {
+  padding-left: 1.2em;
+  text-indent: -1.2em;
+  white-space: pre-wrap;
+}
+.reader p.prose {
+  text-indent: 1.4em;
+  margin-bottom: 0.8em;
+  text-align: justify;
+  hyphens: auto;
+}
+.reader .folio {
+  position: absolute;
+  bottom: 18px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 15px;
+  color: #8a7a62;
+}
+.reader .title-page {
+  display: grid;
+  place-content: center;
+  height: 100%;
+  text-align: center;
+}
+.reader .title-page h2 {
+  margin: 0 0 14px;
+  font-size: 46px;
+  font-weight: 500;
+  line-height: 1.05;
+}
+.reader .title-page .by {
+  font-style: italic;
+  font-size: 24px;
+}
+.reader .title-page .year {
+  margin-top: 30px;
+  font-family: var(--type);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #8a7a62;
+}
+.reader-bar {
+  display: flex;
+  gap: 10px;
+}
+.reader-bar button {
+  background: rgba(244, 238, 223, 0.92);
+  color: #1d1a16;
+  border: 0;
+  padding: 9px 16px;
+  font-family: var(--type);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.reader-bar button:disabled {
+  opacity: 0.35;
+}
+
+/* The plain page's extra sections. */
+#plain .plain-plain li {
+  padding: 8px 0;
+}
+#plain .poem {
+  margin: 0 0 18px;
+  font-family: 'EB Garamond', Georgia, serif;
+  white-space: pre-line;
 }

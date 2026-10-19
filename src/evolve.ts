@@ -5,7 +5,7 @@
 
 export const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789!&'";
 /** The longest phrase the billboard can show and still be read from across the street. */
-export const MAX_PHRASE = 18;
+export const MAX_PHRASE = 16;
 
 /** What someone typed, reduced to what the billboard can breed: capitals, digits, a little punctuation. */
 export function clean(text: string): string {
