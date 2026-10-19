@@ -39,17 +39,24 @@ function cardTexture(job?: (typeof WORK)[number], n?: number) {
   g.fillRect(180, 352, 60, 32);
   g.fillRect(400, 352, 60, 32);
   if (job) {
+    // Long names and notes shrink to fit the card, above the rail.
+    const fit = (text: string, weight: string, size: number, family: string, max: number) => {
+      let px = size;
+      g.font = `${weight} ${px}px ${family}`;
+      while (g.measureText(text).width > max && px > 16) g.font = `${weight} ${--px}px ${family}`;
+    };
     g.fillStyle = '#1b1b22';
-    g.font = '700 46px "Space Mono", monospace';
-    g.fillText(job.company.toUpperCase().slice(0, 22), 30, 70);
-    g.font = '400 34px "Space Mono", monospace';
+    fit(job.company.toUpperCase(), '700', 46, '"Space Mono", monospace', 490);
+    g.fillText(job.company.toUpperCase(), 30, 70);
     g.fillStyle = '#2a3a7a';
+    fit(job.role, '400', 34, '"Space Mono", monospace', 580);
     g.fillText(job.role, 30, 150);
     g.fillStyle = '#5a5248';
+    g.font = '400 34px "Space Mono", monospace';
     g.fillText(job.years, 30, 196);
-    g.font = '400 40px "Caveat", cursive';
     g.fillStyle = '#1c2b6b';
-    g.fillText(job.note.slice(0, 40), 30, 284);
+    fit(job.note, '600', 40, '"Caveat", cursive', 580);
+    g.fillText(job.note, 30, 284);
     g.font = '400 24px "Space Mono", monospace';
     g.fillStyle = '#8a8070';
     g.fillText(`${String((n ?? 0) + 1).padStart(2, '0')}/${String(WORK.length).padStart(2, '0')}`, 540, 40);

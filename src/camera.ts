@@ -25,7 +25,7 @@ export const SHOTS: Record<string, Shot> = {
   desk: { pos: v(0, 1.4, 1.35), target: v(0, 1.36, -1.9), fov: 46, lean: 0.1 },
   window: { pos: v(0.1, 1.55, -1.25), target: v(-60, 26, -1200), fov: 46, lean: 0.04 },
   board: { pos: v(0, 1.75, -0.55), target: v(0, 2.42, -2), fov: 46, lean: 0.03 },
-  projects: { pos: v(1.05, 1.82, 0.62), target: v(1.2, 1.86, -0.95), fov: 40, lean: 0.06 },
+  projects: { pos: v(-0.75, 1.88, 1.6), target: v(-2.1, 1.86, 1.9), fov: 40, lean: 0.06 },
   signal: { pos: v(-0.12, 1.1, -0.86), target: v(-0.12, 1.09, -1.4), fov: 31, lean: 0.015, near: 0.02 },
 };
 

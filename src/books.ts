@@ -1,19 +1,50 @@
 // The readable books on the shelf. Every text here is in the public domain.
+// The short ones live here; the long ones (Dante, Homer, Poe, Khayyám) are
+// fetched from public/books/ when first opened, built by scripts/books.mjs.
+
+export interface Piece {
+  title: string;
+  /** A prose summary before the verse, like Pope's arguments. */
+  note?: string;
+  text: string;
+}
 
 export interface Book {
   id: string;
   title: string;
   author: string;
+  /** The translator, when there is one. */
+  by?: string;
   year: string;
+  /** A short name for buttons. */
+  short?: string;
   /** Spine colors: cloth and lettering. */
   cloth: string;
   ink: string;
-  pieces: { title: string; text: string }[];
+  /** Where to fetch the text, for books too long to ship with the page. */
+  src?: string;
+  pieces: Piece[];
+}
+
+/** Fetches a long book's text the first time it's opened. */
+export async function loadBook(book: Book): Promise<Book> {
+  if (!book.src || book.pieces.length) return book;
+  const res = await fetch(book.src);
+  if (!res.ok) throw new Error(`Could not load ${book.title}`);
+  book.pieces = ((await res.json()) as { pieces: Piece[] }).pieces;
+  return book;
 }
 
 export const BOOKS: Book[] = [
+  { id: 'inferno', title: 'Inferno', short: 'Inferno', author: 'Dante Alighieri', by: 'Henry Wadsworth Longfellow', year: '1867', cloth: '#5e1717', ink: '#e2c27a', src: '/books/inferno.json', pieces: [] },
+  { id: 'purgatorio', title: 'Purgatorio', short: 'Purgatorio', author: 'Dante Alighieri', by: 'Henry Wadsworth Longfellow', year: '1867', cloth: '#5e1717', ink: '#e2c27a', src: '/books/purgatorio.json', pieces: [] },
+  { id: 'paradiso', title: 'Paradiso', short: 'Paradiso', author: 'Dante Alighieri', by: 'Henry Wadsworth Longfellow', year: '1867', cloth: '#5e1717', ink: '#e2c27a', src: '/books/paradiso.json', pieces: [] },
+  { id: 'odyssey', title: 'The Odyssey', short: 'Odyssey', author: 'Homer', by: 'Alexander Pope', year: '1726', cloth: '#1d3550', ink: '#e6d4a0', src: '/books/odyssey.json', pieces: [] },
+  { id: 'poe', title: 'The Bells and Other Poems', short: 'Poe', author: 'Edgar Allan Poe', year: '1827 to 1849', cloth: '#16161a', ink: '#c9ccd2', src: '/books/poe.json', pieces: [] },
+  { id: 'rubaiyat', title: 'Rubáiyát of Omar Khayyám', short: 'Rubáiyát', author: 'Omar Khayyám', by: 'Edward FitzGerald', year: '1889', cloth: '#6b4a1e', ink: '#f0d690', src: '/books/rubaiyat.json', pieces: [] },
   {
     id: 'sonnets',
+    short: 'Sonnets',
     title: 'Sonnets',
     author: 'William Shakespeare',
     year: '1609',
@@ -92,6 +123,7 @@ But bears it out even to the edge of doom.
   },
   {
     id: 'dickinson',
+    short: 'Dickinson',
     title: 'Poems',
     author: 'Emily Dickinson',
     year: '1890',
@@ -163,6 +195,7 @@ Were toward Eternity –`,
   },
   {
     id: 'frost',
+    short: 'Frost',
     title: 'Mountain Interval & Other Poems',
     author: 'Robert Frost',
     year: '1916 to 1923',
@@ -244,6 +277,7 @@ And would suffice.`,
   },
   {
     id: 'whitman',
+    short: 'Whitman',
     title: 'Leaves of Grass',
     author: 'Walt Whitman',
     year: '1855 to 1892',
@@ -313,6 +347,7 @@ I stop somewhere waiting for you.`,
   },
   {
     id: 'romantics',
+    short: 'Romantics',
     title: 'The Romantics',
     author: 'Wordsworth, Keats, Shelley, Blake',
     year: '1794 to 1819',
@@ -419,6 +454,7 @@ Dare frame thy fearful symmetry?`,
   },
   {
     id: 'yeats',
+    short: 'Yeats',
     title: 'Early Poems',
     author: 'W. B. Yeats',
     year: '1890 to 1899',
@@ -474,6 +510,7 @@ Tread softly because you tread on my dreams.`,
   },
   {
     id: 'walden',
+    short: 'Walden',
     title: 'Walden',
     author: 'Henry David Thoreau',
     year: '1854',

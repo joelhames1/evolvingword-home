@@ -2,12 +2,13 @@
 // map, with the countries already visited scratched through. Drag across it
 // in close-up to scratch some more; the foil remembers, per visitor.
 import * as THREE from 'three';
-import { geoEquirectangular, geoGraticule10, geoPath } from 'd3-geo';
+import { geoCircle, geoEquirectangular, geoGraticule10, geoPath } from 'd3-geo';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import { feature } from 'topojson-client';
 import type { GeometryCollection, Topology } from 'topojson-specification';
 import world from 'world-atlas/countries-110m.json';
 import { VISITED } from '../content';
+import { mapName, SMALL_PLACES } from '../places';
 import { canvas, texture } from '../textures';
 
 export interface ScratchMap {
@@ -34,7 +35,16 @@ type Country = Feature<Geometry, { name: string }>;
 export function buildMap(): ScratchMap {
   const group = new THREE.Group();
   const topo = world as unknown as Topology<{ countries: GeometryCollection<{ name: string }> }>;
-  const countries = (feature(topo, topo.objects.countries) as FeatureCollection<Geometry, { name: string }>).features as Country[];
+  const outlines = (feature(topo, topo.objects.countries) as FeatureCollection<Geometry, { name: string }>).features as Country[];
+  // The small places as little round islands, so they scratch and count like the rest.
+  const dots: Country[] = Object.entries(SMALL_PLACES).map(([name, center]) => ({
+    type: 'Feature',
+    properties: { name },
+    geometry: geoCircle().center(center).radius(1.15)(),
+  }));
+  const countries = [...outlines, ...dots];
+  const known = new Set(outlines.map((c) => c.properties.name));
+  const visitedNames = new Set(VISITED.map((v) => mapName(v, known)).filter((n): n is string => !!n));
   const projection = geoEquirectangular().fitExtent(
     [
       [20, 20],
@@ -144,7 +154,7 @@ export function buildMap(): ScratchMap {
   const mpath = geoPath(projection, mg);
   const been = new Set<number>();
   countries.forEach((c, i) => {
-    if (!VISITED.includes(c.properties.name)) return;
+    if (!visitedNames.has(c.properties.name)) return;
     mg.beginPath();
     mpath(c);
     mg.fill();

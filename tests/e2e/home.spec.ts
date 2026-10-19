@@ -129,6 +129,43 @@ test('the things on the desk and walls', async ({ page }) => {
   expect(problems).toEqual([]);
 });
 
+test('the simple page has everything, and its books open', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  const problems = watch(page);
+  await page.goto('/?lite');
+  await expect(page.locator('#plain')).toBeVisible();
+  await expect(page.locator('#plain .q-poems .poem')).toHaveCount(5);
+  await expect(page.locator('#plain-medals li')).toHaveCount(4);
+  await expect(page.locator('#plain-medals')).toContainText('Los Angeles Marathon');
+  await expect(page.locator('#plain-work-list li').first()).toContainText('ParentSquare');
+  expect(await page.locator('#plain-map path.been').count()).toBeGreaterThan(20);
+  // A long book is fetched when opened, and its contents page jumps to a canto.
+  await page.getByRole('button', { name: 'Read Inferno, by Dante Alighieri' }).click();
+  await expect(page.locator('#reader')).toBeVisible();
+  await expect(page.locator('#reader .page.left')).toContainText('Longfellow');
+  await page.locator('#reader .contents button', { hasText: /^Canto I$/ }).click();
+  await expect(page.locator('#reader')).toContainText('Midway upon the journey of our life');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#reader')).toBeHidden();
+  expect(problems).toEqual([]);
+});
+
+test('the Simple button switches over, and the choice sticks until you step back in', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/?shot=desk&full');
+  await page.waitForFunction(() => 'world' in ((window as unknown as { __ew?: object }).__ew ?? {}));
+  await page.locator('#simple-btn').click();
+  await expect(page).toHaveURL(/\?lite/);
+  await expect(page.locator('#plain')).toBeVisible();
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveClass(/lite/);
+  await page.locator('#plain-full').click();
+  await expect(page).toHaveURL(/\?full/);
+  await expect(page.locator('#enter')).toBeEnabled({ timeout: 30_000 });
+  await expect(page.locator('html')).not.toHaveClass(/lite/);
+});
+
 test('phones get the plain page, with the project link', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const problems = watch(page);

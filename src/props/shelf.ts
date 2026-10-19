@@ -34,9 +34,11 @@ function spineTexture(b: Book) {
   g.rotate(Math.PI / 2);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.font = '600 46px "EB Garamond", serif';
-  const title = b.title.length > 20 ? b.title.slice(0, 19) + '…' : b.title;
-  g.fillText(title, 40, -14);
+  // The title shrinks to fit the spine rather than getting cut off.
+  let px = 46;
+  g.font = `600 ${px}px "EB Garamond", serif`;
+  while (g.measureText(b.title).width > 560 && px > 26) g.font = `600 ${(px -= 2)}px "EB Garamond", serif`;
+  g.fillText(b.title, 40, -14);
   g.font = 'italic 400 32px "EB Garamond", serif';
   g.fillText(b.author.split(',')[0], 40, 30);
   g.restore();
@@ -70,20 +72,25 @@ export function buildShelf(): Shelf {
   const m4 = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const readable: { book: Book; mesh: THREE.Object3D; home: THREE.Vector3 }[] = [];
-  let next = 0;
+  // Which readable books go on which shelf, bottom to top: the Dante and the
+  // Homer at eye level, anything not listed fills in at the bottom.
+  const PLAN = [['yeats', 'walden'], ['frost', 'whitman', 'romantics'], ['poe', 'rubaiyat', 'sonnets', 'dickinson'], ['inferno', 'purgatorio', 'paradiso', 'odyssey']];
+  const placed = new Set(PLAN.flat());
+  PLAN[0].push(...BOOKS.map((b) => b.id).filter((id) => !placed.has(id)));
   levels.forEach((y, li) => {
     if (li === levels.length - 1) return; // the top shelf has the boombox
     let x = -SW / 2 + 0.03;
     const end = SW / 2 - 0.03;
-    // Two readable books on most shelves, at a random spot in the run.
-    const slots = li === 0 ? [0.45 + r() * 0.2] : [0.15 + r() * 0.25, 0.6 + r() * 0.25];
+    // This shelf's readable books stand together, somewhere along the run.
+    const queue = (PLAN[li] ?? []).map((id) => BOOKS.find((b) => b.id === id)).filter((b): b is Book => !!b);
+    const from = 0.12 + r() * 0.3;
     while (x < end - 0.02) {
       const at = (x + SW / 2) / SW;
-      if (slots.length && at > slots[0] && next < BOOKS.length) {
-        slots.shift();
-        const b = BOOKS[next++];
-        const w = 0.042;
-        const h = 0.27;
+      if (queue.length && at > from) {
+        const b = queue.shift()!;
+        // The long books are thicker and a little taller.
+        const w = b.src ? 0.05 : 0.042;
+        const h = b.src ? 0.285 : 0.27;
         const book = new THREE.Group();
         const cover = new THREE.MeshStandardMaterial({ color: b.cloth, roughness: 0.7 });
         const pages = new THREE.MeshStandardMaterial({ color: '#efe6cf', roughness: 0.9 });

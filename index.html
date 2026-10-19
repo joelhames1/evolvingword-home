@@ -43,7 +43,7 @@
           <button id="enter" disabled>Click to enter</button>
           <button id="enter-muted" class="quiet" disabled>Enter muted</button>
         </div>
-        <p class="gate-note">Best on a laptop or desktop, with headphones.</p>
+        <p class="gate-note">Best on a laptop or desktop, with headphones. Or <a href="?lite" id="gate-simple">read the simple version</a>.</p>
       </div>
     </div>
 
@@ -67,6 +67,7 @@
       </div>
       <div class="reader-bar">
         <button class="reader-prev" aria-label="Previous pages">‹ Back</button>
+        <button class="reader-contents">Contents</button>
         <button class="reader-close">Close the book</button>
         <button class="reader-next" aria-label="Next pages">Next ›</button>
       </div>
@@ -87,9 +88,16 @@
 
     <div id="tooltip" role="presentation"></div>
 
+    <div id="slow" class="slow" hidden role="status">
+      <p>Running a little slowly on this computer?</p>
+      <button id="slow-simple">Try the simple version</button>
+      <button id="slow-stay" class="quiet">Stay here</button>
+    </div>
+
     <footer class="controls" id="controls">
       <p class="hints" id="hints">Click anything that glows · 1 projects · 2 about · B books · M map · E evolve a word · W window · T tape</p>
       <div class="buttons">
+        <button id="simple-btn" title="A lighter version of the page, with everything in it">Simple</button>
         <button id="credits-btn">Credits</button>
         <button id="lofi-btn" aria-pressed="false">Lo-fi</button>
         <button id="sound-btn" aria-pressed="false">Sound off</button>
@@ -107,48 +115,61 @@
     </div>
 
     <main id="plain">
-      <section class="plain-hero">
-        <p class="plain-kicker">A little studio by a mountain lake</p>
-        <h1>Evolving Word</h1>
-        <p>Where family and friends make things together, then make them for real.</p>
-        <p class="plain-full"><a href="?full">Step inside the full scene</a> (best on a laptop or desktop)</p>
+      <header class="q-hero">
+        <img class="q-hero-img" src="/og.jpg" alt="A mountain lake at dusk, with snow on the peaks and a village lit on the far shore." width="1200" height="630" />
+        <div class="q-hero-text">
+          <p class="q-kicker">A little studio by a mountain lake</p>
+          <h1>Evolving Word</h1>
+          <p class="q-lede">Where family and friends make things together, then make them for real.</p>
+          <p class="q-actions"><a class="q-step" id="plain-full" href="?full">Step inside the full scene</a><span class="q-note">Best on a laptop or desktop.</span></p>
+        </div>
+      </header>
+      <nav class="q-toc" aria-label="On this page">
+        <a href="#plain-projects">Projects</a><a href="#plain-about">About</a><a href="#plain-writing">Writing</a><a href="#plain-running">Running</a><a href="#plain-work">Work</a><a href="#plain-travel">Places</a><a href="#plain-reading">Library</a><a href="#plain-signal">Contact</a>
+      </nav>
+      <section class="q-section" aria-labelledby="plain-projects">
+        <h2 id="plain-projects"><span>01</span>Projects</h2>
+        <ul id="plain-list" class="q-projects"></ul>
       </section>
-      <section aria-labelledby="plain-projects">
-        <h2 id="plain-projects">Projects</h2>
-        <ul id="plain-list"></ul>
+      <section class="q-section" aria-labelledby="plain-about">
+        <h2 id="plain-about"><span>02</span>About</h2>
+        <div id="plain-about-body" class="q-about"></div>
       </section>
-      <section aria-labelledby="plain-about">
-        <h2 id="plain-about">About</h2>
-        <div id="plain-about-body"></div>
+      <section class="q-section" aria-labelledby="plain-writing">
+        <h2 id="plain-writing"><span>03</span>Writing</h2>
+        <div id="plain-poems" class="q-poems"></div>
       </section>
-      <section aria-labelledby="plain-writing">
-        <h2 id="plain-writing">Writing</h2>
-        <div id="plain-poems"></div>
+      <section class="q-section" aria-labelledby="plain-running">
+        <h2 id="plain-running"><span>04</span>Running</h2>
+        <ul id="plain-medals" class="q-medals"></ul>
+        <p id="plain-shoes" class="q-small"></p>
       </section>
-      <section aria-labelledby="plain-running">
-        <h2 id="plain-running">Running</h2>
-        <ul id="plain-medals" class="plain-plain"></ul>
+      <section class="q-section" aria-labelledby="plain-work">
+        <h2 id="plain-work"><span>05</span>Work</h2>
+        <ol id="plain-work-list" class="q-work"></ol>
+        <h3 class="q-sub">Education</h3>
+        <ul id="plain-diplomas" class="q-work"></ul>
       </section>
-      <section aria-labelledby="plain-work">
-        <h2 id="plain-work">Work</h2>
-        <ul id="plain-work-list" class="plain-plain"></ul>
+      <section class="q-section" aria-labelledby="plain-travel">
+        <h2 id="plain-travel"><span>06</span>Places</h2>
+        <figure class="q-map">
+          <svg id="plain-map" role="img" aria-labelledby="plain-places"></svg>
+          <figcaption id="plain-places"></figcaption>
+        </figure>
       </section>
-      <section aria-labelledby="plain-education">
-        <h2 id="plain-education">Education</h2>
-        <ul id="plain-diplomas" class="plain-plain"></ul>
+      <section class="q-section" aria-labelledby="plain-reading">
+        <h2 id="plain-reading"><span>07</span>Library</h2>
+        <p class="q-small">Every book here is in the public domain. Take one down.</p>
+        <ul id="plain-books" class="q-shelf"></ul>
       </section>
-      <section aria-labelledby="plain-travel">
-        <h2 id="plain-travel">Places</h2>
-        <p id="plain-places"></p>
+      <section class="q-section" aria-labelledby="plain-signal">
+        <h2 id="plain-signal"><span>08</span>Contact</h2>
+        <p class="q-contact">Write to <a id="plain-mail" href="mailto:studio@evolvingword.com">studio@evolvingword.com</a>, or open <a href="https://studio.evolvingword.com">Our Studio</a>.</p>
       </section>
-      <section aria-labelledby="plain-reading">
-        <h2 id="plain-reading">On the shelf</h2>
-        <ul id="plain-books" class="plain-plain"></ul>
-      </section>
-      <section aria-labelledby="plain-signal">
-        <h2 id="plain-signal">Signal</h2>
-        <p>Write to <a id="plain-mail" href="mailto:studio@evolvingword.com">studio@evolvingword.com</a>.</p>
-      </section>
+      <footer class="q-foot">
+        <p>Evolving Word. Built with AI as a collaborator. The books are in the public domain; the map comes from Natural Earth.</p>
+        <p><a href="?full" id="plain-full-2">Step inside the full scene</a></p>
+      </footer>
     </main>
 
     <script type="module" src="/src/main.ts"></script>

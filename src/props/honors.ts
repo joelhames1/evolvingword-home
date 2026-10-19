@@ -35,30 +35,47 @@ function diplomaTexture(d: (typeof DIPLOMAS)[number]) {
   g.strokeRect(60, 60, 1280, 930);
   g.textAlign = 'center';
   g.fillStyle = '#1a1410';
+  // The school in blackletter, on two lines if it's long.
   g.font = '400 92px "UnifrakturMaguntia", serif';
-  g.fillText(d.school, 700, 230);
+  const lines: string[] = [];
+  for (const w of d.school.split(' ')) {
+    const last = lines.length - 1;
+    if (last >= 0 && g.measureText(`${lines[last]} ${w}`).width <= 1180) lines[last] += ` ${w}`;
+    else lines.push(w);
+  }
+  lines.forEach((l, i) => {
+    let px = 92;
+    g.font = `400 ${px}px "UnifrakturMaguntia", serif`;
+    while (g.measureText(l).width > 1180) g.font = `400 ${(px -= 4)}px "UnifrakturMaguntia", serif`;
+    g.fillText(l, 700, (lines.length > 1 ? 190 : 240) + i * 100);
+  });
   g.font = 'italic 400 40px "EB Garamond", serif';
-  g.fillText('has conferred upon', 700, 330);
-  g.font = '400 84px "UnifrakturMaguntia", serif';
-  g.fillText('Your Name', 700, 440);
-  g.font = 'italic 400 40px "EB Garamond", serif';
-  g.fillText('the degree of', 700, 530);
-  g.font = '500 78px "EB Garamond", serif';
-  g.fillText(d.degree, 700, 630);
-  g.font = 'italic 400 46px "EB Garamond", serif';
-  g.fillText(`in ${d.field}`, 700, 710);
+  g.fillText('upon the recommendation of the faculty', 700, 400);
+  g.fillText('has conferred the degree of', 700, 450);
+  g.font = '500 84px "EB Garamond", serif';
+  g.fillText(d.degree, 700, 560);
+  g.font = 'italic 400 50px "EB Garamond", serif';
+  g.fillText(`in ${d.field}`, 700, 640);
   g.font = '400 34px "EB Garamond", serif';
-  g.fillText(`${d.place} · ${d.year}`, 700, 790);
-  // Signatures and a gold seal with ribbons.
+  g.fillText(d.honors ? `${d.place} · ${d.year} · ${d.honors}` : `${d.place} · ${d.year}`, 700, 720);
+  // Two signatures: quick loops of ink over a line.
   g.strokeStyle = '#2a2420';
-  g.lineWidth = 2;
   for (const x of [330, 1070]) {
+    g.lineWidth = 2;
     g.beginPath();
     g.moveTo(x - 170, 920);
     g.lineTo(x + 170, 920);
     g.stroke();
-    g.font = 'italic 400 46px "Caveat", cursive';
-    g.fillText(x < 700 ? 'A. Signature' : 'B. Signature', x, 905);
+    g.lineWidth = 3;
+    g.beginPath();
+    let px = x - 140;
+    g.moveTo(px, 905);
+    for (let k = 0; k < 9; k++) {
+      const nx = px + 22 + Math.random() * 14;
+      g.bezierCurveTo(px + 6, 860 + Math.random() * 20, nx - 4, 930 - Math.random() * 15, nx, 900 + Math.random() * 10);
+      px = nx;
+    }
+    g.stroke();
     g.font = '400 24px "EB Garamond", serif';
     g.fillText(x < 700 ? 'President' : 'Dean', x, 955);
   }

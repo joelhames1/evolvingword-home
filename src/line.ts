@@ -1,5 +1,5 @@
-// Projects hang on a drying line across the room, pegged up like fresh prints.
-// The window is behind them, so they glow at the edges.
+// Projects hang on a drying line along the left wall, behind the map, pegged up
+// like fresh prints. The line is built along x and turned to run beside the wall.
 import * as THREE from 'three';
 import { PROJECTS, type Project } from './projects';
 import { canvas, label, texture } from './textures';
@@ -19,8 +19,10 @@ export interface Line {
   tick(t: number): void;
 }
 
-const LEFT = new THREE.Vector3(0.2, 2.32, -0.92);
-const RIGHT = new THREE.Vector3(2.4, 2.27, -0.92);
+const LEFT = new THREE.Vector3(0, 2.32, 0);
+const RIGHT = new THREE.Vector3(1.55, 2.29, 0);
+/** Where the line goes: a quarter turn, so the shirts face into the room from the left wall. */
+const PLACE = { x: -2.12, z: 2.55, turn: Math.PI / 2 };
 
 /** A T-shirt silhouette in a 512 x 600 box. */
 function shirtPath(g: CanvasRenderingContext2D) {
@@ -105,14 +107,19 @@ export function buildLine(): Line {
   const ropeMat = new THREE.MeshStandardMaterial({ color: '#d8cbb0', roughness: 0.9 });
   const rope = new THREE.Mesh(new THREE.TubeGeometry(ropeCurve, 64, 0.004, 6), ropeMat);
   group.add(rope);
-  const hook = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 2.8 - LEFT.y, 6), ropeMat);
-  hook.position.set(LEFT.x, (2.8 + LEFT.y) / 2, LEFT.z);
-  group.add(hook);
+  for (const end of [LEFT, RIGHT]) {
+    const hook = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, 2.8 - end.y, 6), ropeMat);
+    hook.position.set(end.x, (2.8 + end.y) / 2, end.z);
+    group.add(hook);
+  }
+  group.position.set(PLACE.x, 0, PLACE.z);
+  group.rotation.y = PLACE.turn;
+  group.updateMatrixWorld(true);
 
   const items: Hanging[] = [];
   const pegMat = new THREE.MeshStandardMaterial({ color: '#c49a62', roughness: 0.7 });
   PROJECTS.forEach((p, i) => {
-    const at = 0.36 + i * 0.36;
+    const at = 0.3 + i * 0.4;
     const top = sag(at);
     const pivot = new THREE.Group();
     pivot.position.copy(top);
@@ -170,13 +177,13 @@ export function buildLine(): Line {
     pivot.add(tag);
     pivot.userData.phase = i * 1.7;
     group.add(pivot);
-    items.push({ project: p, object: pivot, focus: top.clone().add(new THREE.Vector3(0, -0.36, 0)) });
+    items.push({ project: p, object: pivot, focus: group.localToWorld(top.clone().add(new THREE.Vector3(0, -0.36, 0))) });
   });
 
   return {
     group,
     items,
-    center: sag(0.5).add(new THREE.Vector3(0, -0.35, 0)),
+    center: group.localToWorld(sag(0.5).add(new THREE.Vector3(0, -0.35, 0))),
     tick(t) {
       // A draft from the window: slow, uneven sway.
       for (const it of items) {
