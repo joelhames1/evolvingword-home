@@ -10,7 +10,7 @@ import world from 'world-atlas/countries-110m.json';
 import { BOOKS, type Book, type Piece } from '../../src/books';
 import { MEDALS, POEMS, VISITED, WORK } from '../../src/content';
 import { ALPHABET } from '../../src/evolve';
-import { MODULES, PHRASES, pad } from '../../src/flap';
+import { MODULES, PHRASES, pad } from '../../src/worlds/alps/flap';
 import { mapName } from '../../src/places';
 import { paginate } from '../../src/reader';
 

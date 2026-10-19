@@ -121,7 +121,237 @@ nav button[aria-current='true'] {
   text-shadow: none;
 }
 
-/* The gate: a CRT boot screen over the live valley. */
+/* The chooser: snow globes on a dark shelf, one per world. */
+.chooser {
+  position: fixed;
+  inset: 0;
+  z-index: 28;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: center;
+  padding: clamp(28px, 6vh, 64px) 24px 28px;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 60% 50% at 30% 60%, rgba(243, 166, 192, 0.12), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 70% 60%, rgba(255, 79, 176, 0.12), transparent 70%),
+    radial-gradient(ellipse at 50% 120%, #1a1830, #07080d 65%);
+  color: #ece6da;
+  transition: opacity 0.9s ease;
+}
+.chooser.gone {
+  opacity: 0;
+  pointer-events: none;
+}
+.chooser-head {
+  text-align: center;
+  transition: opacity 0.5s ease;
+}
+.chooser-kicker {
+  margin: 0;
+  font-family: var(--type);
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: rgba(236, 230, 218, 0.6);
+}
+.chooser h1 {
+  margin: 10px 0 8px;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-weight: 500;
+  font-size: clamp(40px, 6vw, 72px);
+  line-height: 1;
+}
+.chooser-sub {
+  margin: 0;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-style: italic;
+  font-size: clamp(18px, 1.8vw, 22px);
+  color: rgba(236, 230, 218, 0.7);
+}
+.globes {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(32px, 8vw, 120px);
+  width: 100%;
+}
+.globe-wrap {
+  --size: clamp(200px, min(26vw, 40vh), 340px);
+  display: grid;
+  justify-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  transition: opacity 0.6s ease, transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.globe-wrap:focus-visible {
+  outline: none;
+}
+.globe {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: var(--size);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #0b0c14;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 30px 60px rgba(0, 0, 0, 0.5);
+  transition: box-shadow 0.5s ease, translate 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+.globe img,
+.globe canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.globe img {
+  object-fit: cover;
+  scale: 1.18;
+  animation: drift 26s ease-in-out infinite alternate;
+}
+@keyframes drift {
+  to {
+    translate: -5% 2%;
+  }
+}
+.globe .glass {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 24%, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0) 16%),
+    radial-gradient(circle at 70% 82%, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 26%),
+    radial-gradient(circle at 50% 50%, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, 0.45) 100%);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.16),
+    inset 12px 16px 40px rgba(255, 255, 255, 0.08);
+}
+/* The base the globe sits in: walnut and brass by the lake, black lacquer and neon in the city. */
+.base {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: calc(var(--size) * 0.74);
+  height: calc(var(--size) * 0.2);
+  margin-top: calc(var(--size) * -0.07);
+  clip-path: polygon(6% 0, 94% 0, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, #8a5a32, #4a2a14 60%, #2c170a);
+  box-shadow: inset 0 3px 0 rgba(255, 220, 160, 0.3);
+}
+.world-city .base {
+  background: linear-gradient(180deg, #24242c, #101014 60%, #060608);
+  box-shadow:
+    inset 0 3px 0 var(--glow),
+    inset 0 -2px 0 #3ff0ff;
+}
+.plaque {
+  padding: 4px 12px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #e9cf8c, #a8823a);
+  color: #2a1c08;
+  font-family: var(--type);
+  font-size: clamp(10px, 0.9vw, 12px);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.world-city .plaque {
+  background: none;
+  color: var(--glow);
+  text-shadow: 0 0 10px var(--glow);
+  border: 1px solid var(--glow);
+}
+.caption {
+  display: grid;
+  gap: 4px;
+  margin-top: 18px;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: clamp(17px, 1.5vw, 20px);
+  font-style: italic;
+  color: rgba(236, 230, 218, 0.78);
+  text-align: center;
+}
+.caption .last {
+  font-family: var(--type);
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--glow);
+}
+.globe-wrap:hover .globe,
+.globe-wrap:focus-visible .globe {
+  translate: 0 -8px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 0 70px color-mix(in srgb, var(--glow) 55%, transparent),
+    0 30px 60px rgba(0, 0, 0, 0.5);
+}
+.chooser-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px 22px;
+  font-family: 'EB Garamond', Georgia, serif;
+  font-size: 16px;
+  color: rgba(236, 230, 218, 0.6);
+  transition: opacity 0.5s ease;
+}
+.chooser-foot a {
+  color: rgba(236, 230, 218, 0.85);
+}
+.pill {
+  padding: 8px 16px;
+  border: 1px solid rgba(236, 230, 218, 0.35);
+  border-radius: 999px;
+  background: none;
+  color: #ece6da;
+  font-family: var(--type);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.pill[aria-pressed='true'] {
+  background: #ece6da;
+  color: #0b0b10;
+}
+/* Picked: everything else fades and the chosen globe dives in. */
+.chooser.picked .chooser-head,
+.chooser.picked .chooser-foot,
+.chooser.picked .globe-wrap:not(.picked) {
+  opacity: 0;
+}
+.chooser.picked .globe-wrap.picked .base,
+.chooser.picked .globe-wrap.picked .caption {
+  opacity: 0;
+  transition: opacity 0.4s ease 0.4s;
+}
+.chooser.picked .globe-wrap.picked .globe {
+  translate: 0 0;
+  z-index: 3;
+}
+.choosing .top,
+.choosing .controls {
+  visibility: hidden;
+}
+@media (max-width: 760px) {
+  .globes {
+    flex-direction: column;
+    gap: 28px;
+  }
+  .globe-wrap {
+    --size: min(56vw, 30vh);
+  }
+}
+
+/* The gate: a CRT boot screen while the chosen world loads. */
 #gate {
   position: fixed;
   inset: 0;
@@ -196,33 +426,6 @@ nav button[aria-current='true'] {
   width: 0;
   background: repeating-linear-gradient(90deg, #e8ecff 0 10px, transparent 10px 13px);
   transition: width 0.3s steps(8);
-}
-.gate-actions {
-  display: grid;
-  gap: 12px;
-}
-.gate-actions button {
-  background: transparent;
-  border: 2px solid #e8ecff;
-  padding: 10px;
-  font-family: var(--mono);
-  font-size: 32px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.gate-actions button:hover:not(:disabled),
-.gate-actions button:focus-visible {
-  background: #e8ecff;
-  color: #1630b0;
-  outline: none;
-}
-.gate-actions button:disabled {
-  opacity: 0.4;
-  cursor: progress;
-}
-.gate-actions .quiet {
-  font-size: 24px;
-  border-width: 1px;
 }
 .gate-note {
   margin: 16px 0 0;

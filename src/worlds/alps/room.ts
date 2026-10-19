@@ -2,10 +2,9 @@
 // boards, and one big window onto the lake and the mountains.
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
-import { boards, paneling, rug } from './textures';
+import { ROOM } from '../../layout';
+import { boards, paneling, rug } from '../../textures';
 
-/** Room bounds, in meters. The window wall is at the back (−z). */
-export const ROOM = { x0: -2.4, x1: 2.4, z0: -2.0, z1: 2.6, h: 2.8 };
 /** The window opening in the back wall. */
 export const WINDOW = { x0: -1.9, x1: 1.9, y0: 0.95, y1: 2.32 };
 

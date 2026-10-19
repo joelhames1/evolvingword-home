@@ -13,8 +13,10 @@ import '@fontsource/eb-garamond/600.css';
 import '@fontsource/unifrakturmaguntia/400.css';
 import './style.css';
 import { BOOKS, loadBook } from './books';
+import { choose, dismiss, lastWorld, rememberWorld } from './chooser';
 import { fillPlain, switchTo, wantsLite } from './plain';
 import { buildReader } from './reader';
+import { isWorld, WORLDS, type WorldId } from './worlds';
 
 /** The simple page on its own: the books open in the same reader, no 3D at all. */
 function startSimple() {
@@ -40,13 +42,33 @@ function startSimple() {
     });
 }
 
+/** Loads the studio around a world and steps in. */
+function enter(world: WorldId, sound: boolean) {
+  rememberWorld(world);
+  document.getElementById('gate')!.hidden = false;
+  // Each world is a channel on the old set.
+  document.getElementById('gate-ch')!.textContent = `CH ${String(WORLDS.findIndex((w) => w.id === world) + 1).padStart(2, '0')}`;
+  document.body.dataset.world = world;
+  void import('./scene').then((m) => m.startScene(world, { sound, onEnter: dismiss }));
+}
+
 if (wantsLite()) startSimple();
 else {
   // Screen readers still get the simple page, hidden under the scene.
   fillPlain(() => {});
-  document.getElementById('gate-simple')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    switchTo('simple');
-  });
-  void import('./scene').then((m) => m.startScene());
+  for (const id of ['gate-simple', 'chooser-simple'])
+    document.getElementById(id)?.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchTo('simple');
+    });
+  const q = new URLSearchParams(location.search);
+  const asked = q.get('world');
+  if (isWorld(asked)) enter(asked, false);
+  // Screenshots and tests jump straight to a shot, in the world asked for or the last one.
+  else if (q.has('shot')) enter(lastWorld() ?? 'alps', false);
+  else {
+    // Fetch the studio while they choose; it only runs once they've picked.
+    void import('./scene');
+    void choose().then(({ world, sound }) => enter(world, sound));
+  }
 }

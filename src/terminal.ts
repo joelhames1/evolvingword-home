@@ -35,7 +35,7 @@ const GREEN = '#9dffc0';
 const DIM = '#4a8f68';
 const AMBER = '#ffcf7a';
 
-export function buildTerminal(on: { open: (url: string) => void; go: (page: Page | 'library') => void; evolve: (text: string) => void; contact: string }): Terminal {
+export function buildTerminal(on: { open: (url: string) => void; go: (page: Page | 'library') => void; evolve: (text: string) => void; contact: string; tagline: string }): Terminal {
   const [c, g] = canvas(W, H);
   const tex = texture(c);
   let current: Page = 'menu';
@@ -51,7 +51,7 @@ export function buildTerminal(on: { open: (url: string) => void; go: (page: Page
     menu: () => [
       { text: 'EVOLVING WORD', big: true },
       { text: '' },
-      { text: 'A LITTLE STUDIO BY THE LAKE.', color: DIM },
+      { text: on.tagline, color: DIM },
       { text: '' },
       { text: '[1] PROJECTS', action: () => on.go('projects'), key: '1' },
       { text: '[2] ABOUT', action: () => on.go('about'), key: '2' },

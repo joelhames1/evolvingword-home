@@ -4,10 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Evolving Word</title>
-    <meta name="description" content="A little studio by a mountain lake: poems, races, books, a scratch map of the world, and Our Studio, where family and friends design together and print together." />
+    <meta name="description" content="A little studio with two views out the window, a mountain lake at dusk or a rainy neon city: poems, races, books, a scratch map of the world, and Our Studio, where family and friends design together and print together." />
     <meta name="theme-color" content="#05060d" />
     <meta property="og:title" content="Evolving Word" />
-    <meta property="og:description" content="A little studio by a mountain lake. Step inside." />
+    <meta property="og:description" content="A little studio, two worlds outside the window. Pick a globe and step inside." />
     <meta property="og:image" content="https://evolvingword.com/og.jpg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -33,17 +33,27 @@
       </nav>
     </header>
 
-    <div id="gate" role="dialog" aria-labelledby="gate-title">
+    <section id="chooser" class="chooser" hidden aria-labelledby="chooser-title">
+      <div class="chooser-head">
+        <p class="chooser-kicker">Evolving Word</p>
+        <h1 id="chooser-title">Pick a world</h1>
+        <p class="chooser-sub">Same studio, same stories. A different view out the window.</p>
+      </div>
+      <div class="globes" id="globes"></div>
+      <div class="chooser-foot">
+        <button id="chooser-sound" class="pill" aria-pressed="true">Sound on</button>
+        <span>Best on a laptop or desktop, with headphones.</span>
+        <a href="?lite" id="chooser-simple">Or read the simple version</a>
+      </div>
+    </section>
+
+    <div id="gate" role="dialog" aria-labelledby="gate-title" hidden>
       <div class="gate-box">
-        <p class="gate-ch">CH 00</p>
+        <p class="gate-ch" id="gate-ch">CH 00</p>
         <h1 id="gate-title">EVOLVING WORD</h1>
         <ol class="boot" id="boot" aria-live="polite"></ol>
         <div class="bar" aria-hidden="true"><span id="bar"></span></div>
-        <div class="gate-actions">
-          <button id="enter" disabled>Click to enter</button>
-          <button id="enter-muted" class="quiet" disabled>Enter muted</button>
-        </div>
-        <p class="gate-note">Best on a laptop or desktop, with headphones. Or <a href="?lite" id="gate-simple">read the simple version</a>.</p>
+        <p class="gate-note">Stepping inside. Or <a href="?lite" id="gate-simple">read the simple version</a>.</p>
       </div>
     </div>
 
@@ -97,6 +107,7 @@
     <footer class="controls" id="controls">
       <p class="hints" id="hints">Click anything that glows · 1 projects · 2 about · B books · M map · E evolve a word · W window · T tape</p>
       <div class="buttons">
+        <button id="worlds-btn" title="Back to the globes, to pick another world">Worlds</button>
         <button id="simple-btn" title="A lighter version of the page, with everything in it">Simple</button>
         <button id="credits-btn">Credits</button>
         <button id="lofi-btn" aria-pressed="false">Lo-fi</button>

@@ -2,8 +2,8 @@
 // It runs the weasel program: random letters, copied with mistakes, the best
 // copy kept, until they spell something. Every change clatters through a flap.
 import * as THREE from 'three';
-import { ALPHABET, Evolver } from './evolve';
-import { canvas, texture } from './textures';
+import { ALPHABET, Evolver } from '../../evolve';
+import { canvas, texture } from '../../textures';
 
 export const MODULES = 16;
 export const PHRASES = ['EVOLVING WORD', 'DESIGN TOGETHER', 'PRINT TOGETHER', 'MAKE SOMETHING', 'KEEP RUNNING', 'WRITE IT DOWN', 'OUR STUDIO', 'STAY CURIOUS'];

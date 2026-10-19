@@ -11,17 +11,25 @@ function watch(page: Page) {
   return problems;
 }
 
-test('desktop: the gate, the flight in, and the rooms', async ({ page }) => {
+test('desktop: the globes, the dive, the flight in, and the rooms', async ({ page }) => {
+  test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   const problems = watch(page);
   const res = await page.goto('/');
   expect(res?.headers()['content-security-policy']).toContain("default-src 'self'");
 
-  await expect(page.locator('#enter')).toBeEnabled({ timeout: 30_000 });
-  // The plain page stays in the document for screen readers, clipped to nothing on screen.
+  // A globe for each world; the plain page stays in the document for screen
+  // readers, clipped to nothing on screen.
+  await expect(page.locator('#chooser .globe-wrap')).toHaveCount(2);
   expect((await page.locator('#plain').boundingBox())?.width ?? 0).toBeLessThanOrEqual(1);
-  await page.locator('#enter-muted').click();
-  await expect(page.locator('#gate')).toHaveClass(/gone/);
+  await page.locator('#chooser-sound').click();
+  await expect(page.locator('#chooser-sound')).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('button', { name: /The Lake House/ }).click();
+  await expect(page.locator('#chooser')).toHaveClass(/picked/);
+  // The loading screen comes up during the dive and goes once the world is built
+  // (which, on the software renderer the tests use, takes a while).
+  await expect(page.locator('#gate')).toHaveClass(/gone/, { timeout: 80_000 });
+  expect(await page.evaluate(() => (window as unknown as { __ew: { worldId: string } }).__ew.worldId)).toBe('alps');
   // The letterbox closes in and the captions start.
   await expect(page.locator('body')).toHaveClass(/inside/);
   await expect(page.locator('body')).toHaveClass(/ready/, { timeout: 40_000 });
@@ -162,8 +170,34 @@ test('the Simple button switches over, and the choice sticks until you step back
   await expect(page.locator('html')).toHaveClass(/lite/);
   await page.locator('#plain-full').click();
   await expect(page).toHaveURL(/\?full/);
-  await expect(page.locator('#enter')).toBeEnabled({ timeout: 30_000 });
+  await expect(page.locator('#chooser')).toBeVisible();
   await expect(page.locator('html')).not.toHaveClass(/lite/);
+});
+
+test('the night studio: the same room, the city outside, and the choice remembered', async ({ page }) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const problems = watch(page);
+  await page.goto('/?full');
+  await page.getByRole('button', { name: /Night Studio/ }).click();
+  await expect(page.locator('body')).toHaveClass(/inside/, { timeout: 60_000 });
+  const ew = () => page.evaluate(() => {
+    const w = (window as unknown as { __ew: { worldId: string; flap: { evolution(): { generation: number } }; map: { visited(): number } } }).__ew;
+    return { world: w.worldId, generation: w.flap.evolution().generation, visited: w.map.visited() };
+  });
+  // The billboard across the street is breeding words; the map is on the wall as ever.
+  const first = await ew();
+  expect(first.world).toBe('city');
+  expect(first.visited).toBeGreaterThan(0);
+  await page.waitForFunction(() => (window as unknown as { __ew: { flap: { evolution(): { generation: number } } } }).__ew.flap.evolution().generation > 3, null, { timeout: 30_000 });
+  await expect(page.locator('body')).toHaveClass(/ready/, { timeout: 60_000 });
+  await page.keyboard.press('m');
+  await expect(page.locator('#card-title')).toHaveText('Places I have been', { timeout: 20_000 });
+  // Back to the globes: the city is marked as where you were.
+  await page.locator('#worlds-btn').click();
+  await expect(page.locator('#chooser')).toBeVisible();
+  await expect(page.locator('.globe-wrap.world-city .last')).toHaveText('Where you were last time');
+  expect(problems).toEqual([]);
 });
 
 test('phones get the plain page, with the project link', async ({ page }) => {

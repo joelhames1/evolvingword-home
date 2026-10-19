@@ -19,12 +19,10 @@ export interface Shot {
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
-/** Every place the camera can go. Props add their own close-ups at startup. */
+/** Every place the camera can go. The world adds its vista, window and board;
+ * props add their own close-ups at startup. */
 export const SHOTS: Record<string, Shot> = {
-  vista: { pos: v(0.4, 1.66, -2.7), target: v(-70, 30, -1200), fov: 50, lean: 0.02 },
   desk: { pos: v(0, 1.4, 1.35), target: v(0, 1.36, -1.9), fov: 46, lean: 0.1 },
-  window: { pos: v(0.1, 1.55, -1.25), target: v(-60, 26, -1200), fov: 46, lean: 0.04 },
-  board: { pos: v(0, 1.75, -0.55), target: v(0, 2.42, -2), fov: 46, lean: 0.03 },
   projects: { pos: v(-0.75, 1.88, 1.6), target: v(-2.1, 1.86, 1.9), fov: 40, lean: 0.06 },
   signal: { pos: v(-0.12, 1.1, -0.86), target: v(-0.12, 1.09, -1.4), fov: 31, lean: 0.015, near: 0.02 },
 };

@@ -3,8 +3,8 @@
 // a village glows on the far shore, a little red train runs along the water and
 // a gondola climbs the mountain. All of it generated here, nothing downloaded.
 import * as THREE from 'three';
-import { glow, rng } from './textures';
-import type { Quality } from './world';
+import { glow, rng } from '../../textures';
+import type { Quality } from '../../world';
 
 export const LAKE_Y = -12;
 const LAKE_NEAR = -55;

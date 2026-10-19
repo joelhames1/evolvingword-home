@@ -1,15 +1,16 @@
-// The scene: a pine-paneled study above an alpine lake at dusk. Loaded only
-// when someone steps inside; the simple page never fetches any of this.
+// The scene: the studio every world shares (the desk, the props, the cards,
+// the keys) plus the chosen world's kit, which brings the room shell, what's
+// outside the window, the word board and the way in. Loaded only when someone
+// steps inside; the simple page never fetches any of this.
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { buildAlps } from './alps';
 import { Sound } from './audio';
 import { BOOKS, loadBook } from './books';
 import { Rig, SHOTS, type ShotName } from './camera';
 import { ABOUT, DIPLOMAS, MEDALS, SHOES, VISITED, WATCH, WORK } from './content';
 import { buildDesk, DESK_Y } from './desk';
-import { buildFlap } from './flap';
 import { Interactions } from './interact';
+import { ROOM } from './layout';
 import { buildLine } from './line';
 import { PROJECTS } from './projects';
 import { buildHonors } from './props/honors';
@@ -22,9 +23,16 @@ import { buildTreats } from './props/treats';
 import { buildWatch } from './props/watch';
 import { switchTo } from './plain';
 import { buildReader } from './reader';
-import { buildRoom, ROOM, WINDOW } from './room';
 import { buildTerminal, type Page } from './terminal';
 import { createWorld } from './world';
+import type { WorldId } from './worlds';
+import type { KitModule } from './worlds/kit';
+
+/** Each world's 3D code, loaded only when it's picked. */
+const KITS: Record<WorldId, () => Promise<KitModule>> = {
+  alps: () => import('./worlds/alps/kit'),
+  city: () => import('./worlds/city/kit'),
+};
 
 const CONTACT = 'studio@evolvingword.com';
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -42,8 +50,13 @@ function fillAbout() {
   body.replaceChildren(...ABOUT.lines.map((l) => el('p', l)));
 }
 
-export async function startScene() {
+/**
+ * Builds the studio around the chosen world and steps inside once it's ready,
+ * with sound if the visitor asked for it on the way in.
+ */
+export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnter?: () => void }) {
   fillAbout();
+  const kitModule = KITS[worldId]();
 
   const bootLog = $('boot');
   const bar = $('bar');
@@ -78,8 +91,13 @@ export async function startScene() {
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environmentIntensity = 0.06;
 
-  const sound = new Sound();
+  const sound = new Sound(worldId);
   const rig = new Rig(camera, reduced);
+
+  // --- the world: its room, what's outside, and where the word evolves -----------------
+  const kit = (await kitModule).buildKit({ quality, renderer, scene, log });
+  const board = kit.board;
+  Object.assign(SHOTS, kit.shots);
 
   // --- the room and everything in it -------------------------------------------------
   const terminal = buildTerminal({
@@ -95,23 +113,18 @@ export async function startScene() {
       else goTo('signal', page);
     },
     evolve: (text) => {
-      flap.evolve(text);
+      board.evolve(text);
       watching = text;
       goTo('board');
       say(`BREEDING "${text}" FROM NOISE · ESC TO COME BACK`);
     },
     contact: CONTACT,
+    tagline: kit.tagline,
   });
   terminal.show('menu');
 
-  const room = buildRoom();
   const desk = buildDesk(terminal.texture);
-  log('RAISING THE MOUNTAINS', 45);
-  const alps = buildAlps(quality);
-  log('CHILLING THE LAKE', 60);
   const line = buildLine();
-  const flap = buildFlap(WINDOW.x1 - WINDOW.x0, 0.24);
-  flap.group.position.set(0, 2.53, ROOM.z0 + 0.045);
   const watch = buildWatch();
   watch.group.position.set(0.33, DESK_Y, -1.37);
   watch.group.rotation.y = -0.25;
@@ -136,7 +149,7 @@ export async function startScene() {
   shoes.group.position.set(-1.45, 0, -0.62);
   shoes.group.rotation.y = 0.55;
   log('POURING THE CAPPUCCINO', 80);
-  scene.add(room.group, desk.group, alps.group, line.group, flap.group, watch.group, pad.group, treats.group, rolodex.group, honors.group, map.group, shelf.group, shoes.group);
+  scene.add(...kit.objects, desk.group, line.group, watch.group, pad.group, treats.group, rolodex.group, honors.group, map.group, shelf.group, shoes.group);
   scene.updateMatrixWorld(true);
 
   // --- close-ups, worked out from where things ended up ----------------------------------
@@ -368,7 +381,7 @@ export async function startScene() {
   touch.add({ object: desk.lamp, label: () => (desk.lampOn() ? 'Lamp off' : 'Lamp on'), onClick: () => toggleLamp() });
   touch.add({ object: desk.deck, label: () => (sound.started && sound.musicOn && !sound.muted ? 'Stop the tape' : 'Play the tape'), onClick: () => toggleTape() });
   touch.add({ object: shelf.boombox, label: () => (sound.started && sound.musicOn && !sound.muted ? 'Stop the tape' : 'Play the tape'), onClick: () => toggleTape() });
-  touch.add({ object: flap.face, label: 'Evolve a word', onClick: () => goTo('signal', 'evolve') });
+  touch.add({ object: board.face, label: 'Evolve a word', onClick: () => goTo('signal', 'evolve') });
   // The watch: look closer, then work the pushers.
   touch.add({ object: watch.body, label: 'The watch', when: away('watch'), onClick: () => goTo('watch') });
   touch.add({ object: watch.startStop, label: 'Start · stop', when: here('watch'), onClick: () => pressWatch('start') });
@@ -516,6 +529,8 @@ export async function startScene() {
   });
   $('credits-btn').addEventListener('click', () => ($('credits').hidden = false));
   $('simple-btn').addEventListener('click', () => switchTo('simple'));
+  // Back to the globes: a fresh page is the cleanest way to put one world down for another.
+  $('worlds-btn').addEventListener('click', () => (location.href = '/'));
 
   // If frames come slowly once we're inside, offer the simple page, once.
   const watchSpeed = () => {
@@ -592,10 +607,8 @@ export async function startScene() {
   let lastTick = 0;
   let lastMapCheck = 0;
   world.onTick((t, dt) => {
-    room.tick(t);
     desk.tick(t, dt);
-    alps.tick(t, dt, camera);
-    room.windowLight.color.copy(alps.skyLight);
+    kit.frame({ t, dt, camera, renderer, sound, ready: document.body.classList.contains('ready'), shot: rig.current });
     line.tick(t);
     terminal.tick(t);
     watch.tick();
@@ -606,7 +619,7 @@ export async function startScene() {
     map.tick();
     shelf.tick(t, dt);
     shoes.tick(t, dt);
-    sound.flaps(flap.tick(t));
+    sound.flaps(board.tick(t));
     sound.pen(pad.writing() && rig.current === 'pad');
     // The letterbox eases in real time, not the scene's capped frame time, so it
     // settles promptly even when frames are slow.
@@ -636,7 +649,7 @@ export async function startScene() {
       mapLabel = hit?.uv ? (map.countryAt(hit.uv.x, hit.uv.y) ?? 'Ocean') : 'Scratch map';
     } else if (rig.current !== 'map') mapLabel = 'Scratch map';
     // Someone's phrase on the board: report back when it arrives.
-    const evo = flap.evolution();
+    const evo = board.evolution();
     if (evo.custom) {
       terminal.setStatus(`GEN ${String(evo.generation).padStart(4, '0')} · FITNESS ${Math.round(evo.fitness * 100)}%`);
       if (evo.done && announced !== evo.target) {
@@ -647,8 +660,8 @@ export async function startScene() {
       announced = '';
       terminal.setStatus(STATUS);
     }
-    // A little louder wind with your nose to the glass.
-    sound.setOutside(THREE.MathUtils.clamp((-camera.position.z - 0.8) / 1.1, 0, 1));
+    // Louder weather with your nose to the glass.
+    sound.setOutside(kit.outside(camera));
   });
   const pointer = new THREE.Vector2();
   renderer.domElement.addEventListener('pointermove', (e) => pointer.set((e.clientX / renderer.domElement.clientWidth) * 2 - 1, -(e.clientY / renderer.domElement.clientHeight) * 2 + 1));
@@ -664,24 +677,18 @@ export async function startScene() {
     entered = true;
     if (withSound) setSound(true);
     gate.classList.add('gone');
+    opts.onEnter?.();
     lidAim = barFor();
     document.body.classList.add('inside');
-    const lines = ['EVOLVING WORD', 'A LITTLE STUDIO BY THE LAKE', 'WHERE WE MAKE THINGS TOGETHER'];
-    if (!reduced) lines.forEach((l, i) => window.setTimeout(() => !document.body.classList.contains('ready') && say(l), 600 + i * 2500));
-    void rig.go('desk', { via: [v(0.08, 1.62, -1.2), v(0.06, 1.56, 0.1)], duration: reduced ? 0 : 8.5 }).then(() => {
+    const gap = (kit.intro.duration * 1000) / (kit.intro.lines.length + 0.5);
+    if (!reduced) kit.intro.lines.forEach((l, i) => window.setTimeout(() => !document.body.classList.contains('ready') && say(l), 600 + i * gap));
+    void rig.go('desk', { via: kit.intro.via, duration: reduced ? 0 : kit.intro.duration }).then(() => {
       document.body.classList.add('ready');
       touch.enabled = true;
       say(HINTS, false);
       watchSpeed();
     });
   };
-  const enterBtn = $<HTMLButtonElement>('enter');
-  const mutedBtn = $<HTMLButtonElement>('enter-muted');
-  enterBtn.disabled = false;
-  mutedBtn.disabled = false;
-  enterBtn.focus();
-  enterBtn.addEventListener('click', () => enter(true));
-  mutedBtn.addEventListener('click', () => enter(false));
 
   // For screenshots and tests: jump straight to a shot, no gate.
   const q = new URLSearchParams(location.search);
@@ -690,6 +697,7 @@ export async function startScene() {
     entered = true;
     gate.style.transition = 'none';
     gate.classList.add('gone');
+    opts.onEnter?.();
     document.body.classList.add('inside', 'ready');
     lid = lidAim = barFor();
     rootStyle.setProperty('--bar', `${lid}px`);
@@ -698,7 +706,10 @@ export async function startScene() {
     rig.jump(shot);
     if (shot === 'signal') terminal.show('signal');
     onArrive[shot]?.();
+  } else {
+    // Ready: a beat to let the first frame settle, then in we go.
+    window.setTimeout(() => enter(opts.sound), reduced ? 0 : 400);
   }
-  (window as unknown as { __ew: unknown }).__ew = { rig, flap, terminal, goTo, world, watch, pad, treats, rolodex, map, reader, openBook, alps, room };
+  (window as unknown as { __ew: unknown }).__ew = { worldId, rig, flap: board, kit, terminal, goTo, world, watch, pad, treats, rolodex, map, reader, openBook, ...kit.debug };
 }
 
