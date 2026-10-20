@@ -11,6 +11,24 @@ The studio is the same in every world: the watch, the pen and pad, the coffee an
 
 Everything is made in code as the page runs: no photos, no 3D models, no audio files. The mountains, the lake and its reflections, the city, the trains and the gondola, the airfield and its planes, the monastery, its garden and its valley are all generated.
 
+## Choosing which worlds show
+
+Every world is built and stays in the code; you pick which ones get a globe (three is the sweet spot, five at most). Hidden worlds still open by link, like `/?world=tower`, and `/?worlds=all` shows every globe, for looking at ones you've hidden.
+
+There are two ways to choose, and the live one wins when it's set:
+
+- **The list in the repo:** `src/worlds/shown.ts`. Edit it (GitHub's web editor works from a phone) and it goes live with the next deploy, about a minute later.
+- **The owner page, live:** `evolvingword.com/owner.html`. Tick the worlds, put them in order, type the password and save; the globes change at once, no deploy. "Use the list in the repo" clears your live choice. The page isn't linked from anywhere and asks search engines to skip it, but the password is what keeps it yours.
+
+The owner page saves through a small function (`api/worlds.ts`) to a Vercel Edge Config store. To set it up, once, in the Vercel dashboard:
+
+1. **Storage → Create → Edge Config**, name it anything, and connect it to this project. That sets `EDGE_CONFIG` for you.
+2. **Account Settings → Tokens → Create**: a token scoped to the account or team that owns the project. Copy it.
+3. **Project → Settings → Environment Variables**, for Production: `OWNER_PASSWORD` (a long passphrase only you know), `VERCEL_API_TOKEN` (the token from step 2), and, if the project belongs to a team, `VERCEL_TEAM_ID` (the team's id, from its settings page).
+4. Redeploy once so the function picks them up.
+
+Until then the page says the switch isn't set up, and the globes follow the list in the repo. A wrong password costs a second each try.
+
 ## Looking around
 
 You start at the desk, facing the window. The room has four walls, and the **‹ ›** buttons at the edges of the screen (or the left and right arrow keys) turn you to the next one; each button says where it goes.
@@ -90,7 +108,9 @@ Each world's code is its own chunk, fetched only when someone picks it.
 | File | What it does |
 | --- | --- |
 | `src/main.ts` | Decides between the simple page, the globes and a world asked for by link (`?world=city`) |
-| `src/chooser.ts` | The snow globes: weather in the glass, the shake and the dive, remembering the choice |
+| `src/chooser.ts` | The snow globes: which ones show, weather in the glass, the shake and the dive (and the pull back out), remembering the choice |
+| `src/worlds/shown.ts` | Which worlds have a globe, unless the owner has chosen live |
+| `owner.html`, `src/owner.ts`, `api/worlds.ts` | The owner page and the function behind it, for choosing the globes live |
 | `src/plain.ts` | The simple page: filling it, its map, and remembering the choice |
 | `src/scene.ts` | The studio every world shares: boot, the close-ups and their cards, navigation, keys, the letterbox and captions, the frame loop |
 | `src/worlds/kit.ts` | What a world brings to the studio |
