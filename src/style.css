@@ -132,8 +132,10 @@ nav button[aria-current='true'] {
   padding: clamp(28px, 6vh, 64px) 24px 28px;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 60% 50% at 30% 60%, rgba(243, 166, 192, 0.12), transparent 70%),
-    radial-gradient(ellipse 60% 50% at 70% 60%, rgba(255, 79, 176, 0.12), transparent 70%),
+    radial-gradient(ellipse 45% 45% at 20% 58%, rgba(243, 166, 192, 0.1), transparent 70%),
+    radial-gradient(ellipse 45% 45% at 42% 64%, rgba(255, 79, 176, 0.1), transparent 70%),
+    radial-gradient(ellipse 45% 45% at 62% 64%, rgba(255, 179, 71, 0.08), transparent 70%),
+    radial-gradient(ellipse 45% 45% at 82% 58%, rgba(242, 198, 164, 0.09), transparent 70%),
     radial-gradient(ellipse at 50% 120%, #1a1830, #07080d 65%);
   color: #ece6da;
   transition: opacity 0.9s ease;
@@ -158,7 +160,7 @@ nav button[aria-current='true'] {
   margin: 10px 0 8px;
   font-family: 'EB Garamond', Georgia, serif;
   font-weight: 500;
-  font-size: clamp(40px, 6vw, 72px);
+  font-size: clamp(36px, min(6vw, 8vh), 72px);
   line-height: 1;
 }
 .chooser-sub {
@@ -168,17 +170,50 @@ nav button[aria-current='true'] {
   font-size: clamp(18px, 1.8vw, 22px);
   color: rgba(236, 230, 218, 0.7);
 }
+/* The globes sit in one row, or two when the screen is too tall and narrow for
+ * that: four go two by two, five go three over two. Their size is whatever fits
+ * both across and down, so the row never needs a scrollbar. */
 .globes {
+  --cols: 2;
+  --rows: 1;
+  --gap-x: clamp(24px, 4vw, 96px);
+  --gap-y: clamp(14px, 3vh, 36px);
+  /* Room left for the heading and the footer, and under each globe for its base and caption. */
+  --size: clamp(120px, min((100vw - 48px) / var(--cols) - var(--gap-x), ((100vh - 290px) / var(--rows) - 80px) / 1.16), 340px);
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: center;
   justify-content: center;
-  gap: clamp(32px, 8vw, 120px);
+  gap: var(--gap-y) var(--gap-x);
   width: 100%;
+  max-width: calc(var(--cols) * (var(--size) + var(--gap-x)));
+}
+.globes[data-count='3'] {
+  --cols: 3;
+}
+.globes[data-count='4'] {
+  --cols: 4;
+}
+.globes[data-count='5'] {
+  --cols: 5;
+}
+@media (max-aspect-ratio: 13/10) {
+  .globes[data-count='4'] {
+    --cols: 2;
+    --rows: 2;
+  }
+}
+@media (max-aspect-ratio: 3/2) {
+  .globes[data-count='5'] {
+    --cols: 3;
+    --rows: 2;
+  }
 }
 .globe-wrap {
-  --size: clamp(200px, min(26vw, 40vh), 340px);
   display: grid;
   justify-items: center;
+  width: var(--size);
   padding: 0;
   border: 0;
   background: none;
@@ -251,6 +286,15 @@ nav button[aria-current='true'] {
     inset 0 3px 0 var(--glow),
     inset 0 -2px 0 #3ff0ff;
 }
+/* Brushed aluminum and an amber readout at the tower; pale Assisi stone and terracotta at the monastery. */
+.world-tower .base {
+  background: linear-gradient(180deg, #9aa1a8, #5d636b 55%, #2f3338);
+  box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.35);
+}
+.world-monastery .base {
+  background: linear-gradient(180deg, #e9cdbd, #c9a593 55%, #8f6c5c);
+  box-shadow: inset 0 3px 0 rgba(255, 240, 225, 0.5);
+}
 .plaque {
   padding: 4px 12px;
   border-radius: 2px;
@@ -266,6 +310,16 @@ nav button[aria-current='true'] {
   color: var(--glow);
   text-shadow: 0 0 10px var(--glow);
   border: 1px solid var(--glow);
+}
+.world-tower .plaque {
+  background: #120c04;
+  color: #ffb347;
+  text-shadow: 0 0 8px rgba(255, 170, 60, 0.8);
+  border-radius: 1px;
+}
+.world-monastery .plaque {
+  background: linear-gradient(180deg, #c8673f, #9a4526);
+  color: #fbeee2;
 }
 .caption {
   display: grid;
@@ -342,12 +396,14 @@ nav button[aria-current='true'] {
   visibility: hidden;
 }
 @media (max-width: 760px) {
-  .globes {
-    flex-direction: column;
-    gap: 28px;
+  .globes,
+  .globes[data-count] {
+    --cols: 2;
+    --rows: 2;
+    --gap-x: 18px;
   }
-  .globe-wrap {
-    --size: min(56vw, 30vh);
+  .globes[data-count='5'] {
+    --rows: 3;
   }
 }
 

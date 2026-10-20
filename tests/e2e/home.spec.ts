@@ -20,7 +20,7 @@ test('desktop: the globes, the dive, the flight in, and the rooms', async ({ pag
 
   // A globe for each world; the plain page stays in the document for screen
   // readers, clipped to nothing on screen.
-  await expect(page.locator('#chooser .globe-wrap')).toHaveCount(2);
+  await expect(page.locator('#chooser .globe-wrap')).toHaveCount(4);
   expect((await page.locator('#plain').boundingBox())?.width ?? 0).toBeLessThanOrEqual(1);
   await page.locator('#chooser-sound').click();
   await expect(page.locator('#chooser-sound')).toHaveAttribute('aria-pressed', 'false');
@@ -299,6 +299,107 @@ test('the night studio: the same room, the city outside, and the choice remember
   await page.locator('#worlds-btn').click();
   await expect(page.locator('#chooser')).toBeVisible();
   await expect(page.locator('.globe-wrap.world-city .last')).toHaveText('Where you were last time');
+  expect(problems).toEqual([]);
+});
+
+for (const [id, name] of [
+  ['tower', /The Tower/],
+  ['monastery', /The Monastery/],
+] as const) {
+  test(`${id}: picked from the globes, its own room and board, and the whole studio inside`, async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const problems = watch(page);
+    await page.goto('/?full');
+    await page.getByRole('button', { name }).click();
+    await expect(page.locator('body')).toHaveClass(/inside/, { timeout: 90_000 });
+    expect(await page.evaluate(() => (window as unknown as { __ew: { worldId: string } }).__ew.worldId)).toBe(id);
+    // Its board breeds words; its own things are in the room.
+    await page.waitForFunction(() => (window as unknown as { __ew: { flap: { evolution(): { generation: number } } } }).__ew.flap.evolution().generation > 3, null, { timeout: 30_000 });
+    const own = await page.evaluate((id) => {
+      const w = (window as unknown as { __ew: Record<string, any> }).__ew;
+      if (id === 'tower') return { planes: w.field.debug.planes.length, onScope: w.field.blips().length, sockOut: w.field.group.children.length > 0 };
+      return { candles: w.cell.candles.length, band: w.band.mesh.isMesh, birds: w.valley.group.children.length > 0 };
+    }, id);
+    expect(own).toEqual(id === 'tower' ? { planes: 4, onScope: expect.any(Number), sockOut: true } : { candles: 3, band: true, birds: true });
+    await expect(page.locator('body')).toHaveClass(/ready/, { timeout: 60_000 });
+    // The world's sound runs: its band, its weather, and (at the tower) a jet spooling up.
+    await page.evaluate((id) => {
+      const s = (window as unknown as { __ew: { sound: { started: boolean; start(): void; setMuted(m: boolean): void; jet(s: number): void } } }).__ew.sound;
+      if (!s.started) s.start();
+      s.setMuted(false);
+      if (id === 'tower') s.jet(3);
+    }, id);
+    await page.waitForTimeout(1500);
+    // The shared studio: the map, then round the walls and back.
+    await page.keyboard.press('m');
+    await expect(page.locator('#card-title')).toHaveText('Places I have been', { timeout: 20_000 });
+    const settled = () => page.waitForFunction(() => !(window as unknown as { __ew: { rig: { moving: boolean } } }).__ew.rig.moving, null, { timeout: 60_000 });
+    const current = () => page.evaluate(() => (window as unknown as { __ew: { rig: { current: string } } }).__ew.rig.current);
+    await page.keyboard.press('Escape');
+    await settled();
+    expect(await current()).toBe('places');
+    await page.keyboard.press('ArrowRight');
+    await settled();
+    expect(await current()).toBe('desk');
+    await page.keyboard.press('ArrowRight');
+    await settled();
+    expect(await current()).toBe('honors');
+    await page.keyboard.press('b');
+    await expect(page.locator('#card-title')).toHaveText('Take one down', { timeout: 20_000 });
+    // Back to the globes: this one is marked as where you were.
+    await page.locator('#worlds-btn').click();
+    await expect(page.locator('#chooser')).toBeVisible();
+    await expect(page.locator(`.globe-wrap.world-${id} .last`)).toHaveText('Where you were last time');
+    expect(problems).toEqual([]);
+  });
+}
+
+test('the globes fit the screen: one row when there is room, two when not, and room for a fifth', async ({ page }) => {
+  const problems = watch(page);
+  /** Each globe's box, and whether it's all on screen. */
+  const globes = async () => {
+    const vp = page.viewportSize()!;
+    const boxes = await page.locator('#chooser .globe-wrap').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect));
+    for (const b of boxes) {
+      expect(b.left).toBeGreaterThanOrEqual(0);
+      expect(b.right).toBeLessThanOrEqual(vp.width);
+      expect(b.top).toBeGreaterThanOrEqual(0);
+      expect(b.bottom).toBeLessThanOrEqual(vp.height);
+    }
+    // Rows, top to bottom: how many globes in each.
+    const rows = new Map<number, number>();
+    for (const b of boxes) rows.set(Math.round(b.top / 10), (rows.get(Math.round(b.top / 10)) ?? 0) + 1);
+    return [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([, n]) => n);
+  };
+  for (const [width, height, layout] of [
+    [1440, 900, [4]],
+    [1920, 1080, [4]],
+    [1000, 1000, [2, 2]],
+    [800, 700, [2, 2]],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.goto('/?full');
+    await expect(page.locator('#chooser .globe-wrap')).toHaveCount(4);
+    expect(await globes(), `${width}x${height}`).toEqual(layout);
+    // Nothing scrolls sideways.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+  // A fifth world, when it comes: five across on a wide screen, three over two otherwise.
+  for (const [width, height, layout] of [
+    [1600, 900, [5]],
+    [1280, 1000, [3, 2]],
+    [900, 900, [3, 2]],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.goto('/?full');
+    await page.evaluate(() => {
+      const row = document.getElementById('globes')!;
+      row.append(row.firstElementChild!.cloneNode(true));
+      row.dataset.count = '5';
+    });
+    expect(await globes(), `5 at ${width}x${height}`).toEqual(layout);
+  }
   expect(problems).toEqual([]);
 });
 

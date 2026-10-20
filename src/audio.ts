@@ -1,14 +1,17 @@
 // All the sound is synthesized live with Web Audio: the weather outside (wind
 // and far-off cowbells by the lake; rain, a neon hum and passing spinners in
-// the city), vinyl crackle, a band for each world (by the lake, electric piano
-// over brushes with a celesta falling like snow; in the city, slow analog pads,
-// an echoing arpeggio and a quiet drum machine), all with a little tape wobble,
-// and the small sounds of things in the room. No audio files.
+// the city; the cab's air, radio squelch and jets spooling up at the tower;
+// wind, birdsong and a far bell at the monastery), vinyl crackle, a band for
+// each world (by the lake, electric piano over brushes with a celesta falling
+// like snow; in the city, slow analog pads, an echoing arpeggio and a quiet drum
+// machine; at the tower, airy pads with a sonar ping; at the monastery, a chant
+// over a drone), all with a little tape wobble, and the small sounds of things
+// in the room. No audio files.
 
 import { unlockedAudio } from './audio-unlock';
 
 /** What's outside the window, for the ambience. */
-export type Weather = 'alps' | 'city';
+export type Weather = 'alps' | 'city' | 'tower' | 'monastery';
 
 type Chord = { bass: number; notes: number[] };
 
@@ -38,7 +41,34 @@ const SCORES: Record<Weather, { bpm: number; swing: number; chords: Chord[]; spa
     ],
     sparkle: [],
   },
+  // Slow airy pads, a sub bass, and a ping now and then like a sweep on the scope.
+  tower: {
+    bpm: 64,
+    swing: 0,
+    chords: [
+      { bass: 38, notes: [57, 61, 64, 66] }, // Dmaj9
+      { bass: 35, notes: [57, 62, 64, 66] }, // Bm11
+      { bass: 43, notes: [59, 62, 66, 69] }, // Gmaj7
+      { bass: 45, notes: [57, 61, 64, 71] }, // A6/9
+    ],
+    sparkle: [81, 83, 85, 88, 90],
+  },
+  // A drone on D and A under a chant line in the Dorian mode.
+  monastery: {
+    bpm: 60,
+    swing: 0,
+    chords: [{ bass: 38, notes: [45, 50] }],
+    sparkle: [],
+  },
 };
+
+/** The chant: phrases of [note, length in sixteenths], sung one after another with a breath between. */
+const CHANT: [number, number][][] = [
+  [[50, 4], [53, 4], [55, 4], [57, 8], [57, 4], [55, 4], [57, 4], [59, 4], [57, 8], [55, 4], [53, 4], [55, 8], [57, 12]],
+  [[57, 4], [60, 4], [59, 4], [57, 4], [55, 8], [57, 4], [55, 4], [53, 4], [52, 4], [50, 12]],
+  [[53, 4], [55, 4], [57, 4], [57, 4], [57, 4], [59, 4], [60, 8], [59, 4], [57, 4], [55, 4], [57, 8], [53, 4], [55, 4], [53, 4], [52, 4], [50, 16]],
+  [[50, 4], [50, 4], [53, 4], [55, 8], [53, 4], [55, 4], [57, 12], [55, 4], [53, 4], [52, 8], [50, 16]],
+];
 
 const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 
@@ -118,10 +148,12 @@ export class Sound {
 
     // A soft room for the band (bigger in the city), and an echo for the city's arpeggio.
     const verb = ctx.createConvolver();
-    verb.buffer = this.impulse(this.weather === 'city' ? 3.4 : 1.6);
+    // A stone church is the biggest room of all.
+    const size = { alps: 1.6, city: 3.4, tower: 3, monastery: 5 }[this.weather];
+    verb.buffer = this.impulse(size);
     this.verbIn = ctx.createGain();
     const verbOut = ctx.createGain();
-    verbOut.gain.value = this.weather === 'city' ? 0.55 : 0.3;
+    verbOut.gain.value = { alps: 0.3, city: 0.55, tower: 0.5, monastery: 0.75 }[this.weather];
     this.verbIn.connect(verb).connect(verbOut).connect(this.musicBus);
     const echo = ctx.createDelay(1.5);
     echo.delayTime.value = (60 / SCORES[this.weather].bpm) * 0.75;
@@ -139,7 +171,17 @@ export class Sound {
     if (this.weather === 'city') {
       this.startRain();
       this.startHum();
-    } else this.startWind();
+    } else if (this.weather === 'tower') {
+      this.startWind(1500, 0.06);
+      this.startCab();
+    } else if (this.weather === 'monastery') {
+      this.startWind(700, 0.06);
+      this.birdsong();
+      this.bells();
+    } else {
+      this.startWind();
+      this.cowbells();
+    }
     this.startCrackle();
     this.startPen();
 
@@ -166,7 +208,7 @@ export class Sound {
   /** 0 at the desk, 1 with your nose to the glass (or out in the street): the weather gets louder. */
   setOutside(k: number) {
     if (!this.ctx) return;
-    const [base, more] = this.weather === 'city' ? [0.1, 0.35] : [0.08, 0.12];
+    const [base, more] = { alps: [0.08, 0.12], city: [0.1, 0.35], tower: [0.05, 0.3], monastery: [0.07, 0.16] }[this.weather];
     this.windGain.gain.setTargetAtTime(base + k * more, this.ctx.currentTime, 0.5);
   }
 
@@ -241,22 +283,23 @@ export class Sound {
     return s;
   }
 
-  private startWind() {
+  /** Wind: brown noise through a filter that gusts. Higher and thinner round the tower's glass. */
+  private startWind(cutoff = 520, level = 0.08) {
     const ctx = this.ctx!;
     const bed = this.loop(this.noiseBuffer(6, true));
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = 520;
+    lp.frequency.value = cutoff;
     lp.Q.value = 1.6;
     // Gusts: the filter and the level both breathe, slowly and out of step.
     const gust = ctx.createOscillator();
     gust.frequency.value = 0.07;
     const gustDepth = ctx.createGain();
-    gustDepth.gain.value = 260;
+    gustDepth.gain.value = cutoff * 0.5;
     gust.connect(gustDepth).connect(lp.frequency);
     gust.start();
     this.windGain = ctx.createGain();
-    this.windGain.gain.value = 0.08;
+    this.windGain.gain.value = level;
     const swell = ctx.createOscillator();
     swell.frequency.value = 0.043;
     const swellDepth = ctx.createGain();
@@ -265,7 +308,6 @@ export class Sound {
     swell.start();
     bed.connect(lp).connect(this.windGain).connect(this.ambience);
     bed.start();
-    this.cowbells();
   }
 
   /** Rain on the city and patter on the glass. Shares the weather level with the wind. */
@@ -344,6 +386,220 @@ export class Sound {
     window.setTimeout(ring, 9000);
   }
 
+  /**
+   * The tower cab: the air handling's low hum, and the radio now and then: a
+   * squelch, a pair of beeps, a click. Made up from tones and noise; there are
+   * no voices and nothing recorded.
+   */
+  private startCab() {
+    const ctx = this.ctx!;
+    const hum = ctx.createGain();
+    hum.gain.value = 0.012;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 180;
+    for (const f of [59.7, 119.6, 180.2]) {
+      const o = ctx.createOscillator();
+      o.frequency.value = f;
+      o.connect(lp);
+      o.start();
+    }
+    const air = this.loop(this.noiseBuffer(5, true));
+    const airLp = ctx.createBiquadFilter();
+    airLp.type = 'lowpass';
+    airLp.frequency.value = 300;
+    const airG = ctx.createGain();
+    airG.gain.value = 0.05;
+    air.connect(airLp).connect(airG).connect(this.ambience);
+    air.start();
+    lp.connect(hum).connect(this.ambience);
+    const radio = () => {
+      if (!this.ctx) return;
+      if (!this.muted) this.radio();
+      window.setTimeout(radio, 9000 + Math.random() * 16000);
+    };
+    window.setTimeout(radio, 4000);
+  }
+
+  /** One radio call: squelch opens, a short warble of tones, squelch closes, a courtesy beep. */
+  private radio() {
+    const ctx = this.ctx!;
+    const t0 = ctx.currentTime + 0.05;
+    const out = ctx.createGain();
+    out.gain.value = 0.5;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 1700;
+    band.Q.value = 0.9;
+    band.connect(out).connect(this.ambience);
+    const hiss = (at: number, len: number, vol: number) => {
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(vol, at + 0.01);
+      g.gain.setValueAtTime(vol, at + len - 0.02);
+      g.gain.linearRampToValueAtTime(0, at + len);
+      n.connect(g).connect(band);
+      n.start(at, Math.random() * 3, len + 0.05);
+    };
+    const beep = (at: number, f: number, len: number, vol = 0.02) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = f;
+      const g = this.env(at, vol, 0.004, len);
+      o.connect(g).connect(band);
+      o.start(at);
+      o.stop(at + len + 0.05);
+    };
+    hiss(t0, 0.09, 0.05);
+    // A little data burst, like a transponder reply on the scope.
+    const n = 3 + Math.floor(Math.random() * 6);
+    let at = t0 + 0.12;
+    for (let i = 0; i < n; i++) {
+      beep(at, [1180, 1320, 1480, 1760][Math.floor(Math.random() * 4)], 0.05, 0.016);
+      at += 0.07 + Math.random() * 0.05;
+    }
+    hiss(at + 0.05, 0.14, 0.04);
+    beep(at + 0.24, 1050, 0.09);
+    beep(at + 0.36, 1400, 0.12);
+    // Every so often, a second station answers, further off.
+    if (Math.random() < 0.4) {
+      const back = at + 1.4 + Math.random();
+      hiss(back, 0.07, 0.03);
+      beep(back + 0.1, 980, 0.07, 0.012);
+      beep(back + 0.2, 1240, 0.1, 0.012);
+    }
+  }
+
+  /**
+   * A jet down on the runway spooling up for takeoff, or roaring in reverse thrust
+   * after landing: a rising whine over a broad roar, a long way off and through
+   * the glass. Runs through the weather level, so it's louder up at the window.
+   */
+  jet(seconds: number, kind: 'takeoff' | 'landing' = 'takeoff') {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const end = now + seconds;
+    const out = ctx.createGain();
+    const peak = kind === 'takeoff' ? 0.9 : 0.6;
+    out.gain.setValueAtTime(0.0001, now);
+    out.gain.exponentialRampToValueAtTime(peak, now + (kind === 'takeoff' ? seconds * 0.45 : 2));
+    out.gain.setValueAtTime(peak, now + seconds * (kind === 'takeoff' ? 0.55 : 0.3));
+    out.gain.exponentialRampToValueAtTime(0.0001, end);
+    // Far away and behind glass: little above a couple of kilohertz gets through.
+    const glass = ctx.createBiquadFilter();
+    glass.type = 'lowpass';
+    glass.frequency.value = 2200;
+    out.connect(glass).connect(this.windGain);
+    const roar = this.loop(this.noiseBuffer(4, true));
+    const rlp = ctx.createBiquadFilter();
+    rlp.type = 'lowpass';
+    rlp.Q.value = 0.8;
+    rlp.frequency.setValueAtTime(160, now);
+    rlp.frequency.exponentialRampToValueAtTime(kind === 'takeoff' ? 900 : 600, now + seconds * 0.4);
+    rlp.frequency.exponentialRampToValueAtTime(220, end);
+    const rg = ctx.createGain();
+    rg.gain.value = 1.4;
+    roar.connect(rlp).connect(rg).connect(out);
+    roar.start(now);
+    roar.stop(end + 0.1);
+    // The turbine: two whines a fifth apart, climbing as the engines spool.
+    for (const [f0, f1, level] of [
+      [380, 2300, 0.03],
+      [570, 3450, 0.015],
+    ] as const) {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(f0, now);
+      o.frequency.exponentialRampToValueAtTime(kind === 'takeoff' ? f1 : f1 * 0.6, now + Math.min(7, seconds * 0.35));
+      o.frequency.exponentialRampToValueAtTime(f1 * 0.45, end);
+      const g = ctx.createGain();
+      g.gain.value = level;
+      o.connect(g).connect(out);
+      o.start(now);
+      o.stop(end + 0.1);
+    }
+  }
+
+  /** Birds in the garden: little phrases of chirps and trills, never quite the same twice. */
+  private birdsong() {
+    const ctx = this.ctx!;
+    const sing = () => {
+      if (!this.ctx) return;
+      const t0 = ctx.currentTime + 0.05;
+      const kind = Math.random();
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = Math.random() * 1.6 - 0.8;
+      pan.connect(this.windGain);
+      const chirp = (at: number, f0: number, f1: number, len: number, vol: number) => {
+        const o = ctx.createOscillator();
+        o.frequency.setValueAtTime(f0, at);
+        o.frequency.exponentialRampToValueAtTime(f1, at + len);
+        const g = this.env(at, vol, 0.006, len);
+        o.connect(g).connect(pan);
+        o.start(at);
+        o.stop(at + len + 0.05);
+      };
+      if (kind < 0.45) {
+        // A sparrow: a run of quick downward chirps.
+        const n = 3 + Math.floor(Math.random() * 5);
+        for (let i = 0; i < n; i++) chirp(t0 + i * 0.13, 5200 - i * 120, 3400, 0.07, 0.05);
+      } else if (kind < 0.8) {
+        // A finch: a trill, then a flourish up.
+        for (let i = 0; i < 10; i++) chirp(t0 + i * 0.045, 4200, 4800, 0.03, 0.035);
+        chirp(t0 + 0.5, 3200, 6200, 0.18, 0.05);
+      } else {
+        // A dove, far off: two soft low coos.
+        for (const d of [0, 0.7]) {
+          const o = ctx.createOscillator();
+          o.frequency.setValueAtTime(520, t0 + d);
+          o.frequency.linearRampToValueAtTime(600, t0 + d + 0.15);
+          o.frequency.linearRampToValueAtTime(480, t0 + d + 0.45);
+          const g = this.env(t0 + d, 0.03, 0.08, 0.45);
+          o.connect(g).connect(pan);
+          o.start(t0 + d);
+          o.stop(t0 + d + 0.6);
+        }
+      }
+      window.setTimeout(sing, 1800 + Math.random() * 6500);
+    };
+    window.setTimeout(sing, 1500);
+  }
+
+  /** The bell in the tower, now and then: a few slow strokes, each one humming away for a long time. */
+  private bells() {
+    const ctx = this.ctx!;
+    const toll = () => {
+      if (!this.ctx) return;
+      const t0 = ctx.currentTime + 0.1;
+      const strokes = 1 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < strokes; i++) {
+        const at = t0 + i * 3.2;
+        // A church bell's partials: hum, prime, minor third, fifth, nominal.
+        for (const [mult, amp, decay] of [
+          [0.5, 0.6, 7],
+          [1, 1, 5],
+          [1.19, 0.5, 3.5],
+          [1.5, 0.35, 3],
+          [2, 0.45, 2.5],
+          [2.66, 0.15, 1.6],
+        ]) {
+          const o = ctx.createOscillator();
+          o.frequency.value = 196 * mult;
+          const g = this.env(at, 0.012 * amp, 0.004, decay);
+          o.connect(g).connect(this.ambience);
+          g.connect(this.verbIn);
+          o.start(at);
+          o.stop(at + decay + 0.2);
+        }
+      }
+      window.setTimeout(toll, 40000 + Math.random() * 40000);
+    };
+    window.setTimeout(toll, 12000);
+  }
+
   private startCrackle() {
     const ctx = this.ctx!;
     const buf = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate);
@@ -375,6 +631,8 @@ export class Sound {
       const at = this.nextAt + (s % 2 ? sixteenth * score.swing : 0);
       if (this.musicOn) {
         if (this.weather === 'city') this.playCity(at, s, bar, sixteenth * 16);
+        else if (this.weather === 'tower') this.playTower(at, s, bar, sixteenth * 16);
+        else if (this.weather === 'monastery') this.playMonastery(at, s, bar, sixteenth);
         else this.playLake(at, s, bar);
       }
       this.nextAt += sixteenth;
@@ -410,6 +668,43 @@ export class Sound {
     if (s === 0 || s === 8) this.kick(at, 0.6);
     if (s === 4 || s === 12) this.snap(at);
     if (s % 2 === 1) this.hat(at, 0.22, false);
+  }
+
+  /** The tower: airy pads that breathe over two bars, a sub bass, a ping in the echo like a sweep on the scope. */
+  private playTower(at: number, s: number, bar: number, barLength: number) {
+    const { chords, sparkle } = SCORES.tower;
+    const chord = chords[Math.floor(bar / 2) % chords.length];
+    if (s === 0 && bar % 2 === 0) this.airPad(at, chord.notes, barLength * 2.2);
+    if (s === 0) this.sub(at, chord.bass, barLength * 0.9);
+    if (s === 0 && bar % 2 === 1) this.ping(at, chord.notes[3] + 24, 0.03);
+    if (s === 10 && Math.random() < 0.35) this.ping(at, sparkle[Math.floor(Math.random() * sparkle.length)], 0.016);
+    if (s % 4 === 2) this.hat(at, 0.12, false);
+  }
+
+  private chantPhrase = 0;
+  private chantNote = 0;
+  private chantNext = 0;
+  /** The monastery: a drone that never stops, and a chant line over it with a breath between phrases. */
+  private playMonastery(at: number, s: number, bar: number, sixteenth: number) {
+    const step = bar * 16 + s;
+    if (s === 0 && bar % 4 === 0) {
+      const len = sixteenth * 16 * 4.4;
+      this.voice(at, 38, len, 0.022, 'o');
+      this.voice(at, 45, len, 0.016, 'o');
+    }
+    if (step < this.chantNext) return;
+    const phrase = CHANT[this.chantPhrase % CHANT.length];
+    const [note, sixteenths] = phrase[this.chantNote];
+    const len = sixteenths * sixteenth;
+    this.voice(at, note, len * 1.05, 0.05, this.chantNote % 3 === 1 ? 'o' : 'a');
+    // An octave below, quietly: a second brother joining in.
+    this.voice(at, note - 12, len * 1.05, 0.018, 'u');
+    this.chantNext = step + sixteenths;
+    if (++this.chantNote >= phrase.length) {
+      this.chantNote = 0;
+      this.chantPhrase++;
+      this.chantNext += 10 + Math.floor(Math.random() * 8);
+    }
   }
 
   private env(at: number, peak: number, attack: number, decay: number) {
@@ -619,6 +914,115 @@ export class Sound {
     wet.gain.value = 1.4;
     g.connect(wet).connect(this.verbIn);
     n.start(at, Math.random() * 3, 0.2);
+  }
+
+  /** A soft pad: sines and triangles, gently detuned, slow in and slow out, mostly heard in the room. */
+  private airPad(at: number, notes: number[], len: number) {
+    const ctx = this.ctx!;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1500;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.045, at + len * 0.35);
+    g.gain.linearRampToValueAtTime(0.03, at + len * 0.7);
+    g.gain.linearRampToValueAtTime(0, at + len);
+    lp.connect(g);
+    g.connect(this.musicBus);
+    g.connect(this.verbIn);
+    for (const n of notes) {
+      for (const [cents, type] of [
+        [-6, 'triangle'],
+        [5, 'sine'],
+      ] as const) {
+        const o = ctx.createOscillator();
+        o.type = type;
+        o.frequency.value = hz(n);
+        o.detune.value = cents;
+        this.wow.connect(o.detune);
+        o.connect(lp);
+        o.onended = () => this.wow.disconnect(o.detune);
+        o.start(at);
+        o.stop(at + len + 0.1);
+      }
+    }
+  }
+
+  /** A round sine bass under the pads. */
+  private sub(at: number, midi: number, len: number) {
+    const ctx = this.ctx!;
+    const o = ctx.createOscillator();
+    o.frequency.value = hz(midi);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.16, at + 0.4);
+    g.gain.setValueAtTime(0.16, at + len * 0.7);
+    g.gain.linearRampToValueAtTime(0, at + len);
+    o.connect(g).connect(this.musicBus);
+    o.start(at);
+    o.stop(at + len + 0.1);
+  }
+
+  /** A sonar-ish ping: a pure tone with a soft bell partial, into the echo. */
+  private ping(at: number, midi: number, vel: number) {
+    const ctx = this.ctx!;
+    const g = this.env(at, vel, 0.003, 1.4);
+    g.connect(this.musicBus);
+    g.connect(this.echoIn);
+    for (const [mult, amp] of [
+      [1, 1],
+      [2.0, 0.12],
+    ]) {
+      const o = ctx.createOscillator();
+      o.frequency.value = hz(midi) * mult;
+      const og = ctx.createGain();
+      og.gain.value = amp;
+      o.connect(og).connect(g);
+      o.start(at);
+      o.stop(at + 1.5);
+    }
+  }
+
+  /** A sung note: buzzing saws through three vowel formants, a slow swell and a little vibrato, into a long stone room. */
+  private voice(at: number, midi: number, len: number, vel: number, vowel: 'a' | 'o' | 'u') {
+    const ctx = this.ctx!;
+    const formants = { a: [800, 1150, 2900], o: [450, 800, 2830], u: [325, 700, 2530] }[vowel];
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0, at);
+    out.gain.linearRampToValueAtTime(vel, at + Math.min(0.25, len * 0.3));
+    out.gain.setValueAtTime(vel, at + len * 0.75);
+    out.gain.linearRampToValueAtTime(0, at + len + 0.25);
+    out.connect(this.musicBus);
+    const wet = ctx.createGain();
+    wet.gain.value = 1.6;
+    out.connect(wet).connect(this.verbIn);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 4.8;
+    const vibDepth = ctx.createGain();
+    vibDepth.gain.value = 9;
+    vib.connect(vibDepth);
+    vib.start(at);
+    vib.stop(at + len + 0.4);
+    const src = ctx.createGain();
+    for (const cents of [-5, 4]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = hz(midi);
+      o.detune.value = cents;
+      vibDepth.connect(o.detune);
+      o.connect(src);
+      o.start(at);
+      o.stop(at + len + 0.4);
+    }
+    formants.forEach((f, i) => {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = f;
+      bp.Q.value = 6 + i * 2;
+      const fg = ctx.createGain();
+      fg.gain.value = [1, 0.5, 0.18][i];
+      src.connect(bp).connect(fg).connect(out);
+    });
   }
 
   /** A made-up room: stereo noise that dies away. */

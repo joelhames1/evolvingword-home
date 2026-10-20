@@ -1,16 +1,18 @@
 // The pictures inside the chooser's globes: each world's opening view, square,
-// with the interface hidden. node scripts/stills.mjs [base] (writes public/worlds/<id>.jpg via a PNG in shots/)
+// with the interface hidden. node scripts/stills.mjs [base] [worlds...]
+// (writes public/worlds/<id>.jpg via a PNG in shots/; all four worlds unless you name some)
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { chromium } from '@playwright/test';
-const [base = 'http://localhost:5180'] = process.argv.slice(2);
+const [base = 'http://localhost:5180', ...picked] = process.argv.slice(2);
+const worlds = picked.length ? picked : ['alps', 'city', 'tower', 'monastery'];
 fs.mkdirSync('shots', { recursive: true });
 fs.mkdirSync('public/worlds', { recursive: true });
 const browser = await chromium.launch({
   executablePath: fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined,
   args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
 });
-for (const world of ['alps', 'city']) {
+for (const world of worlds) {
   const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   await page.goto(`${base}/?shot=vista&full&world=${world}`);
   await page.addStyleTag({ content: '.top,.controls,.letterbox,#tooltip,#hints{display:none!important}' });
