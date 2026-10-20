@@ -29,6 +29,26 @@ export const lastWorld = (): WorldId | null => {
 };
 export const rememberWorld = (id: WorldId) => write(WORLD_KEY, id);
 
+/** The world just left with the Worlds button, if any: the chooser pulls back out of its globe. */
+const cameFrom = (): string | null => {
+  try {
+    const id = sessionStorage.getItem('ew.from');
+    sessionStorage.removeItem('ew.from');
+    return id;
+  } catch {
+    return null;
+  }
+};
+
+/** Where a globe has to move, and how big it has to get, for its glass to fill the screen. */
+const fillScreen = (globe: HTMLElement) => {
+  const r = globe.getBoundingClientRect();
+  const dx = window.innerWidth / 2 - (r.left + r.width / 2);
+  const dy = window.innerHeight / 2 - (r.top + r.height / 2);
+  const scale = (Math.hypot(window.innerWidth, window.innerHeight) / r.width) * 1.08;
+  return `translate(${dx}px, ${dy}px) scale(${scale})`;
+};
+
 /** The weather running in each globe, stopped once a world takes over. */
 const skies: { stop(): void }[] = [];
 
@@ -145,6 +165,7 @@ export function choose(): Promise<{ world: WorldId; sound: boolean }> {
   });
 
   const last = lastWorld();
+  const from = cameFrom();
   // The layout keys off how many globes there are: one row, or two (see .globes in style.css).
   row.dataset.count = String(WORLDS.length);
   root.hidden = false;
@@ -152,6 +173,7 @@ export function choose(): Promise<{ world: WorldId; sound: boolean }> {
 
   return new Promise((resolve) => {
     let picked = false;
+    let returning: { wrap: HTMLElement; globe: HTMLElement; sky: { shake(): void } } | null = null;
     for (const w of WORLDS) {
       const wrap = document.createElement('button');
       wrap.type = 'button';
@@ -203,10 +225,6 @@ export function choose(): Promise<{ world: WorldId; sound: boolean }> {
         wrap.classList.add('picked');
         // Shake, then dive: the globe grows from where it sits until its glass
         // fills the screen, and the world takes over from there.
-        const r = globe.getBoundingClientRect();
-        const dx = window.innerWidth / 2 - (r.left + r.width / 2);
-        const dy = window.innerHeight / 2 - (r.top + r.height / 2);
-        const scale = (Math.hypot(window.innerWidth, window.innerHeight) / r.width) * 1.08;
         globe.animate(
           [
             { transform: 'translate(0, 0) rotate(0deg)' },
@@ -214,12 +232,28 @@ export function choose(): Promise<{ world: WorldId; sound: boolean }> {
             { transform: 'translate(0, 0) rotate(4deg)', offset: 0.16 },
             { transform: 'translate(0, 0) rotate(-2deg)', offset: 0.24 },
             { transform: 'translate(0, 0) rotate(0deg)', offset: 0.3 },
-            { transform: `translate(${dx}px, ${dy}px) scale(${scale})` },
+            { transform: fillScreen(globe) },
           ],
           { duration: 1700, easing: 'cubic-bezier(0.6, 0, 0.4, 1)', fill: 'forwards' },
         );
         window.setTimeout(() => resolve({ world: w.id, sound }), 1250);
       });
+      if (w.id === from) returning = { wrap, globe, sky };
+    }
+    // Back from a world: start inside its globe, filling the screen, and pull back
+    // out of it to where it sits, the dive in reverse, while the rest fades up.
+    if (returning) {
+      const { wrap, globe, sky } = returning;
+      root.classList.add('returning');
+      wrap.classList.add('back');
+      globe.animate([{ transform: fillScreen(globe) }, { transform: 'translate(0, 0) scale(1)', offset: 0.85 }, { transform: 'translate(0, 0) rotate(2deg)', offset: 0.92 }, { transform: 'none' }], {
+        duration: 1600,
+        easing: 'cubic-bezier(0.5, 0, 0.3, 1)',
+      });
+      // The weather inside is still swirling from the trip.
+      sky.shake();
+      window.setTimeout(() => root.classList.remove('returning'), 700);
+      window.setTimeout(() => wrap.classList.remove('back'), 1700);
     }
   });
 }

@@ -480,7 +480,8 @@ export function buildCab(daylight: DaylightUniforms): Cab {
   const roof = box(x1 - x0 + 2 * LEAN + 0.6, 0.55, z1 - z0 + LEAN + 0.6, cladding, 0, h + 0.275, (z0 - LEAN + z1) / 2, true);
   group.add(roof);
   // A floor slab under the cab that runs out as a walkway beneath the glass.
-  group.add(box(x1 - x0 + 2 * LEAN + 0.8, 0.5, z1 - z0 + LEAN + 0.7, cladding, 0, -0.25, (z0 - LEAN + z1) / 2 - 0.1));
+  // Its top sits just under the carpet, so the two never fight over the same plane.
+  group.add(box(x1 - x0 + 2 * LEAN + 0.8, 0.5, z1 - z0 + LEAN + 0.7, cladding, 0, -0.28, (z0 - LEAN + z1) / 2 - 0.1));
   // Below: the equipment floor, a little narrower, with a row of small windows.
   const [ec, eg] = canvas(512, 128);
   eg.fillStyle = '#c8c3ba';

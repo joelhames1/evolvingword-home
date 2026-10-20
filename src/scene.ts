@@ -568,8 +568,16 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   });
   $('credits-btn').addEventListener('click', () => ($('credits').hidden = false));
   $('simple-btn').addEventListener('click', () => switchTo('simple'));
-  // Back to the globes: a fresh page is the cleanest way to put one world down for another.
-  $('worlds-btn').addEventListener('click', () => (location.href = '/'));
+  // Back to the globes: a fresh page is the cleanest way to put one world down for
+  // another. The chooser then pulls back out of this world's globe (see returnTo).
+  $('worlds-btn').addEventListener('click', () => {
+    try {
+      sessionStorage.setItem('ew.from', worldId);
+    } catch {
+      // No session storage: the globes just appear, without the pull back.
+    }
+    location.href = '/';
+  });
 
   // If frames come slowly once we're inside, offer the simple page, once.
   const watchSpeed = () => {

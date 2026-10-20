@@ -225,16 +225,21 @@ test('turning during the flight in still leaves everything clickable', async ({ 
   await page.waitForFunction(() => !(window as unknown as { __ew: { rig: { moving: boolean } } }).__ew.rig.moving, null, { timeout: 60_000 });
   expect(await page.evaluate(() => (window as unknown as { __ew: { rig: { current: string } } }).__ew.rig.current)).toBe('honors');
   await expect(page.locator('#turn-left')).toBeVisible();
-  const pt = await page.evaluate(() => {
-    type V = { project(c: unknown): V; x: number; y: number };
-    const w = (window as unknown as { __ew: { honors: { medals: { getWorldPosition(v: V): V }[] }; camera: { position: { clone(): V } } } }).__ew;
-    const p = w.honors.medals[2].getWorldPosition(w.camera.position.clone()).project(w.camera);
-    const c = document.querySelector('#scene canvas')!;
-    return { x: ((p.x + 1) / 2) * c.clientWidth, y: ((1 - p.y) / 2) * c.clientHeight };
-  });
+  const medal = () =>
+    page.evaluate(() => {
+      type V = { project(c: unknown): V; x: number; y: number };
+      const w = (window as unknown as { __ew: { honors: { medals: { getWorldPosition(v: V): V }[] }; camera: { position: { clone(): V } } } }).__ew;
+      const p = w.honors.medals[2].getWorldPosition(w.camera.position.clone()).project(w.camera);
+      const c = document.querySelector('#scene canvas')!;
+      return { x: ((p.x + 1) / 2) * c.clientWidth, y: ((1 - p.y) / 2) * c.clientHeight };
+    });
+  const pt = await medal();
   await page.mouse.move(pt.x, pt.y);
   await page.waitForTimeout(1200);
-  await page.mouse.click(pt.x, pt.y);
+  // The camera leans toward the mouse; on a slow renderer the medal can still be
+  // drifting, so look again before clicking.
+  const at = await medal();
+  await page.mouse.click(at.x, at.y);
   await expect(page.locator('#card-title')).toHaveText('Medals', { timeout: 20_000 });
   expect(problems).toEqual([]);
 });

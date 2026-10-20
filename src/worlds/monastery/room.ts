@@ -496,7 +496,8 @@ export function buildCell(daylight: DaylightUniforms): Cell {
         }
       }
   }
-  const plinth = new THREE.Mesh(block(x0 - T, x1 + T, base, 0), outStone);
+  // Its top stops just short of the floor, so the two never fight over the same plane.
+  const plinth = new THREE.Mesh(block(x0 - T, x1 + T, base, -0.03), outStone);
   plinth.position.z = z0 - T;
   group.add(plinth);
   // Terracotta roofs, the ridges running along the house.

@@ -117,7 +117,7 @@ export function buildDotBoard(width: number): DotBoard {
   const black = new THREE.MeshStandardMaterial({ color: '#141518', roughness: 0.5, metalness: 0.4 });
   const housing = new THREE.Mesh(new THREE.BoxGeometry(width + 0.08, height + 0.08, 0.12), black);
   housing.position.z = -0.06;
-  housing.castShadow = true;
+  // No shadow: the low sun would throw a dark smudge of it across the back wall.
   group.add(housing);
   for (const x of [-width * 0.38, width * 0.38]) {
     const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.5, 8), black);

@@ -1570,3 +1570,19 @@ html.lite body {
 }
 
 
+
+/* Back from a world: everything but the globe you came out of fades up as it pulls back. */
+.chooser.returning .chooser-head,
+.chooser.returning .chooser-foot,
+.chooser.returning .globe-wrap:not(.back),
+.chooser .globe-wrap.back .base,
+.chooser .globe-wrap.back .caption {
+  opacity: 0;
+}
+.chooser .globe-wrap .base,
+.chooser .globe-wrap .caption {
+  transition: opacity 0.6s ease;
+}
+.chooser .globe-wrap.back .globe {
+  z-index: 3;
+}
