@@ -26,7 +26,7 @@ import { buildReader } from './reader';
 import { buildTerminal, type Page } from './terminal';
 import { createWorld } from './world';
 import type { WorldId } from './worlds';
-import type { KitModule } from './worlds/kit';
+import type { KitModule, Studio, Wall } from './worlds/kit';
 
 /** Each world's 3D code, loaded only when it's picked. */
 const KITS: Record<WorldId, () => Promise<KitModule>> = {
@@ -100,6 +100,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   const kit = (await kitModule).buildKit({ quality, renderer, scene, log });
   const board = kit.board;
   Object.assign(SHOTS, kit.shots);
+  if (kit.band) sound.useBand(kit.band);
 
   // --- the room and everything in it -------------------------------------------------
   const terminal = buildTerminal({
@@ -178,6 +179,41 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   SHOTS.library = { pos: v(0.35, 1.45, 1.05), target: v(0.35, 1.22, ROOM.z1), fov: 54, lean: 0.04, shift: 0.1 };
   SHOTS.shoes = { pos: shoesAt.clone().add(v(0.42, 0.55, 0.5)), target: shoesAt.clone().add(v(0, 0.05, 0)), fov: 38, lean: 0.02, shift: CARD };
 
+  // --- a world that presents the studio its own way -------------------------------------
+  // It may move the pieces; each close-up moves with the piece it looks at.
+  const studio: Studio = { desk, line, watch, pad, treats, rolodex, honors, map, shelf, shoes };
+  const lineTurn = new THREE.Quaternion();
+  if (kit.arrange) {
+    const anchors = { desk: desk.group, watch: watch.group, pad: pad.group, treats: treats.group, rolodex: rolodex.group, honors: honors.group, map: map.group, shelf: shelf.group, shoes: shoes.group, line: line.group };
+    const before = new Map(Object.entries(anchors).map(([k, o]) => [k, o.matrixWorld.clone()]));
+    kit.arrange(studio);
+    scene.updateMatrixWorld(true);
+    const moved = (k: keyof typeof anchors) => anchors[k].matrixWorld.clone().multiply(before.get(k)!.clone().invert());
+    const follows: Record<string, keyof typeof anchors> = {
+      desk: 'desk',
+      signal: 'desk',
+      about: 'desk',
+      watch: 'watch',
+      pad: 'pad',
+      treats: 'treats',
+      work: 'rolodex',
+      honors: 'honors',
+      diplomas: 'honors',
+      medals: 'honors',
+      map: 'map',
+      places: 'map',
+      library: 'shelf',
+      shoes: 'shoes',
+    };
+    for (const [shot, k] of Object.entries(follows)) {
+      const m = moved(k);
+      SHOTS[shot].pos.applyMatrix4(m);
+      SHOTS[shot].target.applyMatrix4(m);
+    }
+    moved('line').decompose(v(0, 0, 0), lineTurn, v(1, 1, 1));
+  }
+  Object.assign(SHOTS, kit.closeups?.(studio) ?? {});
+
   // --- panels and captions ---------------------------------------------------------------
   const panels = { about: $('about'), project: $('project'), card: $('card') };
   const navButtons = [...document.querySelectorAll<HTMLButtonElement>('nav button')];
@@ -233,7 +269,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
     const focus = line.items[projectIndex].focus;
     // Stand back from the wall, a little to one side, with room for the ticket.
     SHOTS.projects.target.copy(focus).add(v(0, 0.05, 0));
-    SHOTS.projects.pos.set(focus.x + 1.35, focus.y + 0.05, focus.z - 0.3);
+    SHOTS.projects.pos.copy(focus).add(v(1.35, 0.05, -0.3).applyQuaternion(lineTurn));
     SHOTS.projects.shift = CARD;
   };
 
@@ -341,16 +377,26 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   };
 
   // --- looking around: four walls, and which wall each close-up belongs to -------------
-  const WALLS = ['desk', 'honors', 'library', 'places'] as const;
-  type Wall = (typeof WALLS)[number];
-  const WALL_NAMES: Record<Wall, string> = { desk: 'The desk', honors: 'Medals & diplomas', library: 'The library', places: 'Map, shirts & shoes' };
-  const PARENT: Record<string, Wall> = { honors: 'honors', diplomas: 'honors', medals: 'honors', library: 'library', places: 'places', map: 'places', shoes: 'places', projects: 'places' };
-  const wallOf = (shot: string): Wall => PARENT[shot] ?? 'desk';
+  // The room's four walls, unless the world has its own places to turn between.
+  const WALLS: Wall[] = kit.walls ?? [
+    { id: 'desk', name: 'The desk' },
+    { id: 'honors', name: 'Medals & diplomas', members: ['diplomas', 'medals'] },
+    { id: 'library', name: 'The library' },
+    { id: 'places', name: 'Map, shirts & shoes', members: ['map', 'shoes', 'projects'] },
+  ];
+  const WALL_NAMES: Record<string, string> = Object.fromEntries(WALLS.map((w) => [w.id, w.name]));
+  const PARENT: Record<string, string> = {};
+  for (const w of WALLS) {
+    PARENT[w.id] = w.id;
+    for (const m of w.members ?? []) PARENT[m] = w.id;
+  }
+  const wallOf = (shot: string): string => PARENT[shot] ?? 'desk';
   const turnLeft = $<HTMLButtonElement>('turn-left');
   const turnRight = $<HTMLButtonElement>('turn-right');
   const neighbors = (shot: string) => {
-    const i = WALLS.indexOf(wallOf(shot));
-    return { left: WALLS[(i + 3) % 4], right: WALLS[(i + 1) % 4] };
+    const n = WALLS.length;
+    const i = Math.max(0, WALLS.findIndex((w) => w.id === wallOf(shot)));
+    return { left: WALLS[(i + n - 1) % n].id, right: WALLS[(i + 1) % n].id };
   };
   const labelTurns = (shot: string) => {
     const n = neighbors(shot);
@@ -382,7 +428,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
     if (name === 'projects') showProject(projectIndex);
     if (name !== 'map') map.setCovering(false);
     navButtons.forEach((b) => b.setAttribute('aria-current', String(b.dataset.go === (navFor[name] ?? ''))));
-    void rig.go(name).then(() => {
+    return rig.go(name).then(() => {
       if (rig.current !== name) return;
       if (name === 'signal') terminal.show(page);
       onArrive[name]?.();
@@ -672,6 +718,17 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
         sound.flick();
       } else turn(dir);
     }
+  });
+
+  // The world's own clickable things.
+  kit.wire?.({
+    touch: (t) => touch.add(t),
+    goTo: (shot) => void goTo(shot),
+    card: (kicker, title, body, actions) => showCard(kicker, title, body, actions),
+    say: (text) => say(text),
+    sound,
+    current: () => rig.current,
+    moving: () => rig.moving,
   });
 
   // --- the loop ----------------------------------------------------------------------

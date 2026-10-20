@@ -13,7 +13,7 @@ import '@fontsource/eb-garamond/600.css';
 import '@fontsource/unifrakturmaguntia/400.css';
 import './style.css';
 import { BOOKS, loadBook } from './books';
-import { choose, dismiss, lastWorld, rememberWorld } from './chooser';
+import { choose, dismiss, lastWorld, rememberWorld, shownWorlds } from './chooser';
 import { fillPlain, switchTo, wantsLite } from './plain';
 import { buildReader } from './reader';
 import { isWorld, WORLDS, type WorldId } from './worlds';
@@ -69,6 +69,8 @@ else {
   else {
     // Fetch the studio while they choose; it only runs once they've picked.
     void import('./scene');
-    void choose().then(({ world, sound }) => enter(world, sound));
+    void shownWorlds()
+      .then((worlds) => choose(worlds))
+      .then(({ world, sound }) => enter(world, sound));
   }
 }

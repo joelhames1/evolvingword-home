@@ -10,8 +10,48 @@
 
 import { unlockedAudio } from './audio-unlock';
 
-/** What's outside the window, for the ambience. */
+/** What's outside the window, for the ambience. Newer worlds bring their own (a Band). */
 export type Weather = 'alps' | 'city' | 'tower' | 'monastery';
+
+/** What a world's own band gets to play with once the audio is running. */
+export interface SoundKit {
+  ctx: AudioContext;
+  /** The band's bus (the tape-deck switch turns it off). */
+  music: GainNode;
+  /** Sounds of the room and the world, always on while sound is. */
+  ambience: GainNode;
+  /** The world's weather, louder with your nose to the glass; connect outside sounds here. */
+  weather: GainNode;
+  /** Into the reverb, and into the echo. */
+  verb: GainNode;
+  echo: GainNode;
+  /** A slow shared pitch wobble; connect it to an oscillator's detune for worn tape. */
+  wow: GainNode;
+  /** Four seconds of white noise. */
+  noise: AudioBuffer;
+  /** The instruments: env, keys, bass, kick, hat, bell, brush, shaker, pad, arp, synthBass, snap, airPad, sub, ping, voice, burst, noiseBuffer, loop. */
+  sound: Sound;
+}
+
+/**
+ * A world's own music and weather, kept in the world's folder (worlds/<id>/sound.ts)
+ * so new worlds don't all edit this file. The four first worlds are built in below.
+ */
+export interface Band {
+  bpm: number;
+  /** How late every other sixteenth lands, 0..0.5. */
+  swing?: number;
+  /** The room the band plays in: seconds of reverb tail, and how much of it is heard. */
+  room?: [number, number];
+  /** Echo time, in beats. */
+  echoBeats?: number;
+  /** The weather's level at the desk, and how much it rises at the glass. */
+  outside?: [number, number];
+  /** Starts the world's weather and ambience. */
+  start(k: SoundKit): void;
+  /** Plays one sixteenth: `step` 0..15 in `bar`. */
+  play(k: SoundKit, at: number, step: number, bar: number, sixteenth: number): void;
+}
 
 type Chord = { bass: number; notes: number[] };
 
@@ -81,6 +121,8 @@ export class Sound {
   private verbIn!: GainNode;
   private echoIn!: GainNode;
   private weather: Weather = 'alps';
+  private band: Band | null = null;
+  private kit: SoundKit | null = null;
   private wow!: GainNode;
   private noise!: AudioBuffer;
   private penGain!: GainNode;
@@ -94,8 +136,13 @@ export class Sound {
     return !!this.ctx;
   }
 
-  constructor(weather: Weather = 'alps') {
-    this.weather = weather;
+  constructor(weather: Weather | string = 'alps') {
+    this.weather = weather as Weather;
+  }
+
+  /** Plays this world's own band and weather instead of the built-in ones. Call before start(). */
+  useBand(band: Band) {
+    this.band = band;
   }
 
   /**
@@ -149,14 +196,15 @@ export class Sound {
     // A soft room for the band (bigger in the city), and an echo for the city's arpeggio.
     const verb = ctx.createConvolver();
     // A stone church is the biggest room of all.
-    const size = { alps: 1.6, city: 3.4, tower: 3, monastery: 5 }[this.weather];
+    const builtIn = { alps: [1.6, 0.3], city: [3.4, 0.55], tower: [3, 0.5], monastery: [5, 0.75] } as Record<string, [number, number]>;
+    const [size, wet] = this.band?.room ?? builtIn[this.weather] ?? [2, 0.4];
     verb.buffer = this.impulse(size);
     this.verbIn = ctx.createGain();
     const verbOut = ctx.createGain();
-    verbOut.gain.value = { alps: 0.3, city: 0.55, tower: 0.5, monastery: 0.75 }[this.weather];
+    verbOut.gain.value = wet;
     this.verbIn.connect(verb).connect(verbOut).connect(this.musicBus);
     const echo = ctx.createDelay(1.5);
-    echo.delayTime.value = (60 / SCORES[this.weather].bpm) * 0.75;
+    echo.delayTime.value = (60 / this.bpm()) * (this.band?.echoBeats ?? 0.75);
     const echoTone = ctx.createBiquadFilter();
     echoTone.type = 'lowpass';
     echoTone.frequency.value = 1600;
@@ -168,7 +216,13 @@ export class Sound {
     echoTone.connect(this.verbIn);
 
     this.noise = this.noiseBuffer(4);
-    if (this.weather === 'city') {
+    if (this.band) {
+      this.windGain = ctx.createGain();
+      this.windGain.gain.value = this.band.outside?.[0] ?? 0.08;
+      this.windGain.connect(this.ambience);
+      this.kit = { ctx, music: this.musicBus, ambience: this.ambience, weather: this.windGain, verb: this.verbIn, echo: this.echoIn, wow: this.wow, noise: this.noise, sound: this };
+      this.band.start(this.kit);
+    } else if (this.weather === 'city') {
       this.startRain();
       this.startHum();
     } else if (this.weather === 'tower') {
@@ -208,7 +262,7 @@ export class Sound {
   /** 0 at the desk, 1 with your nose to the glass (or out in the street): the weather gets louder. */
   setOutside(k: number) {
     if (!this.ctx) return;
-    const [base, more] = { alps: [0.08, 0.12], city: [0.1, 0.35], tower: [0.05, 0.3], monastery: [0.07, 0.16] }[this.weather];
+    const [base, more] = this.band?.outside ?? { alps: [0.08, 0.12], city: [0.1, 0.35], tower: [0.05, 0.3], monastery: [0.07, 0.16] }[this.weather] ?? [0.08, 0.12];
     this.windGain.gain.setTargetAtTime(base + k * more, this.ctx.currentTime, 0.5);
   }
 
@@ -261,7 +315,7 @@ export class Sound {
     }
   }
 
-  private noiseBuffer(seconds: number, brown = false) {
+  noiseBuffer(seconds: number, brown = false) {
     const ctx = this.ctx!;
     const buf = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -276,7 +330,7 @@ export class Sound {
     return buf;
   }
 
-  private loop(buffer: AudioBuffer) {
+  loop(buffer: AudioBuffer) {
     const s = this.ctx!.createBufferSource();
     s.buffer = buffer;
     s.loop = true;
@@ -620,17 +674,22 @@ export class Sound {
 
   // --- the band ---------------------------------------------------------------
 
+  private bpm() {
+    return this.band?.bpm ?? SCORES[this.weather]?.bpm ?? 72;
+  }
+
   private schedule() {
     const ctx = this.ctx!;
-    const score = SCORES[this.weather];
-    const sixteenth = 60 / score.bpm / 4;
+    const swing = this.band ? (this.band.swing ?? 0) : (SCORES[this.weather]?.swing ?? 0);
+    const sixteenth = 60 / this.bpm() / 4;
     while (this.nextAt < ctx.currentTime + 0.15) {
       const s = this.step % 16;
       const bar = Math.floor(this.step / 16);
       // Swing: every other sixteenth lands a little late.
-      const at = this.nextAt + (s % 2 ? sixteenth * score.swing : 0);
+      const at = this.nextAt + (s % 2 ? sixteenth * swing : 0);
       if (this.musicOn) {
-        if (this.weather === 'city') this.playCity(at, s, bar, sixteenth * 16);
+        if (this.band) this.band.play(this.kit!, at, s, bar, sixteenth);
+        else if (this.weather === 'city') this.playCity(at, s, bar, sixteenth * 16);
         else if (this.weather === 'tower') this.playTower(at, s, bar, sixteenth * 16);
         else if (this.weather === 'monastery') this.playMonastery(at, s, bar, sixteenth);
         else this.playLake(at, s, bar);
@@ -707,7 +766,7 @@ export class Sound {
     }
   }
 
-  private env(at: number, peak: number, attack: number, decay: number) {
+  env(at: number, peak: number, attack: number, decay: number) {
     const g = this.ctx!.createGain();
     g.gain.setValueAtTime(0, at);
     g.gain.linearRampToValueAtTime(peak, at + attack);
@@ -716,7 +775,7 @@ export class Sound {
   }
 
   /** Electric piano: a sine with a quiet bell partial, tape-wobbled. */
-  private keys(at: number, midi: number, vel: number, len: number) {
+  keys(at: number, midi: number, vel: number, len: number) {
     const ctx = this.ctx!;
     const g = this.env(at, vel, 0.012, len);
     g.connect(this.musicBus);
@@ -738,7 +797,7 @@ export class Sound {
     }
   }
 
-  private bass(at: number, midi: number, len: number) {
+  bass(at: number, midi: number, len: number) {
     const ctx = this.ctx!;
     const o = ctx.createOscillator();
     o.type = 'sine';
@@ -751,7 +810,7 @@ export class Sound {
     o.stop(at + len + 0.1);
   }
 
-  private kick(at: number, vel: number) {
+  kick(at: number, vel: number) {
     const ctx = this.ctx!;
     const o = ctx.createOscillator();
     o.frequency.setValueAtTime(120, at);
@@ -762,7 +821,7 @@ export class Sound {
     o.stop(at + 0.4);
   }
 
-  private hat(at: number, vel: number, open: boolean) {
+  hat(at: number, vel: number, open: boolean) {
     const ctx = this.ctx!;
     const n = ctx.createBufferSource();
     n.buffer = this.noise;
@@ -775,7 +834,7 @@ export class Sound {
   }
 
   /** A bell: a celesta-ish sine with an inharmonic partial, straight into the room. */
-  private bell(at: number, midi: number, vel: number) {
+  bell(at: number, midi: number, vel: number) {
     const ctx = this.ctx!;
     const g = this.env(at, vel, 0.002, 1.8);
     g.connect(this.musicBus);
@@ -795,7 +854,7 @@ export class Sound {
   }
 
   /** Brushes on a snare: filtered noise with a soft swept attack. */
-  private brush(at: number, vel: number) {
+  brush(at: number, vel: number) {
     const ctx = this.ctx!;
     const n = ctx.createBufferSource();
     n.buffer = this.noise;
@@ -810,7 +869,7 @@ export class Sound {
     n.start(at, Math.random() * 3, 0.3);
   }
 
-  private shaker(at: number, vel: number) {
+  shaker(at: number, vel: number) {
     const ctx = this.ctx!;
     const n = ctx.createBufferSource();
     n.buffer = this.noise;
@@ -824,7 +883,7 @@ export class Sound {
   }
 
   /** A slow analog pad: three detuned saws a note, through a low filter that breathes. */
-  private pad(at: number, notes: number[], len: number) {
+  pad(at: number, notes: number[], len: number) {
     const ctx = this.ctx!;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
@@ -856,7 +915,7 @@ export class Sound {
   }
 
   /** A soft square pluck, mostly heard in the echo. */
-  private arp(at: number, midi: number, vel: number) {
+  arp(at: number, midi: number, vel: number) {
     const ctx = this.ctx!;
     const o = ctx.createOscillator();
     o.type = 'square';
@@ -874,7 +933,7 @@ export class Sound {
   }
 
   /** A synth bass: saw and sub, with a filter that snaps shut. */
-  private synthBass(at: number, midi: number, len: number) {
+  synthBass(at: number, midi: number, len: number) {
     const ctx = this.ctx!;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
@@ -899,7 +958,7 @@ export class Sound {
   }
 
   /** The drum machine's snare: a short noise snap into a long room. */
-  private snap(at: number) {
+  snap(at: number) {
     const ctx = this.ctx!;
     const n = ctx.createBufferSource();
     n.buffer = this.noise;
@@ -917,7 +976,7 @@ export class Sound {
   }
 
   /** A soft pad: sines and triangles, gently detuned, slow in and slow out, mostly heard in the room. */
-  private airPad(at: number, notes: number[], len: number) {
+  airPad(at: number, notes: number[], len: number) {
     const ctx = this.ctx!;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
@@ -949,7 +1008,7 @@ export class Sound {
   }
 
   /** A round sine bass under the pads. */
-  private sub(at: number, midi: number, len: number) {
+  sub(at: number, midi: number, len: number) {
     const ctx = this.ctx!;
     const o = ctx.createOscillator();
     o.frequency.value = hz(midi);
@@ -964,7 +1023,7 @@ export class Sound {
   }
 
   /** A sonar-ish ping: a pure tone with a soft bell partial, into the echo. */
-  private ping(at: number, midi: number, vel: number) {
+  ping(at: number, midi: number, vel: number) {
     const ctx = this.ctx!;
     const g = this.env(at, vel, 0.003, 1.4);
     g.connect(this.musicBus);
@@ -984,7 +1043,7 @@ export class Sound {
   }
 
   /** A sung note: buzzing saws through three vowel formants, a slow swell and a little vibrato, into a long stone room. */
-  private voice(at: number, midi: number, len: number, vel: number, vowel: 'a' | 'o' | 'u') {
+  voice(at: number, midi: number, len: number, vel: number, vowel: 'a' | 'o' | 'u') {
     const ctx = this.ctx!;
     const formants = { a: [800, 1150, 2900], o: [450, 800, 2830], u: [325, 700, 2530] }[vowel];
     const out = ctx.createGain();
@@ -1026,7 +1085,7 @@ export class Sound {
   }
 
   /** A made-up room: stereo noise that dies away. */
-  private impulse(seconds: number) {
+  impulse(seconds: number) {
     const ctx = this.ctx!;
     const len = Math.floor(ctx.sampleRate * seconds);
     const buf = ctx.createBuffer(2, len, ctx.sampleRate);
@@ -1123,7 +1182,7 @@ export class Sound {
   }
 
   /** A short burst of filtered noise: the building block of most room sounds. */
-  private burst(freq: number, q: number, vol: number, len: number, delay = 0, type: BiquadFilterType = 'bandpass') {
+  burst(freq: number, q: number, vol: number, len: number, delay = 0, type: BiquadFilterType = 'bandpass') {
     if (!this.ctx || this.muted) return;
     const ctx = this.ctx;
     const at = ctx.currentTime + delay;

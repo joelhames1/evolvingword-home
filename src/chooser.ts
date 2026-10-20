@@ -2,7 +2,8 @@
 // view with its own weather falling inside the glass. Pick one and it shakes,
 // then you dive into it while the world loads behind.
 import { unlockAudio } from './audio-unlock';
-import { WORLDS, type WorldId, type WorldInfo } from './worlds';
+import { cleanShown, WORLDS, type WorldId, type WorldInfo } from './worlds';
+import { SHOWN } from './worlds/shown';
 
 const WORLD_KEY = 'ew.world';
 const SOUND_KEY = 'ew.sound';
@@ -145,10 +146,30 @@ function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
 }
 
 /**
+ * The globes to show: every world for ?worlds=all; otherwise the owner's live
+ * choice (api/worlds.ts) if it answers quickly, and failing that the list in
+ * worlds/shown.ts.
+ */
+export async function shownWorlds(): Promise<WorldInfo[]> {
+  if (new URLSearchParams(location.search).get('worlds') === 'all') return WORLDS;
+  let ids: WorldId[] = SHOWN;
+  try {
+    const stop = new AbortController();
+    const timer = window.setTimeout(() => stop.abort(), 1200);
+    const res = await fetch('/api/worlds', { signal: stop.signal, cache: 'no-store' });
+    window.clearTimeout(timer);
+    if (res.ok && res.headers.get('content-type')?.includes('json')) ids = cleanShown(((await res.json()) as { shown?: unknown }).shown) ?? ids;
+  } catch {
+    // Not set up, or too slow: the list in the repo it is.
+  }
+  return ids.map((id) => WORLDS.find((w) => w.id === id)!).filter(Boolean);
+}
+
+/**
  * Shows the globes. Resolves with the world picked and whether to start with
  * sound, once the dive into it is underway.
  */
-export function choose(): Promise<{ world: WorldId; sound: boolean }> {
+export function choose(worlds: WorldInfo[] = WORLDS): Promise<{ world: WorldId; sound: boolean }> {
   const root = document.getElementById('chooser')!;
   const row = document.getElementById('globes')!;
   const soundBtn = document.getElementById('chooser-sound') as HTMLButtonElement;
@@ -167,14 +188,14 @@ export function choose(): Promise<{ world: WorldId; sound: boolean }> {
   const last = lastWorld();
   const from = cameFrom();
   // The layout keys off how many globes there are: one row, or two (see .globes in style.css).
-  row.dataset.count = String(WORLDS.length);
+  row.dataset.count = String(worlds.length);
   root.hidden = false;
   document.body.classList.add('choosing');
 
   return new Promise((resolve) => {
     let picked = false;
     let returning: { wrap: HTMLElement; globe: HTMLElement; sky: { shake(): void } } | null = null;
-    for (const w of WORLDS) {
+    for (const w of worlds) {
       const wrap = document.createElement('button');
       wrap.type = 'button';
       wrap.className = `globe-wrap world-${w.id}`;

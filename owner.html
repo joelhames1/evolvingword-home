@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Worlds · Evolving Word</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <main class="owner">
+      <p class="kicker">Evolving Word</p>
+      <h1>Which worlds show</h1>
+      <p class="lede">Tick the globes to show on the home page, in the order you want them. Up to five; three is the sweet spot.</p>
+      <p class="status" id="status" role="status">Checking what’s showing now…</p>
+      <ol class="worlds" id="worlds"></ol>
+      <form id="form" class="save">
+        <label>Password <input id="password" type="password" autocomplete="current-password" required /></label>
+        <button type="submit" id="save">Save</button>
+        <button type="button" id="clear" class="quiet">Use the list in the repo</button>
+      </form>
+      <p class="note">Hidden worlds still open by link, like <code>/?world=tower</code>, and <a href="/?worlds=all">/?worlds=all</a> shows every globe.</p>
+    </main>
+    <script type="module" src="/src/owner.ts"></script>
+  </body>
+</html>

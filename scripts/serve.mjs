@@ -13,6 +13,13 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '
 http
   .createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
+    // The owner switch (api/worlds.ts) as Vercel answers before it's set up:
+    // nothing chosen, so the list in the repo shows; saving isn't possible.
+    if (url.pathname === '/api/worlds') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      if (req.method === 'GET') return res.end(JSON.stringify({ shown: null }));
+      return res.writeHead(503).end(JSON.stringify({ error: 'The owner switch isn’t set up on Vercel yet.' }));
+    }
     let file = path.join(root, decodeURIComponent(url.pathname));
     if (!file.startsWith(root)) return res.writeHead(400).end();
     if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, 'index.html');

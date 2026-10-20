@@ -434,6 +434,31 @@ test('the globes fit the screen: one row when there is room, two when not, and r
   expect(problems).toEqual([]);
 });
 
+test('the owner chooses which globes show; ?worlds=all shows every one', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const problems = watch(page);
+  // The live switch isn't running here, so the globes follow the list in the repo.
+  await page.goto('/?full');
+  const shown = await page.locator('#chooser .globe-wrap').count();
+  expect(shown).toBeGreaterThanOrEqual(1);
+  expect(shown).toBeLessThanOrEqual(5);
+  await page.goto('/?full&worlds=all');
+  const all = await page.locator('#chooser .globe-wrap').count();
+  expect(all).toBeGreaterThanOrEqual(Math.max(4, shown));
+  // The owner's page lists every world and won't save without the switch set up.
+  await page.goto('/owner.html');
+  await expect(page.locator('#worlds li')).toHaveCount(all);
+  expect(await page.locator('#worlds li.on').count()).toBe(shown);
+  await expect(page.locator('#status')).toContainText('list in the repo');
+  await page.locator('#password').fill('anything');
+  await page.locator('#save').click();
+  await expect(page.locator('#status')).toContainText('isn’t set up');
+  // Its robots tag keeps it out of search.
+  expect(await page.locator('meta[name="robots"]').getAttribute('content')).toContain('noindex');
+  // Saving fails with a 503 here, which the browser logs; nothing else should go wrong.
+  expect(problems.filter((p) => !/503/.test(p))).toEqual([]);
+});
+
 test('phones get the plain page, with the project link', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const problems = watch(page);

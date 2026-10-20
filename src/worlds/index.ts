@@ -16,7 +16,7 @@ export interface WorldInfo {
   weather: 'snow' | 'rain' | 'mist' | 'petals';
 }
 
-/** The chooser is laid out for at most this many globes. */
+/** The chooser is laid out for at most this many globes (more only in the ?worlds=all preview). */
 export const MAX_WORLDS = 5;
 
 export const WORLDS: WorldInfo[] = [
@@ -27,3 +27,11 @@ export const WORLDS: WorldInfo[] = [
 ];
 
 export const isWorld = (id: string | null | undefined): id is WorldId => WORLDS.some((w) => w.id === id);
+
+/** A list of world ids as someone wrote it, cleaned: known worlds only, each once, at most five. */
+export function cleanShown(ids: unknown): WorldId[] | null {
+  if (!Array.isArray(ids)) return null;
+  const out: WorldId[] = [];
+  for (const id of ids) if (typeof id === 'string' && isWorld(id) && !out.includes(id)) out.push(id);
+  return out.length ? out.slice(0, MAX_WORLDS) : null;
+}

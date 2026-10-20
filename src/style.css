@@ -198,6 +198,16 @@ nav button[aria-current='true'] {
 .globes[data-count='5'] {
   --cols: 5;
 }
+/* Only the ?worlds=all preview shows more than five: two rows. */
+.globes[data-count='6'] {
+  --cols: 3;
+  --rows: 2;
+}
+.globes[data-count='7'],
+.globes[data-count='8'] {
+  --cols: 4;
+  --rows: 2;
+}
 @media (max-aspect-ratio: 13/10) {
   .globes[data-count='4'] {
     --cols: 2;
