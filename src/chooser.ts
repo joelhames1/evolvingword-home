@@ -29,6 +29,9 @@ export const lastWorld = (): WorldId | null => {
 };
 export const rememberWorld = (id: WorldId) => write(WORLD_KEY, id);
 
+/** The weather running in each globe, stopped once a world takes over. */
+const skies: { stop(): void }[] = [];
+
 /** Snow drifting, rain slanting, morning mist or falling petals, inside one globe. */
 function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
   const g = canvas.getContext('2d')!;
@@ -144,7 +147,6 @@ export function choose(): Promise<{ world: WorldId; sound: boolean }> {
   const last = lastWorld();
   // The layout keys off how many globes there are: one row, or two (see .globes in style.css).
   row.dataset.count = String(WORLDS.length);
-  const skies: ReturnType<typeof weather>[] = [];
   root.hidden = false;
   document.body.classList.add('choosing');
 
@@ -227,5 +229,7 @@ export function dismiss() {
   const root = document.getElementById('chooser')!;
   root.classList.add('gone');
   document.body.classList.remove('choosing');
+  // Nobody's looking at the globes now; don't spend frames on their weather.
+  for (const sky of skies.splice(0)) sky.stop();
   window.setTimeout(() => (root.hidden = true), 900);
 }
