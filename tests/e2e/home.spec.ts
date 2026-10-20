@@ -86,7 +86,7 @@ type Ew = {
   pad: { next(): string; writing(): boolean };
   treats: { discs: unknown[]; eat(d: unknown): number; left(): number; sip(): number; sipsLeft(): number };
   rolodex: { flip(dir?: 1 | -1): number; index(): number };
-  map: { countryAt(u: number, v: number): string | null; visited(): number };
+  map: { countryAt(u: number, v: number): string | null; visited(): number; scratch(u: number, v: number): void; setCovering(on: boolean): void; undo(): boolean; reset(): void };
   reader: { isOpen(): boolean };
 };
 
@@ -119,9 +119,35 @@ test('the things on the desk and walls', async ({ page }) => {
   expect(await ew((w) => w.map.visited())).toBeGreaterThan(0);
   expect(await ew((w) => w.map.countryAt(0.5, 0.5))).toBeNull();
 
+  // A slip of the coin can be taken back: undo the stroke, lay foil back, or start over.
+  const egypt = await ew((w) => {
+    const pts: [number, number][] = [];
+    for (let u = 0.5; u < 0.65; u += 0.003) for (let v = 0.55; v < 0.75; v += 0.003) if (w.map.countryAt(u, v) === 'Egypt') pts.push([u, v]);
+    return pts;
+  });
+  expect(egypt.length).toBeGreaterThan(10);
+  const scratchEgypt = () => page.evaluate(`(${((w: Ew, pts: [number, number][]) => pts.forEach(([u, v]) => w.map.scratch(u, v))).toString()})(window.__ew, ${JSON.stringify(egypt)})`);
+  const start = await ew((w) => w.map.visited());
+  await scratchEgypt();
+  expect(await ew((w) => w.map.visited())).toBeGreaterThan(start);
+  expect(await ew((w) => w.map.undo())).toBe(true);
+  expect(await ew((w) => w.map.visited())).toBe(start);
+  await scratchEgypt();
+  await page.waitForTimeout(500);
+  await ew((w) => w.map.setCovering(true));
+  await scratchEgypt();
+  await ew((w) => w.map.setCovering(false));
+  expect(await ew((w) => w.map.visited())).toBe(start);
+  await page.waitForTimeout(500);
+  await scratchEgypt();
+  await ew((w) => w.map.reset());
+  expect(await ew((w) => w.map.visited())).toBe(start);
+
   // A close-up brings its card; the library opens a book you can page through.
   await page.keyboard.press('m');
   await expect(page.locator('#card-title')).toHaveText('Places I have been', { timeout: 20_000 });
+  await page.locator('#card-actions button', { hasText: 'Lay foil back' }).click();
+  await expect(page.locator('#card-actions button', { hasText: 'Back to scratching' })).toBeVisible();
   await page.keyboard.press('b');
   await expect(page.locator('#card-title')).toHaveText('Take one down', { timeout: 20_000 });
   await page.locator('#card-actions button', { hasText: 'Sonnets' }).click();

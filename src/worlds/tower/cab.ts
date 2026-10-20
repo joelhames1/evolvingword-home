@@ -243,6 +243,7 @@ export function buildCab(daylight: DaylightUniforms): Cab {
   const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0 + 2 * LEAN, z1 - z0 + LEAN), new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 0.95 }));
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(0, h, (z0 - LEAN + z1) / 2);
+  ceiling.castShadow = true;
   group.add(ceiling);
   // Recessed downlights in the ceiling, dimmed for the morning.
   const can = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.35, 1.0) });
@@ -261,23 +262,26 @@ export function buildCab(daylight: DaylightUniforms): Cab {
     group.add(light);
   }
 
-  // The solid walls: the back, the sides behind the glass, and below the sill all round.
-  group.add(box(x1 - x0 + 2 * t, h, t, wallFor(x1 - x0, h), 0, h / 2, z1 + t / 2));
+  // The solid walls: the back, the sides behind the glass, and below the sill all
+  // round. They cast shadows, so the low sun only gets in through the glass.
+  group.add(box(x1 - x0 + 2 * t, h, t, wallFor(x1 - x0, h), 0, h / 2, z1 + t / 2, true));
   for (const [x, sx] of [
     [x0 - t / 2, -1],
     [x1 + t / 2, 1],
   ] as const) {
-    group.add(box(t, h, z1 - SIDE_Z, wallFor(z1 - SIDE_Z, h), x, h / 2, (SIDE_Z + z1) / 2));
-    group.add(box(t, SILL, SIDE_Z - z0, wallFor(SIDE_Z - z0, SILL), x, SILL / 2, (z0 + SIDE_Z) / 2));
+    group.add(box(t, h, z1 - SIDE_Z, wallFor(z1 - SIDE_Z, h), x, h / 2, (SIDE_Z + z1) / 2, true));
+    group.add(box(t, SILL, SIDE_Z - z0, wallFor(SIDE_Z - z0, SILL), x, SILL / 2, (z0 + SIDE_Z) / 2, true));
     // Where the leaning glass meets the upright wall: a triangle of wall to close the gap.
     const xa = sx > 0 ? x1 : x0;
     const xb = xa + sx * LEAN;
     const tri = new THREE.BufferGeometry();
     tri.setAttribute('position', new THREE.Float32BufferAttribute([xa, SILL, SIDE_Z, xb, h, SIDE_Z, xa, h, SIDE_Z], 3));
     tri.computeVertexNormals();
-    group.add(new THREE.Mesh(tri, new THREE.MeshStandardMaterial({ color: '#8f8c86', roughness: 0.9, side: THREE.DoubleSide })));
+    const filler = new THREE.Mesh(tri, new THREE.MeshStandardMaterial({ color: '#8f8c86', roughness: 0.9, side: THREE.DoubleSide }));
+    filler.castShadow = true;
+    group.add(filler);
   }
-  group.add(box(x1 - x0 + 2 * t, SILL, t, wallFor(x1 - x0, SILL), 0, SILL / 2, z0 - t / 2));
+  group.add(box(x1 - x0 + 2 * t, SILL, t, wallFor(x1 - x0, SILL), 0, SILL / 2, z0 - t / 2, true));
   // Skirting.
   for (const [w, x, z, ry] of [
     [x1 - x0, 0, z1 - 0.01, 0],
@@ -477,7 +481,8 @@ export function buildCab(daylight: DaylightUniforms): Cab {
   const concrete = outdoor(daylight, { color: '#b9b4ab' });
   const cladding = outdoor(daylight, { color: '#d9d6cf' });
   // The roof: a deep cap that overhangs the glass, its fascia catching the sun.
-  const roof = box(x1 - x0 + 2 * LEAN + 0.6, 0.55, z1 - z0 + LEAN + 0.6, cladding, 0, h + 0.275, (z0 - LEAN + z1) / 2, true);
+  // It sits just above the ceiling, so the two never fight over the same plane.
+  const roof = box(x1 - x0 + 2 * LEAN + 0.6, 0.55, z1 - z0 + LEAN + 0.6, cladding, 0, h + 0.305, (z0 - LEAN + z1) / 2, true);
   group.add(roof);
   // A floor slab under the cab that runs out as a walkway beneath the glass.
   // Its top sits just under the carpet, so the two never fight over the same plane.

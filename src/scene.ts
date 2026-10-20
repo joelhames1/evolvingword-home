@@ -295,6 +295,22 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
       `Cappuccino: ${treats.sipsLeft() === 0 ? 'all gone. Click the cup for another.' : `${treats.sipsLeft()} sip${treats.sipsLeft() === 1 ? '' : 's'} left.`}`,
       { note: chocolates ? `Chocolates eaten here, all time: ${chocolates}.` : 'No judgment.' },
     ]);
+  // The map's card, with a way to take back a mistake: undo the last stroke, lay
+  // foil back where it shouldn't have come off, or start over from the list.
+  const mapCard = (): void =>
+    showCard(
+      'The map',
+      'Places I have been',
+      [
+        `${VISITED.length} countries scratched off so far.`,
+        { note: map.covering() ? 'Drag across a country to lay the foil back over it.' : 'Drag across the foil to scratch. It remembers, on this computer.' },
+      ],
+      [
+        { label: map.covering() ? 'Back to scratching' : 'Lay foil back', run: () => (map.setCovering(!map.covering()), sound.click(), mapCard()) },
+        { label: 'Undo', quiet: true, run: () => (map.undo() && sound.scratch(), mapCard()) },
+        { label: 'Start over', quiet: true, run: () => (map.reset(), sound.click(), mapCard()) },
+      ],
+    );
   const onArrive: Record<string, () => void> = {
     about: () => (panels.about.hidden = false),
     projects: () => (panels.project.hidden = false),
@@ -312,7 +328,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
     },
     treats: treatsCard,
     work: () => showCard('Work', 'The Rolodex', [{ list: WORK.map((w) => ({ head: `${w.role}, ${w.company}`, text: w.years })) }, { note: 'Click the cards to flick through.' }]),
-    map: () => showCard('The map', 'Places I have been', [`${VISITED.length} countries scratched off so far.`, { note: 'Drag across the foil to scratch. It remembers, on this computer.' }]),
+    map: () => mapCard(),
     diplomas: () => showCard('On the wall', 'Diplomas', [{ list: DIPLOMAS.map((d) => ({ head: `${d.degree} in ${d.field}`, text: `${d.school}, ${d.year}` })) }]),
     medals: () => showCard('On the wall', 'Medals', [{ list: MEDALS.map((m) => ({ head: m.distance, text: `${m.race} · ${m.year} · ${m.time}` })) }, { note: 'Click one for the story, and to set it swinging.' }]),
     library: () =>
@@ -364,6 +380,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
       say(HINTS, false);
     }
     if (name === 'projects') showProject(projectIndex);
+    if (name !== 'map') map.setCovering(false);
     navButtons.forEach((b) => b.setAttribute('aria-current', String(b.dataset.go === (navFor[name] ?? ''))));
     void rig.go(name).then(() => {
       if (rig.current !== name) return;
@@ -612,6 +629,12 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
 
   let entered = false;
   window.addEventListener('keydown', (e) => {
+    // Cmd/Ctrl+Z at the map takes back the last stroke.
+    if (entered && rig.current === 'map' && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (map.undo()) sound.scratch();
+      return;
+    }
     if (!entered || e.metaKey || e.ctrlKey || e.altKey) return;
     if (reader.isOpen()) {
       if (e.key === 'Escape') reader.close();

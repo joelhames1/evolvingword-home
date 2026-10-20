@@ -30,7 +30,7 @@ Click anything that glows to step up to it. `Esc` steps back: from a close-up to
 - **The bowl and the cup**: click a chocolate to eat it; click the cappuccino to take a sip. Both refill.
 - **The Rolodex** flips through work history.
 - **The medals** (5K, 10K, half, full: the best race at each distance, from Strava) swing when clicked. **The diplomas** hang next to them.
-- **The scratch map** starts with the visited countries scratched off (places too small for the outline map, like Singapore, are dots). Drag across the foil to scratch more; it remembers per browser.
+- **The scratch map** starts with the visited countries scratched off (places too small for the outline map, like Singapore, are dots). Drag across the foil to scratch more; it remembers per browser. Slipped? The map's card has **Undo** (or Cmd/Ctrl+Z) for the last stroke, **Lay foil back** to rub the foil back over a country, and **Start over** to go back to the list in `src/content.ts`.
 - **The bookshelf** has public-domain books you can open and page through: Dante's Inferno, Purgatorio and Paradiso (Longfellow), the Odyssey (Pope), Poe, the Rubáiyát (FitzGerald), Shakespeare, Dickinson, Frost, Whitman, the Romantics, Yeats and Thoreau. Long books open on a contents page and remember where you left off.
 - **The project shirts** hang on a drying line along the left wall, next to the map.
 - **The running shoes** sit on the floor under the map. Click them for the pair and their miles.

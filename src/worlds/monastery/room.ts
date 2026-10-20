@@ -252,12 +252,14 @@ export function buildCell(daylight: DaylightUniforms): Cell {
   const back = new THREE.Mesh(wall(x0 - T, x1 + T, H, [ocPath]), stoneMat);
   back.position.z = z1;
   back.receiveShadow = true;
+  back.castShadow = true;
   group.add(back);
   for (const x of [x0, x1 + T]) {
     const side = new THREE.Mesh(wall(z0, z1, H, []), stoneMat);
     side.rotation.y = -Math.PI / 2;
     side.position.x = x;
     side.receiveShadow = true;
+    side.castShadow = true;
     group.add(side);
   }
   // A stone string course round the room at 2.8m; the drying line hangs from it.

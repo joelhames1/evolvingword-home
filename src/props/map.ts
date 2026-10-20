@@ -15,8 +15,16 @@ export interface ScratchMap {
   group: THREE.Group;
   /** The map surface: drag to scratch, hover for names. */
   surface: THREE.Mesh;
-  /** Scratches at a point on the map (uv, 0..1). */
+  /** Scratches at a point on the map (uv, 0..1), or lays foil back there when covering. */
   scratch(u: number, v: number): void;
+  /** Scratching foil off, or laying it back on (not how real foil works, but mistakes happen). */
+  setCovering(on: boolean): void;
+  covering(): boolean;
+  /** Takes back the last stroke; false if there's nothing to take back. */
+  undo(): boolean;
+  canUndo(): boolean;
+  /** Back to the countries in the content file, forgetting every scratch since. */
+  reset(): void;
   /** The country under a point on the map, if any. */
   countryAt(u: number, v: number): string | null;
   /** How many countries are showing through, roughly. */
@@ -150,19 +158,29 @@ export function buildMap(): ScratchMap {
     }
   };
   // The countries already visited, scratched clean to start with.
-  mg.fillStyle = '#fff';
   const mpath = geoPath(projection, mg);
   const been = new Set<number>();
-  countries.forEach((c, i) => {
-    if (!visitedNames.has(c.properties.name)) return;
-    mg.beginPath();
-    mpath(c);
-    mg.fill();
-    been.add(i);
-  });
-  for (let p = 0; p < owner.length; p++) if (been.has(owner[p])) cleared[p] = 1;
+  countries.forEach((c, i) => visitedNames.has(c.properties.name) && been.add(i));
+  const startOver = () => {
+    mg.clearRect(0, 0, W, H);
+    mg.fillStyle = '#fff';
+    for (const i of been) {
+      mg.beginPath();
+      mpath(countries[i]);
+      mg.fill();
+    }
+    cleared.fill(0);
+    for (let p = 0; p < owner.length; p++) if (been.has(owner[p])) cleared[p] = 1;
+  };
+  startOver();
   let dirty = true;
   restore();
+
+  // Undo: the foil as it was before each of the last few strokes. A stroke is a
+  // run of scratching with no pause longer than a beat.
+  const history: { mask: HTMLCanvasElement; cleared: Uint8Array }[] = [];
+  let lastScratch = 0;
+  let covering = false;
 
   const [oc, og] = canvas(W, H);
   const tex = texture(oc);
@@ -228,9 +246,19 @@ export function buildMap(): ScratchMap {
     group,
     surface,
     scratch(u, v) {
+      const now = performance.now();
+      if (now - lastScratch > 400) {
+        const [copy, cg] = canvas(W, H);
+        cg.drawImage(mc, 0, 0);
+        history.push({ mask: copy, cleared: cleared.slice() });
+        if (history.length > 8) history.shift();
+      }
+      lastScratch = now;
       const x = u * W;
       const y = (1 - v) * H;
       mg.fillStyle = '#fff';
+      // Laying foil back is the same coin, the other way: it rubs the scratch out.
+      mg.globalCompositeOperation = covering ? 'destination-out' : 'source-over';
       // A ragged coin-edge scratch.
       for (let i = 0; i < 6; i++) {
         const cx = x + (Math.random() - 0.5) * 18;
@@ -243,12 +271,40 @@ export function buildMap(): ScratchMap {
         const hr = r / 2;
         for (let py = Math.max(0, Math.floor(cy / 2 - hr)); py <= Math.min(IH - 1, cy / 2 + hr); py++) {
           for (let px = Math.max(0, Math.floor(cx / 2 - hr)); px <= Math.min(IW - 1, cx / 2 + hr); px++) {
-            if ((px - cx / 2) ** 2 + (py - cy / 2) ** 2 <= hr * hr) cleared[py * IW + px] = 1;
+            if ((px - cx / 2) ** 2 + (py - cy / 2) ** 2 <= hr * hr) cleared[py * IW + px] = covering ? 0 : 1;
           }
         }
       }
+      mg.globalCompositeOperation = 'source-over';
       dirty = true;
       save();
+    },
+    setCovering(on) {
+      covering = on;
+    },
+    covering: () => covering,
+    undo() {
+      const last = history.pop();
+      if (!last) return false;
+      mg.clearRect(0, 0, W, H);
+      mg.drawImage(last.mask, 0, 0);
+      cleared.set(last.cleared);
+      dirty = true;
+      save();
+      return true;
+    },
+    canUndo: () => history.length > 0,
+    reset() {
+      const [copy, cg] = canvas(W, H);
+      cg.drawImage(mc, 0, 0);
+      history.push({ mask: copy, cleared: cleared.slice() });
+      startOver();
+      dirty = true;
+      try {
+        localStorage.removeItem(KEY);
+      } catch {
+        // Nothing was remembered anyway.
+      }
     },
     countryAt,
     visited() {
