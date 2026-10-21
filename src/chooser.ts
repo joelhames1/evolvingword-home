@@ -56,7 +56,7 @@ const skies: { stop(): void }[] = [];
 /** Snow drifting, rain slanting, morning mist or falling petals, inside one globe. */
 function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
   const g = canvas.getContext('2d')!;
-  const n = { snow: 70, rain: 90, mist: 46, petals: 34 }[kind];
+  const n = { snow: 70, rain: 90, mist: 46, petals: 34, stars: 130 }[kind];
   const bits = Array.from({ length: n }, (_, i) => ({ x: Math.random(), y: Math.random(), s: 0.4 + Math.random() * 0.8, p: Math.random() * 6.28, spin: Math.random() * 6.28, leaf: i % 3 === 0 }));
   let stir = 0;
   let last = performance.now();
@@ -108,6 +108,56 @@ function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
           g.fillStyle = grad;
           g.beginPath();
           g.ellipse(b.x * w, b.y * h, r * 1.8, r * 0.6, 0, 0, Math.PI * 2);
+          g.fill();
+        }
+      } else if (kind === 'stars') {
+        // A night sky wheeling slowly round the middle of the glass, every star
+        // twinkling; a shake sets it swirling. The first star is a meteor instead:
+        // its spin counts down to the next streak.
+        if (b === bits[0]) {
+          b.spin -= dt * (1 + stir * 3);
+          const k = -b.spin / 0.6;
+          if (k > 1) {
+            b.spin = 3 + Math.random() * 6;
+            b.p = Math.random() * 6.28;
+          } else if (k > 0) {
+            const x0 = 0.3 + 0.4 * ((b.p * 3.7) % 1);
+            const y0 = 0.18 + 0.25 * ((b.p * 1.3) % 1);
+            const a = 2.2 + ((b.p * 5.1) % 1) * 0.9;
+            const head = 0.06 + k * 0.32;
+            const hx = (x0 + Math.cos(a) * head) * w;
+            const hy = (y0 + Math.sin(a) * head) * h;
+            const tx = (x0 + Math.cos(a) * Math.max(0, head - 0.16)) * w;
+            const ty = (y0 + Math.sin(a) * Math.max(0, head - 0.16)) * h;
+            const streak = g.createLinearGradient(tx, ty, hx, hy);
+            streak.addColorStop(0, 'rgba(200,225,255,0)');
+            streak.addColorStop(1, `rgba(235,250,255,${0.9 * Math.sin(Math.PI * k)})`);
+            g.strokeStyle = streak;
+            g.lineWidth = w / 260;
+            g.beginPath();
+            g.moveTo(tx, ty);
+            g.lineTo(hx, hy);
+            g.stroke();
+          }
+        } else {
+          const dx = b.x - 0.5;
+          const dy = b.y - 0.5;
+          const r = Math.hypot(dx, dy);
+          if (r > 0.5) {
+            // Swirled out of the glass: back in somewhere.
+            const a = Math.random() * 6.28;
+            const k = Math.sqrt(Math.random()) * 0.48;
+            b.x = 0.5 + Math.cos(a) * k;
+            b.y = 0.5 + Math.sin(a) * k;
+          } else {
+            const turn = dt * (0.03 + (stir * 2.2) / (0.25 + r * 3));
+            b.x = 0.5 + (dx * Math.cos(turn) - dy * Math.sin(turn)) * (1 + stir * dt * 0.4);
+            b.y = 0.5 + (dx * Math.sin(turn) + dy * Math.cos(turn)) * (1 + stir * dt * 0.4);
+          }
+          const tw = 0.5 + 0.5 * Math.sin(now / (160 + b.s * 240) + b.p * 9);
+          g.fillStyle = `rgba(${b.leaf ? '255,226,190' : b.s > 1 ? '205,218,255' : '255,255,255'},${0.3 + tw * 0.65})`;
+          g.beginPath();
+          g.arc(b.x * w, b.y * h, (0.5 + b.s * 1.1) * (w / 320), 0, Math.PI * 2);
           g.fill();
         }
       } else {
