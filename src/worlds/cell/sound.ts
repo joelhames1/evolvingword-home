@@ -186,16 +186,26 @@ export function buildBand(): Band {
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
     lp.frequency.value = 160;
-    const g = k.sound.env(at, 0.32 * vel, 0.018, 0.32);
+    // Kept soft: a deep thump this loud would make the compressor duck everything
+    // four times a bar, and small speakers can't play it anyway.
+    const g = k.sound.env(at, 0.2 * vel, 0.018, 0.32);
     o.connect(lp).connect(g).connect(k.music);
     o.start(at);
     o.stop(at + 0.5);
+    // So it's still felt on a laptop: a short knock an octave and more up.
+    const knock = ctx.createOscillator();
+    knock.frequency.setValueAtTime(pitch * 2.3, at);
+    knock.frequency.exponentialRampToValueAtTime(pitch * 1.7, at + 0.1);
+    const kg = k.sound.env(at, 0.045 * vel, 0.006, 0.1);
+    knock.connect(kg).connect(k.music);
+    knock.start(at);
+    knock.stop(at + 0.2);
     const n = ctx.createBufferSource();
     n.buffer = k.noise;
     const nl = ctx.createBiquadFilter();
     nl.type = 'lowpass';
-    nl.frequency.value = 240;
-    const ng = k.sound.env(at, 0.08 * vel, 0.01, 0.12);
+    nl.frequency.value = 360;
+    const ng = k.sound.env(at, 0.07 * vel, 0.01, 0.12);
     n.connect(nl).connect(ng).connect(k.music);
     n.start(at, Math.random() * 3, 0.2);
   };

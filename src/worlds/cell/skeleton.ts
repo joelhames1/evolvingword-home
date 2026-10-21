@@ -93,12 +93,13 @@ export function pad(radius: number, color = '#2a1216', glowColor = '#ff8a5a') {
     prof.push(new THREE.Vector2(flat + Math.sin(a) * 0.2, -0.02 - (1 - Math.cos(a)) * 0.09));
   }
   prof.push(new THREE.Vector2(flat * 0.6, -0.22), new THREE.Vector2(0, -0.24));
-  const m = new THREE.Mesh(new THREE.LatheGeometry(prof, 96), new THREE.MeshStandardMaterial({ color, roughness: 0.22, metalness: 0.1, emissive: glowColor, emissiveIntensity: 0.06 }));
+  // Soft rather than glossy: a shiny rolled edge catches the light all round and reads as the lip of a bowl.
+  const m = new THREE.Mesh(new THREE.LatheGeometry(prof, 96), new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05, emissive: glowColor, emissiveIntensity: 0.06 }));
   m.receiveShadow = true;
-  // The rolled rim, lit from within.
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(flat + 0.13, 0.075, 10, 96), glass({ color: glowColor, edge: '#ffc09a', core: 0.04, rim: 0.4, power: 2.4 }));
+  // The rolled rim, lit from within: a seam of light round its side, below the top.
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(flat + 0.16, 0.06, 10, 96), glass({ color: glowColor, edge: '#ffc09a', core: 0.04, rim: 0.4, power: 2.4 }));
   rim.rotation.x = Math.PI / 2;
-  rim.position.y = -0.09;
+  rim.position.y = -0.13;
   m.add(rim);
   return m;
 }

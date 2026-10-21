@@ -107,3 +107,48 @@ test('the living word: every close-up is there, and the shoes and the projects s
   expect(await current()).toBe('track');
   expect(problems).toEqual([]);
 });
+
+test('the living word: no surface without a normal, and no flight through a column or the nucleus', async ({ page }) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const problems = watch(page);
+  await page.goto('/?shot=desk&full&world=cell');
+  await page.waitForFunction(() => 'world' in ((window as unknown as { __ew?: object }).__ew ?? {}));
+  // A vertex with no normal shades as NaN, and a NaN flashes black.
+  const zero = await page.evaluate(() => {
+    const w = (window as unknown as { __ew: EW }).__ew;
+    let n = 0;
+    w.world.scene.traverse((o: EW) => {
+      const a = o.geometry?.attributes?.normal;
+      if (a) for (let i = 0; i < a.count; i++) if (!(Math.hypot(a.getX(i), a.getY(i), a.getZ(i)) > 1e-6)) n++;
+    });
+    return n;
+  });
+  expect(zero).toBe(0);
+  // Every flight between the stops and close-ups keeps clear of the columns, and in
+  // and out of the nucleus goes by its door.
+  const bad = await page.evaluate(() => {
+    const w = (window as unknown as { __ew: EW }).__ew;
+    const V = w.camera.position.constructor;
+    const shots: Record<string, EW> = w.shots;
+    const names = ['desk', 'signal', 'watch', 'honors', 'diplomas', 'medals', 'library', 'places', 'map', 'works', 'track', 'shoes', 'window', 'board'];
+    const out: string[] = [];
+    for (const a of names)
+      for (const b of names) {
+        if (a === b) continue;
+        const via = w.kit.route(shots[a].pos.clone(), shots[b].pos.clone()) ?? [];
+        const pts = [shots[a].pos, ...via, shots[b].pos];
+        for (let i = 1; i < pts.length; i++)
+          for (let k = 0; k <= 40; k++) {
+            const p = new V().lerpVectors(pts[i - 1], pts[i], k / 40);
+            for (const c of w.columns) if (Math.hypot(p.x - c.x, p.z - c.z) < 0.25) out.push(`${a} -> ${b} by a column`);
+            // Through the envelope only near the library's own door.
+            const r = p.distanceTo(w.nucleus.center);
+            if (Math.abs(r - w.nucleus.radius) < 0.05 && a !== 'library' && b !== 'library') out.push(`${a} -> ${b} through the nucleus`);
+          }
+      }
+    return [...new Set(out)];
+  });
+  expect(bad).toEqual([]);
+  expect(problems).toEqual([]);
+});

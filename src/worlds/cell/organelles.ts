@@ -4,8 +4,9 @@
 // vesicles at its rims; folded sheets of endoplasmic reticulum studded with
 // ribosomes; and vesicles drifting everywhere. All of it glass and light.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rng } from '../../textures';
-import { CELL, glass, HAZE, NOISE, shared } from './shaders';
+import { CELL, faceNormals, glass, HAZE, NOISE, shared } from './shaders';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
@@ -28,7 +29,7 @@ const KNOT_FRAG = /* glsl */ `
   void main() {
     vec3 v = normalize(cameraPosition - vWorld);
     // Clamped: a hair over 1 would make pow(1.0 - ndv, ...) a NaN, and NaNs flash black.
-    float ndv = min(abs(dot(normalize(vNrm), v)), 1.0);
+    float ndv = min(abs(dot(unit(vNrm), v)), 1.0);
     float grain = vnoise(vLocal * 9.0 + vec3(0.0, uTime * 0.05, 0.0));
     float body = pow(ndv, 2.5) * (0.55 + 0.35 * grain) + pow(1.0 - ndv, 3.0) * 0.25;
     gl_FragColor = vec4(uColor * body * through(vWorld), 1.0);
@@ -42,7 +43,7 @@ const KNOT_VERT = /* glsl */ `
     vLocal = position;
     vec4 w = modelMatrix * vec4(position, 1.0);
     vWorld = w.xyz;
-    vNrm = normalize(mat3(modelMatrix) * normal);
+    vNrm = mat3(modelMatrix) * normal;
     gl_Position = projectionMatrix * viewMatrix * w;
   }
 `;
@@ -85,21 +86,27 @@ export function buildNucleus(center: THREE.Vector3, radius: number, quality: 'hi
   const threadMat = glass({ color: '#7a6aff', edge: '#a090ff', core: 0.08, rim: 0.12, power: 1.2, shimmer: 0.5 });
   const threads = quality === 'high' ? 16 : 9;
   const beads: number[] = [];
+  // (All the threads in one mesh: one draw rather than a dozen.)
+  const tubes: THREE.BufferGeometry[] = [];
   for (let k = 0; k < threads; k++) {
     const pts: THREE.Vector3[] = [];
     let p = spread(threads, k).multiplyScalar(radius * 0.45);
+    p.y = Math.abs(p.y) + radius * 0.05;
     const dir = v(r() - 0.5, r() - 0.5, r() - 0.5).normalize();
     for (let i = 0; i < 40; i++) {
       pts.push(p.clone());
       dir.add(v(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.9)).normalize();
-      // Turned back toward the middle when they wander near the envelope.
+      // Turned back toward the middle when they wander near the envelope, and kept
+      // to the upper half, over the shelf, so no strand crosses in front of the books.
       if (p.length() > radius * 0.7) dir.addScaledVector(p.clone().normalize(), -0.8).normalize();
+      if (p.y < radius * 0.05) dir.setY(Math.abs(dir.y) + 0.8).normalize();
       p = p.clone().addScaledVector(dir, 0.32);
     }
     const curve = new THREE.CatmullRomCurve3(pts);
-    chromatin.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 240, 0.006, 3), threadMat));
+    tubes.push(new THREE.TubeGeometry(curve, 240, 0.006, 3));
     for (const q of curve.getSpacedPoints(quality === 'high' ? 260 : 160)) beads.push(q.x, q.y, q.z);
   }
+  chromatin.add(new THREE.Mesh(mergeGeometries(tubes), threadMat));
   const beadGeo = new THREE.BufferGeometry();
   beadGeo.setAttribute('position', new THREE.Float32BufferAttribute(beads, 3));
   chromatin.add(new THREE.Points(beadGeo, ribosomeDots('#b7a6ff', 0.04)));
@@ -160,18 +167,22 @@ export function buildMito(length: number, radius: number, seed: number): Mito {
     const zz = cp.getZ(i);
     cp.setX(i, cp.getX(i) + Math.sin(y * 4.2 + zz * 2) * 0.35);
   }
-  crista.computeVertexNormals();
+  faceNormals(crista);
   const cristaMat = glass({ color: '#ffb35a', edge: '#ffc77a', core: 0.045, rim: 0.6, power: 2.2, shimmer: 0.3 });
   const n = Math.max(4, Math.round((length - radius) / (radius * 0.42)));
   const span = length - radius * 1.3;
+  // Placed, then baked into one mesh: one draw for all of them.
+  const c = new THREE.Object3D();
+  const shelves: THREE.BufferGeometry[] = [];
   for (let i = 0; i < n; i++) {
-    const c = new THREE.Mesh(crista, cristaMat);
     const side = i % 2 ? 1 : -1;
     c.position.set(-span / 2 + (span * (i + 0.5)) / n, side * radius * 0.2, (r() - 0.5) * radius * 0.2);
     c.scale.set(radius * 0.06, radius * 0.62, radius * 0.72);
     c.rotation.set((r() - 0.5) * 0.3, (r() - 0.5) * 0.3, side * 0.12 + (r() - 0.5) * 0.2);
-    group.add(c);
+    c.updateMatrix();
+    shelves.push(crista.clone().applyMatrix4(c.matrix));
   }
+  group.add(new THREE.Mesh(mergeGeometries(shelves), cristaMat));
   const phase = r() * 10;
   return {
     group,
@@ -210,7 +221,7 @@ export function buildGolgi(seed: number) {
     dp.setY(i, dp.getY(i) + (x * x + z * z) * 0.35 + Math.sin(x * 3 + z) * 0.03);
     dp.setX(i, x * 1.6);
   }
-  disc.computeVertexNormals();
+  faceNormals(disc);
   const colors = ['#ffcf6a', '#ffb05a', '#ff9a5a', '#ff8a6a', '#ff7a7a', '#f47aa0'];
   const stack = 6;
   for (let k = 0; k < stack; k++) {
@@ -225,16 +236,20 @@ export function buildGolgi(seed: number) {
   // Vesicles budding at the rims.
   const bud = new THREE.SphereGeometry(1, 20, 12);
   const budMat = glass({ color: '#ffd08a', edge: '#ffd9a0', core: 0.12, rim: 1.0, power: 1.8 });
+  const buds: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 18; i++) {
     const k = Math.floor(r() * stack);
     const a = r() * Math.PI * 2;
-    const b = new THREE.Mesh(bud, budMat);
     const s = 0.06 + r() * 0.07;
-    b.scale.setScalar(s);
     const rr = 1 - Math.abs(k - (stack - 1) / 2) * 0.12;
-    b.position.set(Math.cos(a) * 1.6 * rr * (0.95 + r() * 0.25), k * 0.24 + 0.3 + r() * 0.15, Math.sin(a) * rr * (0.95 + r() * 0.25));
-    group.add(b);
+    buds.push(
+      bud
+        .clone()
+        .scale(s, s, s)
+        .translate(Math.cos(a) * 1.6 * rr * (0.95 + r() * 0.25), k * 0.24 + 0.3 + r() * 0.15, Math.sin(a) * rr * (0.95 + r() * 0.25)),
+    );
   }
+  group.add(new THREE.Mesh(mergeGeometries(buds), budMat));
   return group;
 }
 
@@ -277,22 +292,27 @@ export function buildER(seed: number, width: number, height: number, layers: num
 const DOT_VERT = /* glsl */ `
   uniform float uSize;
   varying vec3 vWorld;
+  varying float vFade;
   void main() {
     vec4 w = modelMatrix * vec4(position, 1.0);
     vWorld = w.xyz;
     vec4 mv = viewMatrix * w;
-    gl_PointSize = uSize * 600.0 / max(-mv.z, 0.3);
+    // Faded out before they reach the lens: flying through the nucleus's pores, one
+    // would otherwise swell to a great blot of light and blink out at the near plane.
+    vFade = smoothstep(0.2, 0.9, -mv.z);
+    gl_PointSize = min(uSize * 600.0 / max(-mv.z, 0.3), 64.0);
     gl_Position = projectionMatrix * mv;
   }
 `;
 const DOT_FRAG = /* glsl */ `
   uniform vec3 uColor;
   varying vec3 vWorld;
+  varying float vFade;
   ${HAZE}
   void main() {
     float r = length(gl_PointCoord - 0.5);
-    float a = smoothstep(0.5, 0.1, r);
-    gl_FragColor = vec4(uColor * a * through(vWorld), 1.0);
+    float a = 1.0 - smoothstep(0.1, 0.5, r);
+    gl_FragColor = vec4(uColor * a * vFade * through(vWorld), 1.0);
   }
 `;
 

@@ -68,6 +68,11 @@ export const HAZE = /* glsl */ `
   uniform vec3 uHazeHigh;
   uniform vec3 uSun;
   uniform float uTime;
+  /** A normal that can't come out as not-a-number, even from a vertex that has none. */
+  vec3 unit(vec3 x) {
+    float l = length(x);
+    return l > 1e-8 ? x / l : vec3(0.0, 1.0, 0.0);
+  }
   /** How much of the way from o to p runs inside the cell. */
   float insideLength(vec3 o, vec3 p) {
     vec3 d = p - o;
@@ -113,7 +118,8 @@ const VERT = /* glsl */ `
     #endif
     vec4 w = modelMatrix * p;
     vWorld = w.xyz;
-    vNrm = normalize(mat3(modelMatrix) * n);
+    // Left as it is; the fragment shaders make it a unit (a zero normal here would be a NaN).
+    vNrm = mat3(modelMatrix) * n;
     gl_Position = projectionMatrix * viewMatrix * w;
   }
 `;
@@ -134,15 +140,19 @@ const GLASS_FRAG = /* glsl */ `
   ${HAZE}
   ${NOISE}
   void main() {
-    vec3 v = normalize(cameraPosition - vWorld);
+    vec3 toEye = cameraPosition - vWorld;
+    vec3 v = normalize(toEye);
     // Clamped: a hair over 1 would make pow(1.0 - ndv, ...) a NaN, and NaNs flash black.
-    float ndv = min(abs(dot(normalize(vNrm), v)), 1.0);
+    float ndv = min(abs(dot(unit(vNrm), v)), 1.0);
     float rim = pow(1.0 - ndv, uPower);
     // A slow shimmer across the surface, like oil on water.
     float sh = 1.0 + uShimmer * (vnoise(vWorld * 2.3 + vec3(0.0, uTime * 0.12, 0.0)) - 0.5);
     vec3 col = (uColor * uCore + uEdge * rim) * sh * vTint;
     // Sheets fade out at their edges rather than stopping.
     if (uEdgeFade > 0.0) col *= smoothstep(0.0, uEdgeFade, min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y)));
+    // Gone right up against the lens: a skin you pass through is seen edge-on all
+    // round you, all rim, and would flare as you cross it.
+    col *= smoothstep(0.08, 0.5, length(toEye));
     gl_FragColor = vec4(col * through(vWorld), 1.0);
   }
 `;
@@ -191,7 +201,7 @@ const PEARL_FRAG = /* glsl */ `
   varying vec3 vTint;
   ${HAZE}
   void main() {
-    vec3 n = normalize(vNrm);
+    vec3 n = unit(vNrm);
     vec3 v = normalize(cameraPosition - vWorld);
     if (dot(n, v) < 0.0) n = -n;
     float ndv = clamp(dot(n, v), 0.0, 1.0);
@@ -266,7 +276,7 @@ const MOTE_FRAG = /* glsl */ `
   void main() {
     vec2 c = gl_PointCoord - 0.5;
     float r = length(c);
-    float a = smoothstep(0.5, 0.0, r);
+    float a = 1.0 - smoothstep(0.0, 0.5, r);
     a *= a;
     vec3 col = mix(uColor, uColor2, step(0.82, vSeed));
     gl_FragColor = vec4(col * a * vFade, 1.0);
@@ -304,6 +314,36 @@ export function motes(n: number, opts: { radius: number; size: number; rise: num
   const points = new THREE.Points(geo, mat);
   points.frustumCulled = false;
   return points;
+}
+
+/**
+ * Normals from the faces, with none left at zero. A sphere's or a lathe's pole
+ * repeats one point, and a copy that only touches flattened triangles gets no
+ * normal at all, which a shader turns into NaN, and a NaN into a flashing black
+ * speck; such a copy borrows the normal its twins at the same point have.
+ */
+export function faceNormals(geo: THREE.BufferGeometry) {
+  geo.computeVertexNormals();
+  const p = geo.attributes.position;
+  const n = geo.attributes.normal;
+  const key = (i: number) => `${p.getX(i).toFixed(5)},${p.getY(i).toFixed(5)},${p.getZ(i).toFixed(5)}`;
+  const sum = new Map<string, THREE.Vector3>();
+  const t = new THREE.Vector3();
+  for (let i = 0; i < n.count; i++) {
+    t.fromBufferAttribute(n, i);
+    if (t.lengthSq() < 1e-12) continue;
+    const k = key(i);
+    sum.set(k, (sum.get(k) ?? new THREE.Vector3()).add(t));
+  }
+  for (let i = 0; i < n.count; i++) {
+    t.fromBufferAttribute(n, i);
+    if (t.lengthSq() >= 1e-12) continue;
+    const s = sum.get(key(i));
+    t.copy(s && s.lengthSq() > 1e-12 ? s : new THREE.Vector3(0, 1, 0)).normalize();
+    n.setXYZ(i, t.x, t.y, t.z);
+  }
+  n.needsUpdate = true;
+  return geo;
 }
 
 /** Scales a tube's uv's to meters along (u) so ribs keep their size whatever its length. */
