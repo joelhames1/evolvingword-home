@@ -605,13 +605,18 @@ nav button[aria-current='true'] {
 
 .hints {
   margin: 0;
+  min-width: 0;
   font-family: var(--mono);
-  font-size: 23px;
+  /* Smaller on smaller screens, and two lines rather than a cut-off one. */
+  font-size: clamp(15px, 1.3vw, 23px);
+  line-height: 1.25;
   letter-spacing: 0.08em;
   color: var(--dim);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 /* Subtitles while the camera flies in. */
 .hints.caption {
@@ -679,6 +684,9 @@ nav button[aria-current='true'] {
   right: max(4vw, 72px);
   top: 50%;
   width: min(460px, 40vw);
+  max-height: calc(100vh - 2 * max(var(--bar, 0px), 64px) - 24px);
+  overflow: auto;
+  box-sizing: border-box;
   transform: translateY(-50%) rotate(1.4deg);
   z-index: 12;
   padding: 44px 34px 40px 64px;
@@ -1336,6 +1344,10 @@ html.lite body {
   .hints {
     display: none;
   }
+}
+/* Only on a phone do the ticket and the notepad take the whole width; wider,
+   they sit to one side and the camera frames the subject beside them. */
+@media (max-width: 640px) {
   .notepad,
   .ticket {
     width: calc(100vw - 32px);

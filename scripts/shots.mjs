@@ -10,7 +10,9 @@ const browser = await chromium.launch({
   executablePath: fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined,
   args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'],
 });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+// VIEW=900x900 picks the window size.
+const [vw, vh] = (process.env.VIEW ?? '1440x900').split('x').map(Number);
+const page = await browser.newPage({ viewport: { width: vw, height: vh } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
 page.on('console', (m) => (m.type() === 'error' || /GL_INVALID/.test(m.text())) && errors.push(m.text()));

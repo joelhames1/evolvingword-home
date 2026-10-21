@@ -31,6 +31,9 @@ export type ShotName = string;
 
 const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 const UP = new THREE.Vector3(0, 1, 0);
+// What the card and the notepad cover on the 1440x900 screen the shots were framed on (see cardInset in scene.ts).
+const DESIGN_INSET = 72 + 400 + 24;
+const DESIGN_PAD = 72 + 460 + 24;
 const look = (pos: THREE.Vector3, target: THREE.Vector3, out = new THREE.Quaternion()) => out.setFromRotationMatrix(new THREE.Matrix4().lookAt(pos, target, UP));
 
 export class Rig {
@@ -158,10 +161,20 @@ export class Rig {
     }
     // Widen the lens as the letterbox closes, so each shot keeps its framing
     // in the picture between the bars.
-    const fov = this.visible < 1 ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(this.fov) / 2) / this.visible)) : this.fov;
-    // Slide the picture sideways (a lens shift, not a turn) to make room for a card.
     const w = window.innerWidth;
     const h = window.innerHeight;
+    // Shots are framed on a 1440x900 screen. Where the room left beside a card
+    // (or the whole screen, for a shot without one) is narrower than that, widen
+    // the lens so the subject still fits beside the card instead of under it.
+    const m = Math.min(1, Math.abs(this.shift) / 0.08);
+    const covers = (this.shift >= 0 ? this.inset : this.insetRight) * m;
+    const designed = (1440 - (this.shift >= 0 ? DESIGN_INSET : DESIGN_PAD) * m) / 900;
+    const room = Math.max(1, w - covers) / h;
+    const squeeze = Math.min(2.4, Math.max(1, (designed * (1 - 0.18 * (1 - m))) / room));
+    const tall = Math.tan(THREE.MathUtils.degToRad(this.fov) / 2) * squeeze / (this.visible < 1 ? this.visible : 1);
+    const fov = Math.min(78, THREE.MathUtils.radToDeg(2 * Math.atan(tall)));
+    // Slide the picture sideways (a lens shift, not a turn) to make room for a card.
+
     const sideways = (inset: number, k: number) => Math.round(Math.max(k * w, (inset / 2) * Math.min(1, k / 0.08)));
     const offset = this.shift > 0 ? sideways(this.inset, this.shift) : this.shift < 0 ? -sideways(this.insetRight, -this.shift) : 0;
     const view = cam.view;
