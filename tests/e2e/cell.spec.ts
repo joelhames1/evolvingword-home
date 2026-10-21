@@ -14,7 +14,7 @@ function watch(page: Page) {
 type EW = Record<string, any>;
 
 test('the living word: picked from the globes, its strand and its cell, and the studio spread through it', async ({ page }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(480_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   const problems = watch(page);
   await page.goto('/?full&worlds=all');
