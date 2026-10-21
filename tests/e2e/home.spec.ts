@@ -429,6 +429,7 @@ test('the globes fit the screen: one row when there is room, two when not, and r
   ] as const) {
     await page.setViewportSize({ width, height });
     await page.goto('/?full');
+    await expect(page.locator('#chooser .globe-wrap')).toHaveCount(4);
     await page.evaluate(() => {
       const row = document.getElementById('globes')!;
       row.append(row.firstElementChild!.cloneNode(true));
