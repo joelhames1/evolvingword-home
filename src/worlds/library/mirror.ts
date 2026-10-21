@@ -35,11 +35,12 @@ const OLD_GLASS = {
     void main() {
       vec3 base = texture2DProj(tDiffuse, vUv).rgb;
       vec2 q = vPlane * vec2(1.0, 1.7);
-      float n = noise(q * 5.0) * 0.6 + noise(q * 19.0) * 0.4;
-      float fox = smoothstep(0.7, 0.9, n) * 0.6;
+      // Foxing: small dark freckles where the silver has gone, never light ones.
+      float n = noise(q * 11.0) * 0.55 + noise(q * 37.0) * 0.45;
+      float fox = smoothstep(0.72, 0.88, n) * 0.5;
       float edge = min(min(vPlane.x, 1.0 - vPlane.x), min(vPlane.y, 1.0 - vPlane.y));
       float dim = 0.55 + 0.45 * smoothstep(0.0, 0.16, edge);
-      vec3 c = base * color * dim * (1.0 - fox * 0.7) + vec3(0.05, 0.035, 0.02) * fox;
+      vec3 c = base * color * dim * (1.0 - fox * 0.6);
       gl_FragColor = vec4(c, 1.0);
       #include <colorspace_fragment>
     }
