@@ -269,12 +269,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     put(st.shelf.group, STOPS.library);
     put(st.map.group, STOPS.map);
     // The line is built along x; its shirts face +z like everything else here.
-    const before = st.line.group.matrixWorld.clone();
+    // (The studio carries the shirts' positions along with it.)
     put(st.line.group, STOPS.line);
-    st.line.group.updateMatrixWorld(true);
-    const moved = st.line.group.matrixWorld.clone().multiply(before.invert());
-    for (const it of st.line.items) it.focus.applyMatrix4(moved);
-    st.line.center.applyMatrix4(moved);
     st.shoes.group.position.copy(at(STOPS.track, 0.05, 0, 0.3));
     st.shoes.group.rotation.y = STOPS.track.rotation.y + 0.5;
   };
