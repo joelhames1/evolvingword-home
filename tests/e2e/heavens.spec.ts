@@ -86,6 +86,19 @@ test('the heavens: picked from the globes, the dome, the sky, the telescope, and
   expect(await current()).toBe('scope');
   expect(await page.evaluate(() => (window as unknown as { __ew: Ew }).__ew.telescope.view.isOpen())).toBe(false);
 
+  // The walk across the room goes round the telescope, not through it, and the
+  // shirts' close-ups stand inside the dome.
+  const room = await page.evaluate(() => {
+    const w = (window as unknown as { __ew: Ew }).__ew;
+    const V = w.camera.position.constructor;
+    const via = w.kit.route(new V(0, 1.4, 1.35), new V(2.4, 1.45, 3.9)) ?? [];
+    return { round: via.length > 0 && via.every((p: { x: number; z: number }) => Math.hypot(p.x, p.z - 1.95) > 1.9) };
+  });
+  expect(room).toEqual({ round: true });
+  await page.keyboard.press('1');
+  await settled();
+  expect(await page.evaluate(() => Math.hypot((window as unknown as { __ew: Ew }).__ew.camera.position.x, (window as unknown as { __ew: Ew }).__ew.camera.position.z - 1.95))).toBeLessThan(3.5);
+
   // Back to the globes: this one is marked as where you were.
   await page.locator('#worlds-btn').click();
   await expect(page.locator('#chooser')).toBeVisible();

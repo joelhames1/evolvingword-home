@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { SHOTS } from '../../camera';
 import type { Kit, KitModule, Studio, Wiring } from '../kit';
 import { buildStarBoard } from './board';
-import { around, buildObservatory, LEDGE, R_IN, SPRING } from './dome';
+import { around, buildObservatory, LEDGE, R_IN, SPRING, WALL } from './dome';
 import { buildEyepiece, TARGETS } from './eyepiece';
 import { buildPeak, CENTER, height } from './peak';
 import { buildSky } from './sky';
@@ -20,13 +20,18 @@ const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 const RAD = THREE.MathUtils.DEG2RAD;
 
 /** Where each station stands round the room (degrees from the desk, turning right). */
-export const STATIONS = { desk: 0, honors: 80, library: 146, scope: 213, map: 298, line: 277 };
+export const STATIONS = { desk: 0, honors: 80, library: 146, scope: 213, map: 303, line: 272 };
 /** You stand here to look at the telescope: across the room from where it's pointing, and a little to one side. */
 const SCOPE_FROM = around(STATIONS.scope - 180 + 26, 3.15, 1.45);
-/** The telescope rests pointing out of the slit at this height. */
-const PARK = 40;
+/** The telescope rests pointing out of the slit at this height: low, so its eyepiece end swings well over your head. */
+const PARK = 25;
 /** The desk shot's camera: the board hangs in the sky ahead of it. */
 const DESK_EYE = v(0, 1.4, 1.35);
+
+/** The camera walks round the telescope on this circle, clear of its tube and fork wherever they're turned. */
+const RING = 2.05;
+/** A straight walk that comes nearer the middle than this goes round instead. */
+const CLEAR = 1.75;
 
 /** Shortest way round from a to b, in degrees. */
 const delta = (a: number, b: number) => ((((b - a) % 360) + 540) % 360) - 180;
@@ -60,7 +65,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, renderer, log }) => {
   log('LETTING OUR EYES ADJUST', 60);
   const obs = buildObservatory(peak.night, quality);
   peak.lamp.copy(obs.doorLamp);
-  const scope = buildTelescope(STATIONS.scope - 180);
+  // Its plate faces where you stand to look at it.
+  const scope = buildTelescope(STATIONS.scope - 180 + 20);
   const band = buildBand();
   const furniture = new THREE.Group();
 
@@ -72,6 +78,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, renderer, log }) => {
 
   // The view through the eyepiece, and which target the telescope is on.
   let target = 0;
+  /** What the telescope is actually pointed at: at the eyepiece it holds still (the next target only slides across the view) until you step back. */
+  let aimed = 0;
   let looking = false;
   let wiring: Wiring | null = null;
   let glints: ReturnType<typeof medalGlints> | null = null;
@@ -124,7 +132,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, renderer, log }) => {
         at.y = height(at.x, at.z) + 1.7;
         return { pos: at, target: v(-1.2, 8.2, 1.95), fov: 50, lean: 0.3 };
       })(),
-      window: { pos: v(0.3, 1.3, 0.7), target: v(-3, 26, -28), fov: 54, lean: 0.04 },
+      // (Out on the ring, where the telescope's eyepiece end can't swing into you.)
+      window: { pos: v(0.25, 1.3, -0.05), target: v(-3, 26, -28), fov: 54, lean: 0.04 },
       board: { pos: v(0, 1.66, 0.1), target: boardAt.clone().add(v(0, 0.6, 0)), fov: 44, lean: 0.03 },
     },
     // Up the snow to the dome, in through the slit past the telescope, and down to the desk.
@@ -144,17 +153,14 @@ export const buildKit: KitModule['buildKit'] = ({ quality, renderer, log }) => {
       stand(map.group, STATIONS.map, 4.18);
       // The shoes kicked off in front of the easel.
       stand(shoes.group, STATIONS.map + 1, 3.72, 0, 0.35);
-      // The line: its middle at its station, running along the wall.
-      const before = line.group.matrixWorld.clone();
+      // The line: its middle at its station, running along the wall. (The studio
+      // carries the shirts' places along with it; carrying them here too moved
+      // them twice, and put the project close-ups out in the dome's wall.)
       const mid = 0.775;
       const a = -STATIONS.line * RAD;
       line.group.rotation.y = a;
       line.group.position.copy(around(STATIONS.line, 4.08)).addScaledVector(v(Math.cos(a), 0, -Math.sin(a)), -mid);
       line.group.updateMatrixWorld(true);
-      // Its shirts' places move with it (the projects shot is worked out from them).
-      const moved = line.group.matrixWorld.clone().multiply(before.invert());
-      for (const item of line.items) item.focus.applyMatrix4(moved);
-      line.center.applyMatrix4(moved);
       // The medal board, brass now, a bar hung from the rail.
       honors.group.traverse((o) => {
         const m = o as THREE.Mesh;
@@ -176,11 +182,47 @@ export const buildKit: KitModule['buildKit'] = ({ quality, renderer, log }) => {
       const placesAz = (STATIONS.map + STATIONS.line) / 2;
       return {
         // Back from the wall, so the map, the line and the shoes all fit.
-        places: { pos: around(placesAz + 3, 1.3, 1.6), target: around(placesAz + 3, 4.2, 1.12), fov: 58, lean: 0.05 },
+        // (Not nearer the middle than the ring, where the telescope's eyepiece end swings.)
+        places: { pos: around(placesAz + 1, RING, 1.6), target: around(placesAz + 1, 4.2, 1.35), fov: 64, lean: 0.05 },
+        // Back far enough that the whole bookcase fits under the letterbox.
+        library: { pos: around(STATIONS.library, 2.2, 1.5), target: around(STATIONS.library, 4.12, 1.3), fov: 56, lean: 0.04, shift: 0.1 },
         // Across the room at the telescope, the slit's sky behind it.
         scope: { pos: SCOPE_FROM.clone(), target: CENTER.clone().setY(1.95), fov: 56, lean: 0.06, shift: 0.13 },
         eyepiece: eyepieceShot(),
       };
+    },
+
+    // Each shirt from in front, standing back toward the middle (the default
+    // steps back sideways, which here would put you in the dome's wall).
+    projectShot(focus) {
+      const inward = new THREE.Vector3(CENTER.x - focus.x, 0, CENTER.z - focus.z).normalize();
+      const side = new THREE.Vector3(-inward.z, 0, inward.x);
+      return { pos: focus.clone().addScaledVector(inward, 1.55).addScaledVector(side, 0.25).setY(focus.y + 0.04), target: focus.clone().add(v(0, 0.03, 0)), fov: 40, lean: 0.04, shift: 0.13 };
+    },
+
+    // Round the telescope, never through it: a walk that would cut across the
+    // middle of the room goes out to the ring, round it the shorter way, and in.
+    route(from, to) {
+      const a = new THREE.Vector2(from.x - CENTER.x, from.z - CENTER.z);
+      const b = new THREE.Vector2(to.x - CENTER.x, to.z - CENTER.z);
+      // Into or out of the dome (the way in, and the vista) doesn't cross the room.
+      if (a.length() > WALL || b.length() > WALL) return undefined;
+      const ab = b.clone().sub(a);
+      const k = THREE.MathUtils.clamp(-a.dot(ab) / Math.max(ab.lengthSq(), 1e-6), 0, 1);
+      const nearest = a.clone().addScaledVector(ab, k).length();
+      const azA = Math.atan2(a.x, -a.y) / RAD;
+      const turn = delta(azA, Math.atan2(b.x, -b.y) / RAD);
+      // A small step at the desk, or one well clear of the middle, goes straight.
+      if (nearest >= CLEAR || Math.abs(turn) < 25) return undefined;
+      const n = Math.max(1, Math.ceil(Math.abs(turn) / 35));
+      const via: THREE.Vector3[] = [];
+      for (let i = 0; i <= n; i++) {
+        // An end already out at the ring or beyond needs no step out to it.
+        if ((i === 0 && a.length() > RING - 0.3) || (i === n && b.length() > RING - 0.3)) continue;
+        const f = i / n;
+        via.push(around(azA + turn * f, RING, THREE.MathUtils.clamp(from.y + (to.y - from.y) * f, 1.3, 2.1)));
+      }
+      return via;
     },
 
     walls: [
@@ -229,9 +271,13 @@ export const buildKit: KitModule['buildKit'] = ({ quality, renderer, log }) => {
 
       // At the telescope, the dome turns to wherever it's pointed; otherwise it
       // follows your eyes (from outside, it turns its slit to you).
+      const still = wiring ? !wiring.moving() : true;
+      if (shot !== 'eyepiece' || !still) aimed = target;
+      // A look asked for and then walked away from is called off.
+      if (shot !== 'scope') looking = false;
       const atScope = shot === 'scope' || shot === 'eyepiece';
-      const aimAz = atScope ? STATIONS.scope + TARGETS[target].offset : yaw;
-      const aimEl = atScope ? TARGETS[target].el : PARK;
+      const aimAz = atScope ? STATIONS.scope + TARGETS[aimed].offset : yaw;
+      const aimEl = atScope ? TARGETS[aimed].el : PARK;
       // Like a real one, the dome doesn't chase every glance: it waits until
       // you've looked a little way off the slit's middle, then comes round.
       const wanted = atScope ? aimAz : inside ? yaw : from;
@@ -265,7 +311,6 @@ export const buildKit: KitModule['buildKit'] = ({ quality, renderer, log }) => {
       }
 
       // Arriving somewhere of ours: the cards, the view, the words on the plate.
-      const still = wiring ? !wiring.moving() : true;
       const here = still ? shot : '';
       if (here !== arrived) {
         arrived = here;

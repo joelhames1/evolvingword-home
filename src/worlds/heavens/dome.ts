@@ -6,6 +6,7 @@
 // turns with it, and the small red lights observatories use so your eyes stay
 // used to the dark.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvas, paneling, rng, texture, boards } from '../../textures';
 import type { Quality } from '../../world';
 import { outdoor, type DaylightUniforms } from '../outdoor';
@@ -119,6 +120,18 @@ function slitEdge(side: number, R: number) {
     pts.push(new THREE.Vector3(side * SLIT, zr * Math.sin(p), zr * Math.cos(p)));
   }
   return pts;
+}
+
+/** Many small pieces of one material, drawn as one: each baked in where it stands (in its parent's frame). */
+function merged(parts: THREE.Mesh[], mat: THREE.Material) {
+  const geo = mergeGeometries(
+    parts.map((m) => {
+      m.updateMatrix();
+      return m.geometry.applyMatrix4(m.matrix);
+    }),
+  );
+  for (const m of parts) m.geometry.dispose();
+  return new THREE.Mesh(geo, mat);
 }
 
 /** Painted steel plates for the inside of the dome: dark blue-gray, bolted at the seams. */
@@ -235,6 +248,10 @@ export function buildObservatory(night: DaylightUniforms, quality: Quality): Obs
 
   // --- the bookcases in the wall: curved shelves of books, all the way round -----------------
   const caseMat = new THREE.MeshStandardMaterial({ map: paneling(43, '#4a2c18'), color: '#7a5a42', roughness: 0.6 });
+  const kickMat = new THREE.MeshStandardMaterial({ color: '#1c120b', roughness: 0.8 });
+  // (Shelves, lips and uprights all round the room are one mesh, and the kicks another.)
+  const caseParts: THREE.Mesh[] = [];
+  const kicks: THREE.Mesh[] = [];
   const shelfYs = [0.05, 0.53];
   let total = 0;
   const bookSlots: { az: number; y: number; w: number; h: number; d: number; lean: number }[] = [];
@@ -246,15 +263,14 @@ export function buildObservatory(night: DaylightUniforms, quality: Quality): Obs
       const ring = new THREE.Mesh(new THREE.RingGeometry(WALL - CASE, WALL, 48, 1, Math.PI / 2 - t0 - span, span), caseMat);
       ring.rotation.x = -Math.PI / 2;
       ring.position.set(CENTER.x, y, CENTER.z);
-      ring.receiveShadow = true;
-      group.add(ring);
+      caseParts.push(ring);
       const lip = new THREE.Mesh(new THREE.CylinderGeometry(WALL - CASE, WALL - CASE, 0.03, 48, 1, true, Math.PI - t0 - span, span), caseMat);
       lip.position.set(CENTER.x, y - 0.012, CENTER.z);
-      group.add(lip);
+      caseParts.push(lip);
     }
-    const kick = new THREE.Mesh(new THREE.CylinderGeometry(WALL - CASE + 0.02, WALL - CASE + 0.02, 0.05, 48, 1, true, Math.PI - t0 - span, span), new THREE.MeshStandardMaterial({ color: '#1c120b', roughness: 0.8 }));
+    const kick = new THREE.Mesh(new THREE.CylinderGeometry(WALL - CASE + 0.02, WALL - CASE + 0.02, 0.05, 48, 1, true, Math.PI - t0 - span, span), kickMat);
     kick.position.set(CENTER.x, 0.025, CENTER.z);
-    group.add(kick);
+    kicks.push(kick);
     // Uprights every meter or so, and at each end.
     const n = Math.max(2, Math.round(((a1 - a0) / 360) * Math.PI * 2 * WALL));
     for (let i = 0; i <= n; i++) {
@@ -262,8 +278,7 @@ export function buildObservatory(night: DaylightUniforms, quality: Quality): Obs
       const side = new THREE.Mesh(new THREE.BoxGeometry(0.03, LEDGE - 0.05, CASE), caseMat);
       side.position.copy(around(az, WALL - CASE / 2, (LEDGE - 0.05) / 2));
       side.rotation.y = -THREE.MathUtils.degToRad(az);
-      side.castShadow = true;
-      group.add(side);
+      caseParts.push(side);
     }
     // Books on both shelves, leaning now and then, a gap here and there.
     for (const y of shelfYs) {
@@ -281,6 +296,10 @@ export function buildObservatory(night: DaylightUniforms, quality: Quality): Obs
       }
     }
   }
+  const cases = merged(caseParts, caseMat);
+  cases.castShadow = true;
+  cases.receiveShadow = true;
+  group.add(cases, merged(kicks, kickMat));
   const keep = quality === 'high' ? bookSlots : bookSlots.filter((_, i) => i % 2 === 0);
   const bookColors = ['#6a2424', '#24405e', '#344e32', '#b8a27a', '#4c3050', '#1c1c22', '#7a5c30', '#963a28', '#d4c8aa', '#20394e', '#5e4a2a'];
   const books = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.8 }), keep.length);
@@ -327,6 +346,9 @@ export function buildObservatory(night: DaylightUniforms, quality: Quality): Obs
 
   // The slit's two edges: deep steel arches, inside and out, with a jamb between.
   const steel = new THREE.MeshStandardMaterial({ color: '#1d2129', roughness: 0.55, metalness: 0.6 });
+  // (The girders, ribs, beam, ring and lamp housing are drawn as one.)
+  const steelParts: THREE.Mesh[] = [];
+  const jambMat = new THREE.MeshStandardMaterial({ color: '#2a2f38', roughness: 0.7, metalness: 0.3, side: THREE.DoubleSide });
   for (const side of [-1, 1]) {
     const inner = slitEdge(side, R_IN - 0.02);
     const outer = slitEdge(side, R_OUT + 0.02);
@@ -344,13 +366,12 @@ export function buildObservatory(night: DaylightUniforms, quality: Quality): Obs
     jambGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     jambGeo.setIndex(idx);
     jambGeo.computeVertexNormals();
-    const jamb = new THREE.Mesh(jambGeo, new THREE.MeshStandardMaterial({ color: '#2a2f38', roughness: 0.7, metalness: 0.3, side: THREE.DoubleSide }));
+    const jamb = new THREE.Mesh(jambGeo, jambMat);
     jamb.castShadow = true;
     turret.add(jamb);
     // The arch girder inside, a fat rib along the edge.
     const girder = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(slitEdge(side, R_IN - 0.09).map((p) => p.setX(p.x + side * 0.07))), 60, 0.07, 6), steel);
-    girder.castShadow = true;
-    turret.add(girder);
+    steelParts.push(girder);
     // And outside, the rail the shutter runs on.
     const rail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(slitEdge(side, R_OUT + 0.06).map((p) => p.setX(p.x + side * 0.1))), 60, 0.06, 6), outdoor(night, { color: '#9aa1ad' }));
     turret.add(rail);
@@ -362,7 +383,7 @@ export function buildObservatory(night: DaylightUniforms, quality: Quality): Obs
     const beam = new THREE.Mesh(new THREE.BoxGeometry(SLIT * 2 + 0.2, 0.14, 0.14), steel);
     beam.position.set(0, zr * Math.sin(p), zr * Math.cos(p));
     beam.rotation.x = -p + Math.PI / 2;
-    turret.add(beam);
+    steelParts.push(beam);
   }
   // Ribs down the dome's sides, meeting the ring at the bottom.
   const ribR = R_IN - 0.05;
@@ -378,15 +399,14 @@ export function buildObservatory(night: DaylightUniforms, quality: Quality): Obs
       pts.push(p);
     }
     if (pts.length < 3) continue;
-    const rib = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 30, 0.035, 5), steel);
-    turret.add(rib);
+    steelParts.push(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 30, 0.035, 5), steel));
   }
   // The ring the dome rides on, a little lip round the inside at the spring line, and the rack it turns on.
   // (Torus arcs start along +x; turned flat, they run round toward −z, so start just past the slit.)
   const gap = Math.asin((SLIT + 0.16) / R_IN);
   const ring = new THREE.Mesh(new THREE.TorusGeometry(R_IN - 0.06, 0.05, 6, segs * 2, Math.PI * 2 - gap * 2), steel);
   ring.rotation.set(Math.PI / 2, 0, -Math.PI / 2 + gap);
-  turret.add(ring);
+  steelParts.push(ring);
   const track = new THREE.Mesh(new THREE.TorusGeometry(R_IN - 0.02, 0.035, 6, segs * 2), steel);
   track.rotation.x = Math.PI / 2;
   track.position.set(CENTER.x, LEDGE + 0.05, CENTER.z);
@@ -401,20 +421,26 @@ export function buildObservatory(night: DaylightUniforms, quality: Quality): Obs
   const workLamp = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, 0.16, 16), steel);
   workLamp.position.copy(work.position).add(new THREE.Vector3(0, 0, 0.12));
   workLamp.rotation.x = 1.2;
-  turret.add(workLamp);
+  steelParts.push(workLamp);
+  const steelwork = merged(steelParts, steel);
+  steelwork.castShadow = true;
+  turret.add(steelwork);
 
   // --- the red lights: small caged lamps low on the wall, and one by the pier --------------------
   const redGlass = new THREE.MeshBasicMaterial({ color: new THREE.Color(3.2, 0.18, 0.1) });
   const cage = new THREE.MeshStandardMaterial({ color: '#15171c', roughness: 0.5, metalness: 0.6 });
+  const bulbs: THREE.Mesh[] = [];
+  const hoods: THREE.Mesh[] = [];
   for (const az of [16, 70, 95, 140, 158, 200, 252, 290, 322, 345]) {
     const at = around(az, WALL - CASE - 0.06, 0.22);
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), redGlass);
     bulb.position.copy(at);
-    group.add(bulb);
+    bulbs.push(bulb);
     const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.05, 10, 1, true), cage);
     hood.position.copy(at).setY(0.24);
-    group.add(hood);
+    hoods.push(hood);
   }
+  group.add(merged(bulbs, redGlass), merged(hoods, cage));
   const red = new THREE.PointLight('#ff3018', 1.6, 7, 1.4);
   red.position.copy(around(250, 1.1, 0.3));
   group.add(red);
