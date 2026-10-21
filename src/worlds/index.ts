@@ -1,7 +1,7 @@
 // The worlds you can step into, as the chooser shows them. Each one's 3D code
 // (its kit) loads only when it's picked; see src/scene.ts.
 
-export type WorldId = 'alps' | 'city' | 'tower' | 'monastery' | 'cell';
+export type WorldId = 'alps' | 'city' | 'tower' | 'monastery' | 'cell' | 'heavens';
 
 export interface WorldInfo {
   id: WorldId;
@@ -13,7 +13,7 @@ export interface WorldInfo {
   /** The color it glows when you're near it. */
   glow: string;
   /** What falls (or drifts) inside the glass. */
-  weather: 'snow' | 'rain' | 'mist' | 'petals' | 'motes';
+  weather: 'snow' | 'rain' | 'mist' | 'petals' | 'motes' | 'stars';
 }
 
 /** The chooser is laid out for at most this many globes (more only in the ?worlds=all preview). */
@@ -25,6 +25,7 @@ export const WORLDS: WorldInfo[] = [
   { id: 'tower', name: 'The Tower', line: 'First light in the control tower.', still: '/worlds/tower.jpg', glow: '#ffb347', weather: 'mist' },
   { id: 'monastery', name: 'The Monastery', line: 'Afternoon over an Umbrian valley.', still: '/worlds/monastery.jpg', glow: '#f2c6a4', weather: 'petals' },
   { id: 'cell', name: 'The Living Word', line: 'A cell, lit like a cathedral.', still: '/worlds/cell.jpg', glow: '#ffb38a', weather: 'motes' },
+  { id: 'heavens', name: 'The Heavens', line: 'Midnight in a mountaintop dome.', still: '/worlds/heavens.jpg', glow: '#a9bcff', weather: 'stars' },
 ];
 
 export const isWorld = (id: string | null | undefined): id is WorldId => WORLDS.some((w) => w.id === id);
