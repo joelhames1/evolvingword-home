@@ -165,7 +165,6 @@ export function buildKinesin(from: THREE.Vector3, to: THREE.Vector3, opts: { sca
   let lifting = 0;
   let phase = 0;
   const cargoAt = from.clone().add(v(0, stalkLen + cargoR, 0));
-  const cargoVel = v(0, 0, 0);
   const pos = (d: number) => from.clone().addScaledVector(dir, d);
   const up = v(0, 1, 0);
   const place = (n: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3) => {
@@ -214,10 +213,10 @@ export function buildKinesin(from: THREE.Vector3, to: THREE.Vector3, opts: { sca
       const hip = pos(at).addScaledVector(up, 0.13 * s + lift * 0.3);
       place(necks[lifting], a, hip);
       place(necks[1 - lifting], b, hip);
-      // The vesicle rides on top, on a spring, and the stalk leans to follow it.
+      // The vesicle rides on top, a moment behind, and the stalk leans to follow it.
       const want = hip.clone().addScaledVector(up, stalkLen + cargoR * 0.9);
-      cargoVel.addScaledVector(want.sub(cargoAt), dt * 30).multiplyScalar(Math.exp(-dt * 5));
-      cargoAt.addScaledVector(cargoVel, dt);
+      // (Eased toward where it should be, so it lags a little and never runs away, whatever the frame rate.)
+      cargoAt.lerp(want, 1 - Math.exp(-dt * 7));
       stalk.position.copy(hip);
       stalk.quaternion.setFromUnitVectors(up, cargoAt.clone().sub(hip).normalize());
       cargo.position.copy(cargoAt);

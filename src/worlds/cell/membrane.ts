@@ -1,11 +1,12 @@
-// The cell wall. From inside it's the cathedral's glass: big windows between
-// dark ribs (the cortex just under the membrane), each window leaded into panes
-// of amber, rose and gold, a few of teal and violet, the light outside coming
-// through brightest from one side and from above. Shafts of it reach in through
-// the haze. From outside it's a lantern: a glassy skin bright at its edge, the
-// glow inside showing through, and other cells far off in the warm dark.
+// The cell wall. From inside it's the cathedral's glass: windows between dark
+// ribs (the cortex just under the membrane) and stretches of plain membrane,
+// each window leaded into panes of ruby, amber, rose and gold, cobalt, violet and
+// teal, the light outside coming through brightest from one side and from above.
+// Shafts of it reach in through the haze. From outside it's a lantern: a glassy
+// skin bright at its edge with a glint on it, the glow inside showing through,
+// specks drifting in the warm dark round it.
 import * as THREE from 'three';
-import { CELL, HAZE, NOISE, shared, SUN } from './shaders';
+import { CELL, HAZE, NOISE, shared } from './shaders';
 
 const WALL_VERT = /* glsl */ `
   varying vec3 vWorld;
@@ -19,7 +20,7 @@ const WALL_VERT = /* glsl */ `
 `;
 
 const WALL_FRAG = /* glsl */ `
-  uniform vec4 uNiche;
+  uniform vec4 uBright;
   varying vec3 vWorld;
   varying vec3 vDir;
   ${HAZE}
@@ -47,12 +48,11 @@ const WALL_FRAG = /* glsl */ `
     // The windows, and the panes inside each.
     vec3 big = voronoi(d * 2.6);
     float edge = big.y - big.x;
-    // Some of the wall is windows, some is plain membrane between them, dark and soft;
-    // and behind the map, a niche with no window at all.
+    // Some of the wall is windows, some is plain membrane between them, dark and soft.
     float win = step(0.34, hash13(vec3(big.z * 37.0)));
     // Behind the map, a window always, and bright, so the map hangs against the light.
-    float off = 1.0 - dot(d, uNiche.xyz);
-    float behind = 1.0 - smoothstep(uNiche.w, uNiche.w * 1.8, off);
+    float off = 1.0 - dot(d, uBright.xyz);
+    float behind = uBright.w > 0.0 ? 1.0 - smoothstep(uBright.w, uBright.w * 1.8, off) : 0.0;
     win = max(win, behind);
     vec3 small = voronoi(d * 11.0 + big.z * 13.0);
     float lead = smoothstep(0.0, 0.05, small.y - small.x);
@@ -102,6 +102,10 @@ const SKIN_FRAG = /* glsl */ `
     float sun = 0.5 + 0.8 * pow(max(dot(d, uSun), 0.0), 1.5);
     vec3 col = vec3(1.0, 0.55, 0.35) * rim * 1.1 * sun + vec3(1.0, 0.6, 0.35) * rib * 0.05 * sun;
     col += vec3(1.0, 0.75, 0.5) * pow(rim, 6.0) * 0.6;
+    // A glass ball's highlights: a small bright one from the light, a broad soft sheen round it.
+    vec3 r = reflect(-v, d);
+    float spec = max(dot(r, normalize(uSun + vec3(-0.3, 0.1, 0.5))), 0.0);
+    col += vec3(1.0, 0.92, 0.8) * (pow(spec, 220.0) * 2.5 + pow(spec, 18.0) * 0.12);
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -142,14 +146,12 @@ const SHAFT_FRAG = /* glsl */ `
 
 export interface Membrane {
   group: THREE.Group;
-  /** The outside world: other cells far off, seen only from the vista. */
+  /** The outside world, seen only from the vista: specks drifting in the dark. */
   outside: THREE.Group;
   /** A bright window round this direction (from the cell's middle), this wide (1 - cos of its angle), whatever else the wall does there. */
-  niche(dir: THREE.Vector3, size: number): void;
+  window(dir: THREE.Vector3, size: number): void;
   /** A shaft of light in through the wall from this direction (from the cell's middle), falling toward a point. */
   beam(from: THREE.Vector3, to: THREE.Vector3, radius: number, tint: string): void;
-  /** Puts another cell far off, at p, this big. */
-  place(p: THREE.Vector3, size: number): void;
 }
 
 export function buildMembrane(quality: 'high' | 'low'): Membrane {
@@ -159,7 +161,7 @@ export function buildMembrane(quality: 'high' | 'low'): Membrane {
 
   const wall = new THREE.Mesh(
     sphere,
-    new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: WALL_FRAG, uniforms: { ...shared, uNiche: { value: new THREE.Vector4(0, -1, 0, 0) } }, side: THREE.BackSide }),
+    new THREE.ShaderMaterial({ vertexShader: WALL_VERT, fragmentShader: WALL_FRAG, uniforms: { ...shared, uBright: { value: new THREE.Vector4(0, -1, 0, 0) } }, side: THREE.BackSide }),
   );
   wall.position.copy(CELL.center);
   group.add(wall);
@@ -202,29 +204,23 @@ export function buildMembrane(quality: 'high' | 'low'): Membrane {
     group.add(shaft);
   };
 
-  // --- outside: other cells far off in the warm dark, and motes drifting by --------
+  // --- outside: the warm dark ------------------------------------------------------
   const outside = new THREE.Group();
-  // Out of focus, as far things are: soft discs a little brighter at the rim.
-  const bc = document.createElement('canvas');
-  bc.width = bc.height = 256;
-  const g = bc.getContext('2d')!;
-  const disc = g.createRadialGradient(128, 128, 0, 128, 128, 126);
-  disc.addColorStop(0, 'rgba(255,170,150,0.06)');
-  disc.addColorStop(0.75, 'rgba(255,180,150,0.1)');
-  disc.addColorStop(0.92, 'rgba(255,210,170,0.2)');
-  disc.addColorStop(1, 'rgba(255,190,150,0)');
-  g.fillStyle = disc;
-  g.fillRect(0, 0, 256, 256);
-  const bokeh = new THREE.CanvasTexture(bc);
-  bokeh.colorSpace = THREE.SRGBColorSpace;
-  const place = (p: THREE.Vector3, size: number) => {
-    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: bokeh, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.3, fog: false }));
-    m.position.copy(p);
-    m.scale.setScalar(size);
-    outside.add(m);
-  };
+  // Specks drifting in the dark round it, near and far.
+  const specks: number[] = [];
+  let seed = 7;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 900; i++) {
+    const u = r() * 2 - 1;
+    const a = r() * Math.PI * 2;
+    const k = CELL.radius * (1.4 + r() * 5);
+    const q = Math.sqrt(1 - u * u);
+    specks.push(CELL.center.x + Math.cos(a) * q * k, CELL.center.y + u * k, CELL.center.z + Math.sin(a) * q * k);
+  }
+  const speckGeo = new THREE.BufferGeometry();
+  speckGeo.setAttribute('position', new THREE.Float32BufferAttribute(specks, 3));
+  outside.add(new THREE.Points(speckGeo, new THREE.PointsMaterial({ color: '#ffb08a', size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })));
   group.add(outside);
-  void SUN;
-  const niche = (dir: THREE.Vector3, size: number) => (wall.material as THREE.ShaderMaterial).uniforms.uNiche.value.set(dir.x, dir.y, dir.z, size);
-  return { group, outside, place, niche, beam };
+  const bright = (dir: THREE.Vector3, size: number) => (wall.material as THREE.ShaderMaterial).uniforms.uBright.value.set(dir.x, dir.y, dir.z, size);
+  return { group, outside, window: bright, beam };
 }

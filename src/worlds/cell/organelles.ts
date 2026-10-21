@@ -336,13 +336,14 @@ export function buildVesicles(n: number, seed: number): Vesicles {
   const q = new THREE.Quaternion();
   const s = v(1, 1, 1);
   const at = v(0, 0, 0);
+  const sway = v(0, 0, 0);
   return {
     mesh,
     tick(t, dt, camera) {
       items.forEach((it, i) => {
         it.p.y += it.rise * dt;
         if (it.p.y > CELL.center.y + span) it.p.y -= span * 2;
-        at.copy(it.p).add(v(Math.sin(t * 0.13 + it.phase) * 0.8, 0, Math.cos(t * 0.11 + it.phase * 1.3) * 0.8));
+        at.copy(it.p).add(sway.set(Math.sin(t * 0.13 + it.phase) * 0.8, 0, Math.cos(t * 0.11 + it.phase * 1.3) * 0.8));
         // Out of the way of the lens: they shrink away when you come close.
         const d = at.distanceTo(camera.position);
         const want = THREE.MathUtils.smoothstep(d, 1.0 + it.size * 2, 2.6 + it.size * 3);

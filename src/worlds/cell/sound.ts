@@ -225,7 +225,10 @@ export function buildBand(): Band {
     const p = ctx.createStereoPanner();
     p.pan.value = pan;
     o.connect(g).connect(p).connect(k.weather);
-    g.connect(k.verb);
+    // A little of it into the room, so it rings a moment.
+    const send = ctx.createGain();
+    send.gain.value = 0.06;
+    g.connect(send).connect(k.verb);
     o.start(at);
     o.stop(at + 0.2);
   };
@@ -261,16 +264,18 @@ export function buildBand(): Band {
           const t0 = ctx.currentTime + 0.05;
           const n = Math.random() < 0.3 ? 2 + Math.floor(Math.random() * 4) : 1;
           const pan = Math.random() * 1.6 - 0.8;
-          for (let i = 0; i < n; i++) bubble(k, t0 + i * (0.05 + Math.random() * 0.12), 280 + Math.random() * 520, 0.05 + Math.random() * 0.05, pan + (Math.random() - 0.5) * 0.3);
+          for (let i = 0; i < n; i++) bubble(k, t0 + i * (0.05 + Math.random() * 0.12), 280 + Math.random() * 520, 0.25 + Math.random() * 0.2, pan + (Math.random() - 0.5) * 0.3);
           if (Math.random() < 0.18) {
             const at = t0 + 0.3;
             const o = ctx.createOscillator();
             const f = 900 + Math.random() * 700;
             o.frequency.setValueAtTime(f * 0.7, at);
             o.frequency.exponentialRampToValueAtTime(f, at + 0.03);
-            const g = k.sound.env(at, 0.035, 0.002, 0.18);
+            const g = k.sound.env(at, 0.22, 0.002, 0.18);
             o.connect(g).connect(k.weather);
-            g.connect(k.verb);
+            const send = ctx.createGain();
+            send.gain.value = 0.05;
+            g.connect(send).connect(k.verb);
             o.start(at);
             o.stop(at + 0.3);
           }
@@ -286,8 +291,8 @@ export function buildBand(): Band {
       if (s === 0 && bar % 2 === 0) {
         const len = sixteenth * 32 * 1.25;
         chord.notes.forEach((n, i) => choir(k, at + i * 0.08, n, len, i === 3 ? 0.03 : 0.04, (i - 1.5) * 0.35));
-        // An octave below the bottom note, very quietly, for depth.
-        choir(k, at, chord.notes[0] - 12, len, 0.025, 0);
+        // The root an octave above the bass, very quietly, for depth.
+        choir(k, at, chord.bass + 12, len, 0.025, 0);
         bass(k, at, chord.bass, sixteenth * 32 * 1.05);
       }
       // The heart, every other beat: lub, dub.
@@ -302,7 +307,7 @@ export function buildBand(): Band {
       }
       if (tune && step >= tuneNext && tuneNote < tune.length) {
         const [n, d] = tune[tuneNote++];
-        if (n) flute(k, at, n, d * sixteenth * 1.02, 0.05);
+        if (n) flute(k, at, n, d * sixteenth * 1.02, 0.065);
         tuneNext = step + d;
       }
       // Proteins folding: a little glassy run up the chord now and then, into the echo.

@@ -51,7 +51,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const high = quality === 'high';
 
   const membrane = buildMembrane(quality);
-  membrane.niche(MAP_DIR, 0.006);
+  // The map hangs against a bright window.
+  membrane.window(MAP_DIR, 0.006);
   // Shafts of light: past the strand, down into the nucleus, onto the mitochondrion behind the medals and the shirts.
   membrane.beam(v(0.45, 0.85, -0.3), v(3.6, 0.2, -8.5), 1.0, '#ffc98a');
   membrane.beam(v(-0.1, 0.95, -0.4), NUCLEUS.at, 1.5, '#ffd8a0');
@@ -85,11 +86,10 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     { len: 3.4, r: 0.7, at: v(3.5, 9.5, 3), turn: 2.0, tilt: 0.2 },
   ].map((d, i) => {
     const m = buildMito(d.len, d.r, 11 + i);
-    m.group.position.copy(d.at);
+    // Held at its angle; it turns slowly about its own length inside the holder.
     const holder = new THREE.Group();
     holder.position.copy(d.at);
     holder.rotation.set(0, d.turn, d.tilt);
-    m.group.position.set(0, 0, 0);
     holder.add(m.group);
     group.add(holder);
     return m;
@@ -221,7 +221,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   // The track the kinesin walks, behind the shoes, and the kinesin walking it.
   // It runs right behind the shoes.
   const along = (k: number) => at(STOPS.track, -2.8 + 5.6 * k, 0.24, -0.55 - 0.25 * k);
-  const [trackA, trackB] = clip(along(-3), along(4));
+  // (It starts a little before the kinesin does, so it never crosses the view past the desk.)
+  const [trackA, trackB] = clip(along(-0.12), along(4));
   group.add(filament([trackA, trackA.clone().lerp(trackB, 0.5).add(v(0, 0.02, 0)), trackB], 0.05, tub));
   // Walking past the shoes, in from one side and off at the other.
   const kinesin = buildKinesin(along(0).add(v(0, 0.05, 0)), along(1.3).add(v(0, 0.05, 0)), { scale: 2.0, cargo: 0.24 });
@@ -255,20 +256,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   helix.group.position.copy(HELIX);
   group.add(helix.group);
 
-  // The cell, from outside: a lantern in the dark, other cells glowing far off round it.
+  // The cell, from outside: a lantern in the dark.
   const vista: Shot = { pos: v(19, 11, 37), target: v(0, 1.2, -4), fov: 46, lean: 0.3 };
-  const look = vista.target.clone().sub(vista.pos).normalize();
-  const right = new THREE.Vector3().crossVectors(look, v(0, 1, 0)).normalize();
-  const upward = new THREE.Vector3().crossVectors(right, look);
-  for (const [yaw, pitch, dist, size] of [
-    [-0.5, 0.22, 520, 80],
-    [0.56, -0.24, 600, 110],
-    [0.62, 0.3, 800, 70],
-    [-0.66, -0.3, 700, 60],
-  ]) {
-    const d = look.clone().addScaledVector(right, Math.tan(yaw)).addScaledVector(upward, Math.tan(pitch)).normalize();
-    membrane.place(vista.pos.clone().addScaledVector(d, dist), size);
-  }
 
   // --- the studio, spread through the cell ------------------------------------------
   const put = (o: THREE.Object3D, s: THREE.Group, turn = 0) => {
@@ -306,6 +295,17 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     track: { pos: at(STOPS.track, 2.3, 1.05, 1.7), target: at(STOPS.track, -0.4, 0.4, -0.5), fov: 50, lean: 0.05 },
   });
 
+  // What to click for the nucleus and the great mitochondrion: plain shapes, cheap to test.
+  const hidden = new THREE.MeshBasicMaterial({ visible: false });
+  const nucleusHit = new THREE.Mesh(new THREE.SphereGeometry(NUCLEUS.r, 24, 12), hidden);
+  nucleusHit.position.copy(NUCLEUS.at);
+  const mitoHit = new THREE.Mesh(new THREE.CapsuleGeometry(1.0, 2.8, 4, 12).rotateZ(Math.PI / 2), hidden);
+  mitos[0].group.parent!.add(mitoHit);
+  group.add(nucleusHit);
+  const tmpM = new THREE.Matrix4();
+  const tmpV = v(0, 0, 0);
+  const UP = v(0, 1, 0);
+
   const kit: Kit = {
     objects: [group],
     board: helix,
@@ -323,20 +323,23 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     walls,
     band: buildBand(),
     wire(w) {
+      const touch = (object: THREE.Object3D, label: string, run: () => void, when?: () => boolean) => w.touch({ object, label, noGlow: true, onClick: run, when });
       // The kinesin by the shoes: say hello, and it hurries along.
       touch(kinesin.group, 'Kinesin, out for a walk', () => {
         kinesin.hurry();
         w.card('Out for a walk', 'Kinesin', ['A motor protein. It carries things across the cell on its two feet, one step at a time, and never trips.', 'It has never needed the shoes. It likes to have them near.']);
       });
-      function touch(object: THREE.Object3D, label: string, run: () => void) {
-        w.touch({ object, label, noGlow: true, onClick: run });
-      }
+      // The nucleus and the great mitochondrion take you to what's kept in them.
+      touch(nucleusHit, 'The library of genes', () => w.goTo('library'), () => w.current() !== 'library');
+      touch(mitoHit, 'Medals & diplomas', () => w.goTo('honors'), () => !['honors', 'medals', 'diplomas'].includes(w.current()));
     },
-    frame({ t, dt, camera }) {
+    frame({ t, dt: rawDt, camera }) {
+      // The first frame's step can come out a hair below zero; nothing here should ever run backward.
+      const dt = Math.max(0, rawDt);
       shared.uTime.value = t;
       // Thinner haze looking in from outside, so the lantern shows what's in it.
       const inside = camera.position.distanceTo(CELL.center) < CELL.radius;
-      shared.uHazeK.value = inside ? 0.05 : 0.016;
+      shared.uHazeK.value = inside ? 0.05 : 0.012;
       membrane.outside.visible = !inside;
       nucleus.tick(t);
       mitos.forEach((m) => m.tick(t));
@@ -346,14 +349,14 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       helix.group.position.y = HELIX.y + Math.sin(t * 0.4) * 0.03;
       golgi.rotation.y = -0.7 + Math.sin(t * 0.05) * 0.08;
       // The chains coming out of the ribosomes, curling as they fold.
-      const m4 = new THREE.Matrix4();
-      const p = v(0, 0, 0);
+      const m4 = tmpM;
+      const p = tmpV;
       for (const c of chains) {
         for (let i = 0; i < 14; i++) {
           const k = i / 13;
           const a = k * 5 + Math.sin(t * 0.8 + c.phase) * 0.8;
           p.set(Math.sin(a) * 0.05 * (1 + k), k * 0.32 + Math.sin(t * 1.3 + i + c.phase) * 0.01, Math.cos(a) * 0.05 * (1 + k));
-          p.applyAxisAngle(v(0, 1, 0), STOPS.line.rotation.y).add(c.root);
+          p.applyAxisAngle(UP, STOPS.line.rotation.y).add(c.root);
           m4.makeTranslation(p.x, p.y, p.z);
           c.beads.setMatrixAt(i, m4);
         }

@@ -71,6 +71,8 @@ test('the living word: picked from the globes, its strand and its cell, and the 
   // Back to the globes: this one is marked as where you were.
   await page.locator('#worlds-btn').click();
   await expect(page.locator('#chooser')).toBeVisible();
+  // The globes the owner shows may not include this one yet; with all of them showing, it's marked.
+  await page.goto('/?full&worlds=all');
   await expect(page.locator('.globe-wrap.world-cell .last')).toHaveText('Where you were last time');
   expect(problems).toEqual([]);
 });
