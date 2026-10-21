@@ -89,6 +89,8 @@ test('the heavens: picked from the globes, the dome, the sky, the telescope, and
   // Back to the globes: this one is marked as where you were.
   await page.locator('#worlds-btn').click();
   await expect(page.locator('#chooser')).toBeVisible();
+  // (Its globe shows once it's in worlds/shown.ts; until then, with ?worlds=all.)
+  if (!(await page.locator('.globe-wrap.world-heavens').count())) await page.goto('/?full&worlds=all');
   await expect(page.locator('.globe-wrap.world-heavens .last')).toHaveText('Where you were last time');
   expect(problems).toEqual([]);
 });

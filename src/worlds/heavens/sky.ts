@@ -8,8 +8,8 @@ import * as THREE from 'three';
 import { rng } from '../../textures';
 import type { Quality } from '../../world';
 
-/** Degrees the sky turns each second. The real sky does a fifth of that... per minute. */
-export const WHEEL = 0.05;
+/** Degrees the sky turns each second: about seven times the real sky, enough to see it go against the slit's edge. */
+export const WHEEL = 0.03;
 /** How far north we are: the pole stands this high over the northern horizon (+z). */
 const LATITUDE = THREE.MathUtils.degToRad(20);
 export const POLE = new THREE.Vector3(0, Math.sin(LATITUDE), Math.cos(LATITUDE));

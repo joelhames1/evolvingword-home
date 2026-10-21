@@ -39,12 +39,13 @@ function follower(rate: number, top: number) {
     get: () => at,
     speed: () => Math.abs(vel),
     snap: (x: number) => ((at = x), (vel = 0)),
-    step(aim: number, dt: number, wrap = true) {
+    step(aim: number, dt: number, wrap = true, fast = 1) {
       if (Number.isNaN(at)) at = aim;
       const d = wrap ? delta(at, aim) : aim - at;
       // A damped spring, held under a top speed.
-      vel += (d * rate * rate - vel * 2 * rate) * dt;
-      vel = THREE.MathUtils.clamp(vel, -top, top);
+      const r = rate * fast;
+      vel += (d * r * r - vel * 2 * r) * dt;
+      vel = THREE.MathUtils.clamp(vel, -top * fast, top * fast);
       at += vel * dt;
       if (wrap) at = ((at % 360) + 360) % 360;
       return at;
@@ -142,7 +143,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, renderer, log }) => {
       stand(shelf.group, STATIONS.library, 4.12);
       stand(map.group, STATIONS.map, 4.18);
       // The shoes kicked off in front of the easel.
-      stand(shoes.group, STATIONS.map - 3, 3.88, 0, 0.75);
+      stand(shoes.group, STATIONS.map + 1, 3.72, 0, 0.35);
       // The line: its middle at its station, running along the wall.
       const before = line.group.matrixWorld.clone();
       const mid = 0.775;
@@ -209,7 +210,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, renderer, log }) => {
       });
     },
 
-    frame({ t, dt, camera, renderer, shot }) {
+    frame({ t, dt, camera, renderer, shot, ready }) {
       if (sky.tick(t, dt, camera, renderer)) band.meteor();
       peak.tick(t, camera, renderer);
       board.setPixelRatio(renderer.getPixelRatio());
@@ -244,7 +245,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, renderer, log }) => {
         tubeAz.snap(atScope ? aimAz : inside ? domeAim : yaw);
         tubeEl.snap(aimEl);
       }
-      const domeAz = dome.step(domeAim, dt);
+      // On the way in it hurries round, so the slit is over the desk as you sit down.
+      const domeAz = dome.step(domeAim, dt, true, ready ? 1 : 2.2);
       obs.setAzimuth(domeAz);
       obs.lightFrom(!inside);
       const az = tubeAz.step(atScope ? aimAz : inside ? domeAim : yaw, dt);
