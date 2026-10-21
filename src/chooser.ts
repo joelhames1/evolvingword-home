@@ -56,7 +56,7 @@ const skies: { stop(): void }[] = [];
 /** Snow drifting, rain slanting, morning mist or falling petals, inside one globe. */
 function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
   const g = canvas.getContext('2d')!;
-  const n = { snow: 70, rain: 90, mist: 46, petals: 34 }[kind];
+  const n = { snow: 70, rain: 90, mist: 46, petals: 34, motes: 30 }[kind];
   const bits = Array.from({ length: n }, (_, i) => ({ x: Math.random(), y: Math.random(), s: 0.4 + Math.random() * 0.8, p: Math.random() * 6.28, spin: Math.random() * 6.28, leaf: i % 3 === 0 }));
   let stir = 0;
   let last = performance.now();
@@ -108,6 +108,34 @@ function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
           g.fillStyle = grad;
           g.beginPath();
           g.ellipse(b.x * w, b.y * h, r * 1.8, r * 0.6, 0, 0, Math.PI * 2);
+          g.fill();
+        }
+      } else if (kind === 'motes') {
+        // Soft glowing bubbles rising through the glass, some with a bright nucleus
+        // inside; a shake sets them swirling round the middle.
+        b.y -= dt * (0.02 + b.s * 0.025) * (1 - stir * 1.4);
+        b.x += dt * (Math.sin(now / 1300 + b.p) * 0.012 + stir * Math.cos(b.p + now / 320) * 0.45);
+        b.y += dt * stir * Math.sin(b.p + now / 320) * 0.45;
+        const r = (0.008 + b.s * b.s * 0.03) * w;
+        const x = b.x * w;
+        const y = b.y * h;
+        const glowing = g.createRadialGradient(x, y, r * 0.2, x, y, r);
+        glowing.addColorStop(0, `rgba(255,190,140,${0.05 + b.s * 0.06})`);
+        glowing.addColorStop(0.8, `rgba(255,170,130,${0.14 + b.s * 0.12})`);
+        glowing.addColorStop(1, 'rgba(255,200,160,0)');
+        g.fillStyle = glowing;
+        g.beginPath();
+        g.arc(x, y, r, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = `rgba(255,225,190,${0.25 + b.s * 0.3})`;
+        g.lineWidth = Math.max(0.6, w / 520);
+        g.beginPath();
+        g.arc(x, y, r * 0.86, 0, Math.PI * 2);
+        g.stroke();
+        if (b.leaf) {
+          g.fillStyle = `rgba(190,170,255,${0.5 + 0.3 * Math.sin(now / 500 + b.p)})`;
+          g.beginPath();
+          g.arc(x + r * 0.15, y - r * 0.1, r * 0.3, 0, Math.PI * 2);
           g.fill();
         }
       } else {
