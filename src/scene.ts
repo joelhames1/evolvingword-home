@@ -278,6 +278,8 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
     SHOTS.projects.target.copy(focus).add(v(0, 0.05, 0));
     SHOTS.projects.pos.copy(focus).add(v(1.35, 0.05, -0.3).applyQuaternion(lineTurn));
     SHOTS.projects.shift = CARD;
+    const own = kit.projectShot?.(focus.clone(), projectIndex);
+    if (own) Object.assign(SHOTS.projects, { ...own, pos: own.pos.clone(), target: own.target.clone() });
   };
 
   // The frame and the subtitles.

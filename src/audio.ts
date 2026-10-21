@@ -47,6 +47,8 @@ export interface Band {
   echoBeats?: number;
   /** The weather's level at the desk, and how much it rises at the glass. */
   outside?: [number, number];
+  /** How loud the record's crackle under the music is, 1 as in the first worlds (quiet music wants less). */
+  crackle?: number;
   /** Starts the world's weather and ambience. */
   start(k: SoundKit): void;
   /** Plays one sixteenth: `step` 0..15 in `bar`. */
@@ -667,7 +669,7 @@ export class Sound {
     hp.type = 'highpass';
     hp.frequency.value = 900;
     const g = ctx.createGain();
-    g.gain.value = 0.22;
+    g.gain.value = 0.22 * (this.band?.crackle ?? 1);
     s.connect(hp).connect(g).connect(this.musicBus);
     s.start();
   }

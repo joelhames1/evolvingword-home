@@ -135,7 +135,8 @@ const GLASS_FRAG = /* glsl */ `
   ${NOISE}
   void main() {
     vec3 v = normalize(cameraPosition - vWorld);
-    float ndv = abs(dot(normalize(vNrm), v));
+    // Clamped: a hair over 1 would make pow(1.0 - ndv, ...) a NaN, and NaNs flash black.
+    float ndv = min(abs(dot(normalize(vNrm), v)), 1.0);
     float rim = pow(1.0 - ndv, uPower);
     // A slow shimmer across the surface, like oil on water.
     float sh = 1.0 + uShimmer * (vnoise(vWorld * 2.3 + vec3(0.0, uTime * 0.12, 0.0)) - 0.5);
@@ -193,7 +194,7 @@ const PEARL_FRAG = /* glsl */ `
     vec3 n = normalize(vNrm);
     vec3 v = normalize(cameraPosition - vWorld);
     if (dot(n, v) < 0.0) n = -n;
-    float ndv = max(dot(n, v), 0.0);
+    float ndv = clamp(dot(n, v), 0.0, 1.0);
     float key = max(dot(n, uSun), 0.0);
     float wrap = 0.5 + 0.5 * n.y;
     vec3 base = uColor * vTint;

@@ -117,6 +117,12 @@ export interface Kit {
    * with it, so only shots that don't follow need giving in `closeups`.
    */
   arrange?(studio: Studio): void;
+  /**
+   * Where to stand to look at one project's shirt on the line (`focus` is the
+   * shirt). By default the camera steps back the same way for every shirt, which
+   * suits the usual room; a world whose walls are elsewhere says where instead.
+   */
+  projectShot?(focus: THREE.Vector3, index: number): Shot | undefined;
   /** Shots to add or replace once the studio is arranged (called after `arrange`). */
   closeups?(studio: Studio): Record<string, Shot>;
   /** The places ‹ › turns between, in order, instead of the room's four walls. Must include 'desk'. */

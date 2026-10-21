@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import {
   BlendFunction,
   BloomEffect,
+  Effect,
   ChromaticAberrationEffect,
   EffectComposer,
   EffectPass,
@@ -52,6 +53,24 @@ export function createWorld(host: HTMLElement, quality: Quality): World {
 
   const composer = new EffectComposer(renderer, { frameBufferType: THREE.HalfFloatType, multisampling: quality === 'high' ? 4 : 0 });
   composer.addPass(new RenderPass(scene, camera));
+  // A safety net: a pixel that came out as not-a-number or infinite (one bad
+  // shader expression is enough) would be smeared by the bloom into flashing
+  // black blocks. Catch it here, before anything spreads it.
+  composer.addPass(
+    new EffectPass(
+      camera,
+      new Effect(
+        'Finite',
+        /* glsl */ `
+          void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+            vec4 c = inputColor;
+            bool bad = any(isnan(c)) || any(isinf(c)) || c.r != c.r || c.g != c.g || c.b != c.b;
+            outputColor = bad ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(min(c.rgb, vec3(64.0)), c.a);
+          }
+        `,
+      ),
+    ),
+  );
   const bloom = new BloomEffect({ mipmapBlur: true, intensity: 1.35, luminanceThreshold: 0.55, luminanceSmoothing: 0.25, radius: 0.72 });
   const tone = new ToneMappingEffect({ mode: ToneMappingMode.AGX });
   const vignette = new VignetteEffect({ offset: 0.28, darkness: 0.72 });

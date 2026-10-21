@@ -95,7 +95,7 @@ const SKIN_FRAG = /* glsl */ `
   void main() {
     vec3 d = normalize(vDir);
     vec3 v = normalize(cameraPosition - vWorld);
-    float ndv = max(dot(d, v), 0.0);
+    float ndv = clamp(dot(d, v), 0.0, 1.0);
     float rim = pow(1.0 - ndv, 2.2);
     vec3 big = voronoi(d * 2.6);
     float rib = 1.0 - smoothstep(0.02, 0.1, big.y - big.x);

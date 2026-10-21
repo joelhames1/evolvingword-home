@@ -27,7 +27,8 @@ const KNOT_FRAG = /* glsl */ `
   ${NOISE}
   void main() {
     vec3 v = normalize(cameraPosition - vWorld);
-    float ndv = abs(dot(normalize(vNrm), v));
+    // Clamped: a hair over 1 would make pow(1.0 - ndv, ...) a NaN, and NaNs flash black.
+    float ndv = min(abs(dot(normalize(vNrm), v)), 1.0);
     float grain = vnoise(vLocal * 9.0 + vec3(0.0, uTime * 0.05, 0.0));
     float body = pow(ndv, 2.5) * (0.55 + 0.35 * grain) + pow(1.0 - ndv, 3.0) * 0.25;
     gl_FragColor = vec4(uColor * body * through(vWorld), 1.0);

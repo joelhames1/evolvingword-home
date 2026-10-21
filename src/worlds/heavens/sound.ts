@@ -207,12 +207,14 @@ export function buildBand(): HeavensBand {
     driftDepth.gain.value = 260;
     drift.connect(driftDepth).connect(bp.frequency);
     drift.start();
+    // It comes and goes: the level swings between nothing and a little, never below
+    // nothing (a negative level is still sound, just upside down: a constant hiss).
     const whistle = ctx.createGain();
-    whistle.gain.value = 0.0;
+    whistle.gain.value = 0.05;
     const comes = ctx.createOscillator();
     comes.frequency.value = 0.051;
     const comesDepth = ctx.createGain();
-    comesDepth.gain.value = 0.22;
+    comesDepth.gain.value = 0.05;
     comes.connect(comesDepth).connect(whistle.gain);
     comes.start();
     air.connect(bp).connect(whistle).connect(k.weather);
@@ -261,6 +263,8 @@ export function buildBand(): HeavensBand {
 
   return {
     bpm: 54,
+    // The music is sparse, so the record's crackle is kept low under it.
+    crackle: 0.35,
     swing: 0,
     room: [6.5, 0.85],
     echoBeats: 1.5,
