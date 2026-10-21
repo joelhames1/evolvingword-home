@@ -33,6 +33,9 @@ export const HEX = {
   rail: 0.82,
 };
 
+/** The stair in the well: where it lands on every floor (on the far side of the well from the desk, a little round), its steps to a floor, and how far in and out its treads run. */
+export const STAIR = { landing: Math.PI * 0.82, steps: 24, inner: 0.95, outer: 1.84 };
+
 /** From one gallery's center to the next. */
 export const D = 2 * HEX.r + HEX.vestibule;
 
@@ -95,14 +98,24 @@ export const bayOffset = (bay: number) => (bay - (HEX.bays - 1) / 2) * HEX.bayW;
 export function solid(p: THREE.Vector3, galleries = { from: -3, to: 4 }): boolean {
   const j = Math.floor(p.y / HEX.F);
   const y = p.y - j * HEX.F;
-  if (y > HEX.ceiling) return true;
   const k = Math.round(p.z / D);
   if (k < galleries.from || k > galleries.to) return true;
   const x = p.x;
   const z = p.z - k * D;
-  // Inside the gallery: in front of the bookcases on every side.
+  const rho = Math.hypot(x, z);
+  // The floors, but not the well through them.
+  if (y > HEX.ceiling && rho > HEX.well - 0.05) return true;
+  // Inside the gallery: in front of the bookcases on every side, and clear of
+  // the stair (a tread and the handrail over it, winding up one floor a turn)
+  // and of the railing round the well.
   const inside = SIDES.every((phi, i) => x * Math.cos(phi) + z * Math.sin(phi) <= HEX.r - (FREE.includes(i) ? 0 : HEX.depth));
-  if (inside) return false;
+  if (inside) {
+    if (rho > STAIR.inner - 0.12 && rho < STAIR.outer + 0.06) {
+      const tread = (THREE.MathUtils.euclideanModulo(Math.atan2(z, x) - STAIR.landing, Math.PI * 2) / (Math.PI * 2) + 1 / STAIR.steps) * HEX.F;
+      if (THREE.MathUtils.euclideanModulo(p.y - tread + 0.3, HEX.F) < 1.4) return true;
+    }
+    return rho > HEX.well - 0.05 && rho < HEX.well + 0.3 && y < HEX.rail + 0.15;
+  }
   // In an arch or its vestibule: between the walls and under the round.
   if (Math.abs(z) >= HEX.r - 0.01 && Math.abs(x) < HEX.archW) {
     const spring = HEX.archTop - HEX.archW;
@@ -127,13 +140,36 @@ export function clear(a: THREE.Vector3, b: THREE.Vector3, via: THREE.Vector3[] =
 /**
  * The way from one gallery to another, as someone would walk it: out past the
  * well, through each arch and vestibule in turn (round the side of each well on
- * the way, never over it) and in to where you're going. Nothing if the two are
- * in the same gallery.
+ * the way, never over it) and in to where you're going. Within one gallery,
+ * round the well if it's in the way. From up a well, down it to the floor first.
  */
 export function route(a: THREE.Vector3, b: THREE.Vector3): THREE.Vector3[] | undefined {
   const ka = Math.round(a.z / D);
   const kb = Math.round(b.z / D);
-  if (ka === kb || Math.abs(a.y - b.y) > HEX.F * 0.8) return undefined;
+  const above = a.y - Math.floor(b.y / HEX.F) * HEX.F;
+  if (above > HEX.archTop - 0.3 || above < 0) {
+    // Somewhere up or down a well (on the way in, say): down the middle of it to
+    // our floor first, slowing as it nears so the turn out of the well doesn't
+    // swing low over the railing.
+    const y = THREE.MathUtils.clamp(b.y, 1.35, 2.6) + 0.6;
+    if (Math.hypot(a.x, a.z - ka * D) > STAIR.inner - 0.3 || Math.abs(y - b.y) > HEX.F * 0.8) return undefined;
+    const floor = new THREE.Vector3(a.x, y, a.z);
+    const slow = a.y > y + 2.4 ? [new THREE.Vector3(a.x, y + 1.8, a.z)] : [];
+    return [...slow, floor, ...(route(floor, b) ?? [])];
+  }
+  if (ka === kb) {
+    // Across the same gallery: round the well rather than through the stair, unless going into the well itself.
+    const c = center(ka);
+    const ra = Math.hypot(a.x, a.z - c.z);
+    const rb = Math.hypot(b.x, b.z - c.z);
+    if (ra < HEX.well || rb < HEX.well) return undefined;
+    const ab = new THREE.Vector2(b.x - a.x, b.z - a.z);
+    const t = THREE.MathUtils.clamp(-(a.x * ab.x + (a.z - c.z) * ab.y) / Math.max(ab.lengthSq(), 1e-6), 0, 1);
+    const near = new THREE.Vector2(a.x + ab.x * t, a.z - c.z + ab.y * t);
+    if (near.length() > HEX.well + 0.2) return undefined;
+    const out = near.length() > 0.2 ? near.normalize() : new THREE.Vector2(-ab.y, ab.x).normalize();
+    return [new THREE.Vector3(out.x * 2.9, THREE.MathUtils.clamp((a.y + b.y) / 2, 1.35, 1.9), c.z + out.y * 2.9)];
+  }
   const dir = Math.sign(kb - ka);
   const y = THREE.MathUtils.clamp((a.y + b.y) / 2, 1.35, 1.9);
   const side = (p: THREE.Vector3) => (Math.abs(p.x) > 0.3 ? Math.sign(p.x) : 1);

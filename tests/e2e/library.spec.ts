@@ -72,6 +72,10 @@ test('the library: picked from the globes, the book over the well, and the studi
   await page.keyboard.press('b');
   await expect(page.locator('#card-title')).toHaveText('Take one down', { timeout: 30_000 });
 
+  // The software renderer is slow here, so the offer of the simple page has come up since the way in.
+  await expect(page.locator('#slow')).toBeVisible({ timeout: 20_000 });
+  await page.locator('#slow-stay').click();
+
   // Back to the globes: this one is marked as where you were.
   // (Until the owner shows its globe, only ?worlds=all has one for it.)
   await page.locator('#worlds-btn').click();
@@ -105,5 +109,60 @@ test('the library: a phrase of your own, bred on a fresh page', async ({ page })
   // The leaf turned for it.
   expect(await page.evaluate(() => (window as unknown as { __ew: Ew }).__ew.book.turns())).toBe(turns + 1);
   await expect(page.locator('#hints')).toContainText('GENERATIONS', { timeout: 10_000 });
+  expect(problems).toEqual([]);
+});
+
+test('the library: every shirt on the line from open floor, however you go back and forth', async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const problems = watch(page);
+  await page.goto('/?shot=desk&full&world=library');
+  await page.waitForFunction(() => 'world' in ((window as unknown as { __ew?: object }).__ew ?? {}));
+  // Watch the camera every frame: it must never be inside stone, on the way or at a stop.
+  await page.evaluate(() => {
+    const w = (window as unknown as { __ew: Ew }).__ew;
+    w.inStone = [] as string[];
+    const look = () => {
+      if (w.solid(w.camera.position)) w.inStone.push(`${w.rig.current} ${w.camera.position.toArray().map((x: number) => x.toFixed(2))}`);
+      requestAnimationFrame(look);
+    };
+    look();
+  });
+  const settled = () => page.waitForFunction(() => !(window as unknown as { __ew: Ew }).__ew.rig.moving, null, { timeout: 60_000 });
+  /** Where the camera stopped: in open floor with room round it, near the shirt and looking at it. */
+  const stop = () =>
+    page.evaluate(() => {
+      const w = (window as unknown as { __ew: Ew }).__ew;
+      const shirt = w.line.items.find((it: Ew) => it.project.title === document.getElementById('project-title')!.textContent).focus;
+      const to = shirt.clone().sub(w.camera.position);
+      const ahead = w.camera.getWorldDirection(shirt.clone());
+      return { shot: w.rig.current, roomy: w.roomy(w.camera.position), near: to.length() > 1.2 && to.length() < 2.6, facing: to.normalize().dot(ahead) > 0.97 };
+    });
+  const good = { shot: 'projects', roomy: true, near: true, facing: true };
+  const count = await page.evaluate(() => (window as unknown as { __ew: Ew }).__ew.line.items.length);
+  await page.keyboard.press('1');
+  await settled();
+  expect(await stop()).toEqual(good);
+  // Along the whole line and round again, then back.
+  for (let i = 0; i < count + 1; i++) {
+    await page.keyboard.press('ArrowRight');
+    await settled();
+    expect(await stop()).toEqual(good);
+  }
+  for (let i = 0; i < count; i++) {
+    await page.locator('#project-prev').click();
+    await settled();
+    expect(await stop()).toEqual(good);
+  }
+  // Impatient: out, in again from the reading room and on before arriving, back and forth mid-flight.
+  for (const keys of [['Escape', 'Escape', '1', 'ArrowRight'], ['w', '1', 'ArrowLeft', 'ArrowRight', 'ArrowRight'], ['b', '1', 'ArrowLeft']]) {
+    for (const k of keys) {
+      await page.keyboard.press(k);
+      await page.waitForTimeout(250);
+    }
+    await settled();
+    expect(await stop()).toEqual(good);
+  }
+  expect(await page.evaluate(() => (window as unknown as { __ew: Ew }).__ew.inStone)).toEqual([]);
   expect(problems).toEqual([]);
 });

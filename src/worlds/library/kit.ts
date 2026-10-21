@@ -16,10 +16,13 @@ import { buildBook } from './book';
 import { buildMirror } from './mirror';
 import { buildHall } from './hall';
 import { lit, LIGHT } from './light';
-import { center, clear, D, HEX, onWall, ROOMS, route, wallMatrix } from './plan';
+import { center, clear, D, HEX, onWall, ROOMS, route, solid, wallMatrix } from './plan';
 import { buildBand } from './sound';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+
+/** In the open, with a hand's width or two of air on every side: somewhere the camera can stand without the near plane cutting into anything. */
+const roomy = (p: THREE.Vector3) => [v(0, 0, 0), v(0.25, 0, 0), v(-0.25, 0, 0), v(0, 0, 0.25), v(0, 0, -0.25), v(0, 0.2, 0), v(0, -0.2, 0)].every((d) => !solid(p.clone().add(d)));
 
 /** How far the desk and everything on it moves back from the usual room: to sit at the reading room's well. */
 const DESK = v(0, 0, 4.75);
@@ -183,12 +186,26 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     band,
     route,
     arrange(s: Studio) {
+      kit.debug.line = s.line; // for the tests
       // The desk and all that's on it, to the reading room's well.
       for (const o of [s.desk.group, s.watch.group, s.pad.group, s.treats.group, s.rolodex.group]) o.position.add(DESK);
       // The medals and diplomas, on the paneled wall of the next gallery.
       const h = onWall(ROOMS.honors, 0, 5, 0, HEX.depth + 0.012);
       s.honors.group.position.copy(h.position);
       s.honors.group.rotation.set(0, h.turn, 0);
+      // Seen from a gallery or two away, the depth buffer can't tell a sheet laid
+      // a fraction of a millimeter over its frame from the frame, and the two
+      // flicker. Lift each sheet a step clear, in the order they're laid on.
+      const lift = (o: THREE.Object3D) => {
+        let step = 0;
+        for (const m of o.children) {
+          if (!(m instanceof THREE.Mesh) || !(m.geometry instanceof THREE.PlaneGeometry)) continue;
+          step++;
+          Object.assign(m.material as THREE.Material, { polygonOffset: true, polygonOffsetFactor: -step, polygonOffsetUnits: -step * 2 });
+        }
+      };
+      s.honors.diplomas.forEach(lift);
+      lift(s.map.group);
       // The books you can read, in their alcove.
       const b = onWall(ROOMS.books, 0, 3, 0, 0.05);
       s.shelf.group.position.copy(b.position);
@@ -201,9 +218,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         o.matrix.premultiply(move);
         o.matrix.decompose(o.position, o.quaternion, o.scale);
       }
-      // The line remembers where each shirt hangs, for the camera: move those too.
-      for (const it of s.line.items) it.focus.applyMatrix4(move);
-      s.line.center.applyMatrix4(move);
+      // (The studio moves each shirt's place for the camera along with the line, so not here too.)
       // Two brass arms off the panel for the line to hang from.
       s.line.group.updateMatrixWorld(true);
       const arm = new THREE.MeshStandardMaterial({ color: '#8a6430', metalness: 0.8, roughness: 0.35 });
@@ -216,6 +231,14 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         hall.group.add(rod);
       }
     },
+    // Each shirt from straight out in front of it, well clear of the shelves on
+    // either side and of the well behind, so the walk from one to the next stays
+    // in the open and the card on the left has the panel, not the shirt.
+    projectShot(focus) {
+      const w = onWall(ROOMS.maps, 0, 5, 0, 0);
+      const pos = focus.clone().addScaledVector(w.out, -1.65).addScaledVector(w.along, -0.12).setY(1.9);
+      return { pos, target: focus.clone().add(v(0, 0.02, 0)), fov: 38, lean: 0.04, shift: 0.13 };
+    },
     // Standing further back than in a room, toward the middle of the gallery, so
     // the walk on to the next one goes through the arch rather than the shelves.
     closeups(s: Studio) {
@@ -225,7 +248,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       const honorsAt = s.honors.group.localToWorld(v(0.08, 1.72, 0));
       return {
         honors: { pos: honorsAt.clone().addScaledVector(facing(s.honors.group), 2.7).setY(1.62), target: honorsAt.clone().setY(1.7), fov: 27, lean: 0.03 },
-        library: { pos: shelfAt.clone().addScaledVector(facing(s.shelf.group), 2.75).setY(1.5), target: shelfAt.clone().setY(1.2), fov: 40, lean: 0.03, shift: 0.1 },
+        library: { pos: shelfAt.clone().addScaledVector(facing(s.shelf.group), 2.75).setY(1.45), target: shelfAt.clone().setY(1.04), fov: 45, lean: 0.03, shift: 0.1 },
         map: { pos: mapAt.clone().addScaledVector(facing(s.map.group), 2.6), target: mapAt.clone(), fov: 29, lean: 0.02, shift: 0.13 },
       };
     },
@@ -293,15 +316,29 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       galleries: () => hall.copies.length,
       holdLantern: (u: number | null) => (lanternHeld = u),
       stray,
-      /** For the tests: every walk between two places on the tour, checked for stone along the way. */
+      /** For the tests: is the camera here in stone, or standing in the open with room round it? */
+      solid: (p: THREE.Vector3) => solid(p),
+      roomy: (p: THREE.Vector3) => roomy(p),
+      /**
+       * For the tests: every walk between two places on the tour (each shirt's
+       * close-up among them, and the way in), checked for stone along the way,
+       * and every place checked for room to stand.
+       */
       blocked: () => {
         const out: string[] = [];
-        const names = [...walls.map((w) => w.id), ...walls.flatMap((w) => w.members ?? [])];
-        for (const a of names)
-          for (const b of names) {
-            if (a === b || !SHOTS[a] || !SHOTS[b]) continue;
-            if (!clear(SHOTS[a].pos, SHOTS[b].pos, route(SHOTS[a].pos, SHOTS[b].pos))) out.push(`${a} -> ${b}`);
-          }
+        const at: Record<string, THREE.Vector3> = {};
+        for (const w of walls) for (const n of [w.id, ...(w.members ?? [])]) if (n !== 'projects' && SHOTS[n]) at[n] = SHOTS[n].pos;
+        (kit.debug.line as Studio['line']).items.forEach((it, i) => (at[`projects ${i + 1}`] = kit.projectShot!(it.focus.clone(), i)!.pos));
+        for (const [a, p] of Object.entries(at)) if (!roomy(p)) out.push(`${a} is in the stone`);
+        for (const [a, p] of Object.entries(at))
+          for (const [b, q] of Object.entries(at)) if (a !== b && !clear(p, q, route(p, q))) out.push(`${a} -> ${b}`);
+        if (!clear(kit.shots.vista.pos, SHOTS.desk.pos, kit.intro.via)) out.push('the way in');
+        // And off somewhere else before the way in is over: a key pressed on the way down the well.
+        const way = new THREE.CatmullRomCurve3([kit.shots.vista.pos, ...kit.intro.via, SHOTS.desk.pos], false, 'centripetal');
+        for (let i = 1; i < 10; i++) {
+          const p = way.getPoint(i / 10);
+          for (const [b, q] of Object.entries(at)) if (!clear(p, q, route(p, q))) out.push(`the way in (${i}/10) -> ${b}`);
+        }
         return out;
       },
     },

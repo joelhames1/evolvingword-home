@@ -282,6 +282,13 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
     if (own) Object.assign(SHOTS.projects, { ...own, pos: own.pos.clone(), target: own.target.clone() });
   };
 
+  // On along the line to the next shirt; if the camera is still on its way in
+  // from another room, the rest of the way round (a world may have walls between).
+  const toShirt = () => {
+    const via = kit.route?.(camera.position.clone(), SHOTS.projects.pos);
+    void rig.go('projects', via ? { via } : { duration: 0.9 });
+  };
+
   // The frame and the subtitles.
   const FRAME = 2.1;
   const barFor = () => Math.round(Math.min(window.innerHeight * 0.13, Math.max(48, (window.innerHeight - window.innerWidth / FRAME) / 2)));
@@ -446,11 +453,11 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   navButtons.forEach((b) => b.addEventListener('click', () => goTo(b.dataset.go!)));
   $('project-prev').addEventListener('click', () => {
     showProject(projectIndex - 1);
-    void rig.go('projects', { duration: 0.9 });
+    toShirt();
   });
   $('project-next').addEventListener('click', () => {
     showProject(projectIndex + 1);
-    void rig.go('projects', { duration: 0.9 });
+    toShirt();
   });
 
   // The reader.
@@ -607,7 +614,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
       label: item.project.title,
       onClick: () => {
         showProject(i);
-        if (rig.current === 'projects') void rig.go('projects', { duration: 0.9 });
+        if (rig.current === 'projects') toShirt();
         else goTo('projects');
       },
     }),
@@ -721,7 +728,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
       const dir = k === 'arrowright' ? 1 : -1;
       if (rig.current === 'projects') {
         showProject(projectIndex + dir);
-        void rig.go('projects', { duration: 0.9 });
+        toShirt();
       } else if (rig.current === 'work') {
         rolodex.flip(dir);
         sound.flick();

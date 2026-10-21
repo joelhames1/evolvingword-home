@@ -54,12 +54,21 @@ export function buildMirror(quality: Quality, frameMat: THREE.Material) {
   // A small picture is plenty for old glass: smaller still, and drawn less often, on the low tier.
   const high = quality === 'high';
   const glass = new Reflector(new THREE.PlaneGeometry(w, h), { textureWidth: high ? 512 : 320, textureHeight: high ? 900 : 560, color: '#c9bca2', shader: OLD_GLASS, multisample: 0 });
-  // Only worth the extra picture when you're near enough to see it.
+  // Only worth the extra picture when you're near enough to see it, and while
+  // you stand still the room in it hardly changes, so not every frame. While
+  // you move it keeps up (on the low tier, every other frame), or the picture
+  // in the glass would lag behind the view and jump.
   const draw = glass.onBeforeRender;
   let n = 0;
   const at = new THREE.Vector3();
+  const was = { pos: new THREE.Vector3(), q: new THREE.Quaternion() };
   glass.onBeforeRender = function (renderer, scene, camera, ...rest) {
-    if (camera.position.distanceTo(glass.getWorldPosition(at)) > 9 || n++ % (high ? 2 : 3)) return;
+    if (camera.position.distanceTo(glass.getWorldPosition(at)) > 9) return;
+    // (The camera's breathing at rest isn't moving.)
+    const moved = camera.position.distanceTo(was.pos) > 0.015 || camera.quaternion.angleTo(was.q) > 0.004;
+    if (n++ % (moved ? (high ? 1 : 2) : high ? 3 : 4)) return;
+    was.pos.copy(camera.position);
+    was.q.copy(camera.quaternion);
     draw.call(this, renderer, scene, camera, ...rest);
   };
   group.add(glass);

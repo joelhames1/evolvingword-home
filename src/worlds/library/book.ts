@@ -187,8 +187,10 @@ export function buildBook(): BookBoard {
   tex.back.wrapS = THREE.RepeatWrapping;
   tex.back.repeat.x = -1;
   tex.back.offset.x = 1;
+  // Matte paper, a little lit from within. (Not a standard material: the hover
+  // glow repaints those, and over the page it would dim the paper, not light it.)
   const pageMat = (map: THREE.Texture, side: THREE.Side = THREE.FrontSide) =>
-    new THREE.MeshStandardMaterial({ map, roughness: 0.92, emissive: '#ffffff', emissiveMap: map, emissiveIntensity: 0.32, side });
+    new THREE.MeshLambertMaterial({ map, emissive: '#ffffff', emissiveMap: map, emissiveIntensity: 0.32, side });
 
   // Each page curves up out of the gutter and lies nearly flat toward its edge.
   const curve = (s: number) => 0.05 * Math.sin(Math.min(1, s * 1.7) * Math.PI * 0.5) - 0.012 * s * s;
@@ -351,6 +353,9 @@ export function buildBook(): BookBoard {
     tex.back.needsUpdate = true;
     paint('right', t);
     dirty.left = true;
+    // The leaf covers the new right page from this very frame, or it shows for a moment before the turn begins.
+    leafFrontMesh.visible = leafBackMesh.visible = true;
+    bendLeaf(0);
     turnStart = t;
     active = 'left';
     holdUntil = 0;

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { clean, MAX_PHRASE } from '../../src/evolve';
 import { PHRASES } from '../../src/worlds/library/book';
-import { bayOffset, center, clear, D, HEX, onWall, RESERVED, ROOMS, route, SHELVED, solid } from '../../src/worlds/library/plan';
+import { bayOffset, center, clear, D, HEX, onWall, RESERVED, ROOMS, route, SHELVED, solid, STAIR } from '../../src/worlds/library/plan';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
@@ -51,6 +51,22 @@ describe('the plan of the library', () => {
     expect(solid(v(HEX.archW + 0.3, 1.5, HEX.r + 0.5))).toBe(true);
     expect(solid(v(0, HEX.ceiling + 0.1, 3))).toBe(true);
     expect(solid(v(0, HEX.F - 0.2, 3))).toBe(true);
+    // Up the well through the floors: open, but the stair winding round it and the railing are not.
+    expect(solid(v(0.2, HEX.F - 0.2, 0.1))).toBe(false);
+    const a = STAIR.landing + 1;
+    const r = (STAIR.inner + STAIR.outer) / 2;
+    expect(solid(v(Math.cos(a) * r, (1 / (Math.PI * 2) + 1 / STAIR.steps) * HEX.F + 0.3, Math.sin(a) * r))).toBe(true);
+    expect(solid(v(Math.cos(a) * r, (1 / (Math.PI * 2) + 1 / STAIR.steps) * HEX.F + 2.5, Math.sin(a) * r))).toBe(false);
+    expect(solid(v(0, 0.5, HEX.well + 0.1))).toBe(true);
+  });
+
+  it('comes down the well to the floor before setting off anywhere', () => {
+    const b = onWall(ROOMS.maps, 0, 5, 0, HEX.depth + 1.8).position.setY(1.9);
+    for (const y of [3, 6, 12, 20]) {
+      const a = v(0.2, y, 0.3);
+      expect(clear(a, b, route(a, b)), `from ${y} m up`).toBe(true);
+      expect(clear(a, v(0, 1.4, 6.1), route(a, v(0, 1.4, 6.1))), `from ${y} m up, to the desk`).toBe(true);
+    }
   });
 
   it('walks between galleries through the arches, round the wells, never through a wall', () => {

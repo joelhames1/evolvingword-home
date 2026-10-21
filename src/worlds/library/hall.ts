@@ -10,16 +10,14 @@ import { canvas, glow, rng, texture, wood } from '../../textures';
 import type { Quality } from '../../world';
 import { lit } from './light';
 import { ashlar, frieze, plaster, tiles } from './paint';
-import { bayOffset, center, D, FREE, HEX, RESERVED, SHELVED, SIDES, wallMatrix } from './plan';
+import { bayOffset, center, D, FREE, HEX, RESERVED, SHELVED, SIDES, STAIR, wallMatrix } from './plan';
 import { bayBooks, bayCase, bayStrips, box, corners, spineAtlas, stripAtlas, type Gap } from './shelves';
 
-/** The stair's landing on every floor: on the far side of the well from the desk, a little round. */
-export const LANDING = Math.PI * 0.82;
-const STEPS = 24;
+const LANDING = STAIR.landing;
+const STEPS = STAIR.steps;
 const RISE = HEX.F / STEPS;
 const STEP = (Math.PI * 2) / STEPS;
-/** The treads run from the open middle of the well out nearly to its edge. */
-const TREAD = { inner: 0.95, outer: 1.84 };
+const TREAD = STAIR;
 
 export interface Copy {
   k: number;
@@ -234,7 +232,7 @@ export function buildHall(quality: Quality): Hall {
   // --- the floor, the well's curb, the ceiling ---------------------------------------
   const floor = new THREE.ShapeGeometry(floorShape(-1), 48);
   floor.rotateX(-Math.PI / 2);
-  group.add(stamp(floor, floorMat, at, { cast: true, receive: true }));
+  group.add(stamp(floor, floorMat, at, { receive: true }));
   const ceiling = new THREE.ShapeGeometry(floorShape(1), 48);
   ceiling.rotateX(Math.PI / 2);
   ceiling.translate(0, HEX.ceiling, 0);
@@ -282,18 +280,19 @@ export function buildHall(quality: Quality): Hall {
   const nearAt: THREE.Matrix4[][] = near.map(() => []);
   const farAt: THREE.Matrix4[][] = far.map(() => []);
   const slots: Slot[] = [];
-  const alcove = (k: number, j: number, side: number, bay: number) =>
-    j === 0 && RESERVED.some((r) => r.kind === 'alcove' && r.k === k && r.side === side && bay >= r.bay && bay < r.bay + r.n);
+  const reserved = (kind: 'panel' | 'alcove', k: number, j: number, side: number, bay: number) =>
+    j === 0 && RESERVED.some((r) => r.kind === kind && r.k === k && r.side === side && bay >= r.bay && bay < r.bay + r.n);
   const pick = rng(2024);
   for (const c of copies)
     for (const side of SHELVED)
       for (let bay = 0; bay < HEX.bays; bay++) {
-        if (alcove(c.k, c.j, side, bay)) continue;
+        if (reserved('alcove', c.k, c.j, side, bay)) continue;
         const m = wallMatrix(c.k, c.j, side, bayOffset(bay), 0);
         const v = Math.floor(pick() * variants);
         caseAt.push(m);
         (c.near ? nearAt : farAt)[v].push(m);
-        slots.push({ k: c.k, j: c.j, side, bay, matrix: m, gap: c.near ? near[v].gap : null });
+        // (Behind a panel, the gap kept for a book that's out is hidden: no book comes out of the paneling.)
+        slots.push({ k: c.k, j: c.j, side, bay, matrix: m, gap: c.near && !reserved('panel', c.k, c.j, side, bay) ? near[v].gap : null });
       }
   group.add(stamp(bayCase(), woodMat, caseAt, { receive: true }));
   near.forEach((b, v) => group.add(stamp(b.geometry, booksMat, nearAt[v], { receive: true })));
@@ -386,7 +385,7 @@ export function buildHall(quality: Quality): Hall {
     g.translate(0, (i + 1) * RISE - 0.07, 0);
     treads.push(g);
   }
-  group.add(stamp(mergeGeometries(treads.map(flat)), treadMat, at, { cast: true, receive: true }));
+  group.add(stamp(mergeGeometries(treads.map(flat)), treadMat, at, { receive: true }));
   const bronze: THREE.BufferGeometry[] = [];
   // The stair's inner string and handrail, winding up the open middle of the well.
   bronze.push(new THREE.TubeGeometry(new Helix(TREAD.inner, RISE - 0.12), 96, 0.055, 8, false));
