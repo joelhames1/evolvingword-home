@@ -58,17 +58,50 @@ async function read(): Promise<string[] | null> {
   return cleanShown(await res.json());
 }
 
+/** What Vercel said went wrong, in its own words where it gave any. */
+async function why(res: Response) {
+  try {
+    const body = (await res.json()) as { error?: { message?: string } };
+    if (body.error?.message) return `store said ${res.status}: ${body.error.message}`;
+  } catch {
+    // No JSON; the status will do.
+  }
+  return `store said ${res.status}`;
+}
+
 async function write(shown: string[] | null) {
   const s = store();
   const token = process.env.VERCEL_API_TOKEN;
   if (!s || !token) throw new Error('not set up');
-  const team = process.env.VERCEL_TEAM_ID ? `?teamId=${encodeURIComponent(process.env.VERCEL_TEAM_ID)}` : '';
-  const res = await fetch(`https://api.vercel.com/v1/edge-config/${s.id}/items${team}`, {
-    method: 'PATCH',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ items: [shown ? { operation: 'upsert', key: KEY, value: shown } : { operation: 'delete', key: KEY }] }),
-  });
-  if (!res.ok) throw new Error(`store said ${res.status}`);
+  const auth = { authorization: `Bearer ${token}` };
+  const body = JSON.stringify({ items: [shown ? { operation: 'upsert', key: KEY, value: shown } : { operation: 'delete', key: KEY }] });
+  // The store belongs to an account or a team (every account is a team now),
+  // and the API only finds it when asked under the right one. Without
+  // VERCEL_TEAM_ID, try the token's own account, then each team it can reach.
+  // Vercel renamed Edge Config to Global Config in 2026; try both paths.
+  const given = process.env.VERCEL_TEAM_ID;
+  let teams: (string | undefined)[] = given ? [given] : [undefined];
+  let looked = !!given;
+  let last = 'store not found';
+  for (let i = 0; i < teams.length; i++) {
+    const team = teams[i] ? `?teamId=${encodeURIComponent(teams[i]!)}` : '';
+    for (const kind of ['edge-config', 'global-config']) {
+      const res = await fetch(`https://api.vercel.com/v1/${kind}/${s.id}/items${team}`, {
+        method: 'PATCH',
+        headers: { ...auth, 'content-type': 'application/json' },
+        body,
+      });
+      if (res.ok) return;
+      last = await why(res);
+      if (res.status !== 404) throw new Error(last);
+    }
+    if (!looked && i === teams.length - 1) {
+      looked = true;
+      const res = await fetch('https://api.vercel.com/v2/teams', { headers: auth });
+      if (res.ok) teams = teams.concat(((await res.json()) as { teams?: { id: string }[] }).teams?.map((t) => t.id) ?? []);
+    }
+  }
+  throw new Error(`${last} (store ${s.id}${given ? `, team ${given}` : ''})`);
 }
 
 export default async function handler(req: Request): Promise<Response> {

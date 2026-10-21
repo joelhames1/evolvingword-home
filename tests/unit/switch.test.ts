@@ -89,3 +89,39 @@ describe('the owner switch', () => {
     expect(JSON.parse(calls.filter((c) => c.init?.method === 'PATCH').at(-1)!.init!.body as string).items[0]).toEqual({ operation: 'delete', key: 'shown' });
   });
 });
+
+describe('the owner switch, finding the store', () => {
+  const env = { ...process.env };
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...env };
+  });
+
+  it('looks under each team the token can reach when no team is given', async () => {
+    process.env.EDGE_CONFIG = 'https://edge-config.vercel.com/ecfg_abc?token=read-123';
+    process.env.OWNER_PASSWORD = 'open sesame';
+    process.env.VERCEL_API_TOKEN = 'write-456';
+    delete process.env.VERCEL_TEAM_ID;
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      if (url.endsWith('/v2/teams')) return new Response(JSON.stringify({ teams: [{ id: 'team_other' }, { id: 'team_mine' }] }));
+      if (url.includes('teamId=team_mine')) return new Response('{}');
+      return new Response(JSON.stringify({ error: { message: 'Not found' } }), { status: 404 });
+    });
+    const res = await handler(new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify({ password: 'open sesame', shown: ['tower'] }) }));
+    expect(res.status).toBe(200);
+    expect(urls.at(-1)).toBe('https://api.vercel.com/v1/edge-config/ecfg_abc/items?teamId=team_mine');
+  });
+
+  it('passes on what Vercel said when it still can’t find the store', async () => {
+    process.env.EDGE_CONFIG = 'https://edge-config.vercel.com/ecfg_abc?token=read-123';
+    process.env.OWNER_PASSWORD = 'open sesame';
+    process.env.VERCEL_API_TOKEN = 'write-456';
+    process.env.VERCEL_TEAM_ID = 'team_x';
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: { message: 'Not found' } }), { status: 404 }));
+    const res = await handler(new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify({ password: 'open sesame', shown: ['tower'] }) }));
+    expect(res.status).toBe(502);
+    expect((await res.json()).error).toContain('404: Not found (store ecfg_abc, team team_x)');
+  });
+});
