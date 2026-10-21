@@ -125,6 +125,8 @@ export interface Kit {
   wire?(w: Wiring): void;
   /** The world's own music and weather (see Band in audio.ts). */
   band?: Band;
+  /** Waypoints for the camera's walk from one place to another, when a straight line would cut through a wall. */
+  route?(from: THREE.Vector3, to: THREE.Vector3): THREE.Vector3[] | undefined;
 }
 
 export interface KitModule {

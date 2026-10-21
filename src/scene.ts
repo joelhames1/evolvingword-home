@@ -36,6 +36,7 @@ const KITS: Record<WorldId, () => Promise<KitModule>> = {
   monastery: () => import('./worlds/monastery/kit'),
   cell: () => import('./worlds/cell/kit'),
   heavens: () => import('./worlds/heavens/kit'),
+  library: () => import('./worlds/library/kit'),
 };
 
 const CONTACT = 'studio@evolvingword.com';
@@ -434,7 +435,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
     if (name === 'projects') showProject(projectIndex);
     if (name !== 'map') map.setCovering(false);
     navButtons.forEach((b) => b.setAttribute('aria-current', String(b.dataset.go === (navFor[name] ?? ''))));
-    return rig.go(name).then(() => {
+    return rig.go(name, { via: kit.route?.(camera.position.clone(), SHOTS[name].pos) }).then(() => {
       if (rig.current !== name) return;
       if (name === 'signal') terminal.show(page);
       onArrive[name]?.();
