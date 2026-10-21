@@ -8,4 +8,4 @@
 // The chooser is laid out for up to five globes; three is the sweet spot.
 import type { WorldId } from '.';
 
-export const SHOWN: WorldId[] = ['alps', 'city', 'tower', 'monastery'];
+export const SHOWN: WorldId[] = ['library', 'heavens', 'cell', 'monastery'];

@@ -24,6 +24,8 @@ test('desktop: the globes, the dive, the flight in, and the rooms', async ({ pag
   expect((await page.locator('#plain').boundingBox())?.width ?? 0).toBeLessThanOrEqual(1);
   await page.locator('#chooser-sound').click();
   await expect(page.locator('#chooser-sound')).toHaveAttribute('aria-pressed', 'false');
+  // Every world, shown or not, to pick the lake.
+  await page.goto('/?worlds=all');
   await page.getByRole('button', { name: /The Lake House/ }).click();
   await expect(page.locator('#chooser')).toHaveClass(/picked/);
   // The loading screen comes up during the dive and goes once the world is built
@@ -223,7 +225,7 @@ test('turning during the flight in still leaves everything clickable', async ({ 
   await page.setViewportSize({ width: 1280, height: 800 });
   const problems = watch(page);
   // In through the globes, the way a visitor comes, not straight to a shot.
-  await page.goto('/');
+  await page.goto('/?worlds=all');
   await page.getByRole('button', { name: /The Lake House/ }).click();
   // The arrow goes in the instant the flight starts (the body turns "inside" as the camera sets off),
   // before another frame is drawn, so it really does cut the flight short however slow the frames are.
@@ -311,7 +313,7 @@ test('the night studio: the same room, the city outside, and the choice remember
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   const problems = watch(page);
-  await page.goto('/?full');
+  await page.goto('/?full&worlds=all');
   await page.getByRole('button', { name: /Night Studio/ }).click();
   await expect(page.locator('body')).toHaveClass(/inside/, { timeout: 60_000 });
   const ew = () => page.evaluate(() => {
@@ -329,6 +331,8 @@ test('the night studio: the same room, the city outside, and the choice remember
   // Back to the globes: the city is marked as where you were.
   await page.locator('#worlds-btn').click();
   await expect(page.locator('#chooser')).toBeVisible();
+  // The city may be hidden from the globes; it's still where you were.
+  await page.goto('/?full&worlds=all');
   await expect(page.locator('.globe-wrap.world-city .last')).toHaveText('Where you were last time');
   expect(problems).toEqual([]);
 });
@@ -341,7 +345,7 @@ for (const [id, name] of [
     test.setTimeout(180_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     const problems = watch(page);
-    await page.goto('/?full');
+    await page.goto('/?full&worlds=all');
     await page.getByRole('button', { name }).click();
     await expect(page.locator('body')).toHaveClass(/inside/, { timeout: 90_000 });
     expect(await page.evaluate(() => (window as unknown as { __ew: { worldId: string } }).__ew.worldId)).toBe(id);
@@ -381,6 +385,7 @@ for (const [id, name] of [
     // Back to the globes: this one is marked as where you were.
     await page.locator('#worlds-btn').click();
     await expect(page.locator('#chooser')).toBeVisible();
+    await page.goto('/?full&worlds=all');
     await expect(page.locator(`.globe-wrap.world-${id} .last`)).toHaveText('Where you were last time');
     expect(problems).toEqual([]);
   });
