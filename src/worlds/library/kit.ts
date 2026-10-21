@@ -148,7 +148,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       const p = v(s.gap.x, s.gap.y + 0.15, HEX.depth).applyMatrix4(s.matrix);
       const d = p.distanceTo(camera.position);
       proj.copy(p).project(camera);
-      return d > 2 && d < 7.5 && Math.abs(proj.x) < 0.75 && Math.abs(proj.y) < 0.7 && proj.z < 1;
+      return d > 2 && d < 11 && Math.abs(proj.x) < 0.85 && Math.abs(proj.y) < 0.75 && proj.z < 1;
     });
     if (!seen.length) return;
     const s = seen[Math.floor(Math.random() * seen.length)];

@@ -56,15 +56,12 @@ export const ROOMS = {
   maps: 3,
 };
 
-/** Which bays of which wall are given over to the studio (no shelves there): [gallery, side, first bay, bays]. */
+/** Which bays of which wall are given over to the studio: a paneled stretch (shelves only above it) or an alcove. */
 export const RESERVED: { k: number; side: number; bay: number; n: number; kind: 'panel' | 'alcove' }[] = [
   { k: ROOMS.honors, side: 5, bay: 1, n: 2, kind: 'panel' },
   { k: ROOMS.books, side: 3, bay: 1, n: 2, kind: 'alcove' },
   { k: ROOMS.maps, side: 5, bay: 1, n: 2, kind: 'panel' },
 ];
-
-export const reserved = (k: number, j: number, side: number, bay: number) =>
-  j === 0 && RESERVED.some((r) => r.k === k && r.side === side && bay >= r.bay && bay < r.bay + r.n);
 
 /**
  * A place on a wall: `offset` meters along it (to the right, as you face it),
