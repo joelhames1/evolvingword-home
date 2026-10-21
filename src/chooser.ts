@@ -56,7 +56,7 @@ const skies: { stop(): void }[] = [];
 /** Snow drifting, rain slanting, morning mist or falling petals, inside one globe. */
 function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
   const g = canvas.getContext('2d')!;
-  const n = { snow: 70, rain: 90, mist: 46, petals: 34 }[kind];
+  const n = { snow: 70, rain: 90, mist: 46, petals: 34, dust: 60 }[kind];
   const bits = Array.from({ length: n }, (_, i) => ({ x: Math.random(), y: Math.random(), s: 0.4 + Math.random() * 0.8, p: Math.random() * 6.28, spin: Math.random() * 6.28, leaf: i % 3 === 0 }));
   let stir = 0;
   let last = performance.now();
@@ -110,6 +110,31 @@ function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
           g.ellipse(b.x * w, b.y * h, r * 1.8, r * 0.6, 0, 0, Math.PI * 2);
           g.fill();
         }
+      } else if (kind === 'dust') {
+        // Dust in a shaft of light from above: motes hanging in the air, barely
+        // drifting, bright where the light catches them. A shake sets them whirling.
+        const sx = (y: number) => 0.6 - y * 0.22;
+        if (b === bits[0]) {
+          const beam = g.createLinearGradient(0.43 * w, 0, 0.77 * w, 0);
+          beam.addColorStop(0, 'rgba(255,226,170,0)');
+          beam.addColorStop(0.5, 'rgba(255,226,170,0.09)');
+          beam.addColorStop(1, 'rgba(255,226,170,0)');
+          g.fillStyle = beam;
+          g.beginPath();
+          g.moveTo((sx(0) - 0.13) * w, 0);
+          g.lineTo((sx(0) + 0.13) * w, 0);
+          g.lineTo((sx(1) + 0.2) * w, h);
+          g.lineTo((sx(1) - 0.2) * w, h);
+          g.fill();
+        }
+        b.x += dt * (Math.sin(now / 2300 + b.p) * 0.007 + stir * Math.cos(b.p + now / 300) * 0.5);
+        b.y += dt * (0.003 + Math.cos(now / 3100 + b.p * 2) * 0.006 - stir * Math.sin(b.p + now / 350) * 0.4);
+        const lit = Math.exp(-Math.pow((b.x - sx(b.y)) / 0.13, 2));
+        const tw = 0.6 + 0.4 * Math.sin(now / 700 + b.p * 5);
+        g.fillStyle = `rgba(255,${226 + Math.round(b.s * 20)},${180 + Math.round(b.s * 40)},${(0.1 + 0.75 * lit) * tw})`;
+        g.beginPath();
+        g.arc(b.x * w, b.y * h, (0.6 + b.s * 0.9) * (w / 380), 0, Math.PI * 2);
+        g.fill();
       } else {
         // Petals and the odd olive leaf, tumbling and side-slipping as they fall.
         b.y += dt * (0.045 + b.s * 0.035) * (1 - stir * 1.6);

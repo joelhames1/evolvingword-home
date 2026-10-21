@@ -1,7 +1,7 @@
 // The worlds you can step into, as the chooser shows them. Each one's 3D code
 // (its kit) loads only when it's picked; see src/scene.ts.
 
-export type WorldId = 'alps' | 'city' | 'tower' | 'monastery';
+export type WorldId = 'alps' | 'city' | 'tower' | 'monastery' | 'library';
 
 export interface WorldInfo {
   id: WorldId;
@@ -13,7 +13,7 @@ export interface WorldInfo {
   /** The color it glows when you're near it. */
   glow: string;
   /** What falls (or drifts) inside the glass. */
-  weather: 'snow' | 'rain' | 'mist' | 'petals';
+  weather: 'snow' | 'rain' | 'mist' | 'petals' | 'dust';
 }
 
 /** The chooser is laid out for at most this many globes (more only in the ?worlds=all preview). */
@@ -24,6 +24,7 @@ export const WORLDS: WorldInfo[] = [
   { id: 'city', name: 'Night Studio', line: 'Five floors above a rainy neon city.', still: '/worlds/city.jpg', glow: '#ff4fb0', weather: 'rain' },
   { id: 'tower', name: 'The Tower', line: 'First light in the control tower.', still: '/worlds/tower.jpg', glow: '#ffb347', weather: 'mist' },
   { id: 'monastery', name: 'The Monastery', line: 'Afternoon over an Umbrian valley.', still: '/worlds/monastery.jpg', glow: '#f2c6a4', weather: 'petals' },
+  { id: 'library', name: 'The Library', line: 'Lamplight in an endless library.', still: '/worlds/library.jpg', glow: '#e9b26a', weather: 'dust' },
 ];
 
 export const isWorld = (id: string | null | undefined): id is WorldId => WORLDS.some((w) => w.id === id);

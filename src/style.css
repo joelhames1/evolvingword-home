@@ -1596,3 +1596,13 @@ html.lite body {
 .chooser .globe-wrap.back .globe {
   z-index: 3;
 }
+
+/* The Library: a walnut base with a brass rim, and a plaque of oxblood leather. */
+.world-library .base {
+  background: linear-gradient(180deg, #6a4428, #3e2414 55%, #1e100a);
+  box-shadow: inset 0 3px 0 rgba(214, 170, 110, 0.45);
+}
+.world-library .plaque {
+  background: linear-gradient(180deg, #7a2a1e, #4e1712);
+  color: #f1e2c4;
+}
