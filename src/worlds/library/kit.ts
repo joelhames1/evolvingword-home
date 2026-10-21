@@ -117,10 +117,12 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const flame = new THREE.Mesh(new THREE.SphereGeometry(0.035, 10, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffb060').multiplyScalar(4) }));
   lantern.add(flame);
   const lanternHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow('rgba(255,180,100,1)', 64), color: '#ffa860', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.8 }));
-  lanternHalo.scale.setScalar(0.9);
+  lanternHalo.scale.setScalar(1.3);
   lantern.add(lanternHalo);
   const LANTERN_PERIOD = 280;
   let lastStep = -1;
+  /** For a look at it: hold the lantern at a point on its way down (0..1), or null to let it walk. */
+  let lanternHeld: number | null = null;
 
   // The looking-glass in the passage on to the next gallery, on the wall across from the closet door.
   const mirror = buildMirror(quality, hall.materials.wood);
@@ -264,7 +266,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       book.group.rotation.z = Math.sin(t * 0.37) * 0.012;
       book.group.rotation.y = Math.sin(t * 0.23) * 0.03;
       // The lantern, carried down the stair by someone you never quite see.
-      const u = ((t + LANTERN_PERIOD * 0.4) % LANTERN_PERIOD) / LANTERN_PERIOD;
+      const u = lanternHeld ?? ((t + LANTERN_PERIOD * 0.4) % LANTERN_PERIOD) / LANTERN_PERIOD;
       const at = hall.lanternAt(u);
       lantern.position.copy(at);
       lantern.visible = u > 0.01 && u < 0.99;
@@ -289,6 +291,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       shots: SHOTS,
       light: LIGHT,
       galleries: () => hall.copies.length,
+      holdLantern: (u: number | null) => (lanternHeld = u),
+      stray,
       /** For the tests: every walk between two places on the tour, checked for stone along the way. */
       blocked: () => {
         const out: string[] = [];

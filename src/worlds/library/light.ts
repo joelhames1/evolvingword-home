@@ -23,7 +23,7 @@ export const LIGHT = {
   uLibSky: { value: new THREE.Color('#a9c2e0').multiplyScalar(0.22) },
   uLibAmbient: { value: new THREE.Color('#5a3a22').multiplyScalar(0.035) },
   uLibLantern: { value: new THREE.Vector3(0, -100, 0) },
-  uLibLanternColor: { value: new THREE.Color('#ffb060').multiplyScalar(0.9) },
+  uLibLanternColor: { value: new THREE.Color('#ffb060').multiplyScalar(1.6) },
   uLibSkyFog: { value: new THREE.Color('#8fa3b8') },
   uLibDeepFog: { value: new THREE.Color('#020103') },
 };

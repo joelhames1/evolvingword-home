@@ -73,8 +73,10 @@ test('the library: picked from the globes, the book over the well, and the studi
   await expect(page.locator('#card-title')).toHaveText('Take one down', { timeout: 30_000 });
 
   // Back to the globes: this one is marked as where you were.
+  // (Until the owner shows its globe, only ?worlds=all has one for it.)
   await page.locator('#worlds-btn').click();
   await expect(page.locator('#chooser')).toBeVisible();
+  await page.goto('/?full&worlds=all');
   await expect(page.locator('.globe-wrap.world-library .last')).toHaveText('Where you were last time');
   expect(problems).toEqual([]);
 });
