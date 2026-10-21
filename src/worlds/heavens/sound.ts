@@ -159,13 +159,18 @@ export function buildBand(): HeavensBand {
     const trem = ctx.createOscillator();
     trem.frequency.value = 0.3 + Math.random() * 0.4;
     const tremDepth = ctx.createGain();
-    tremDepth.gain.value = 0.002;
+    tremDepth.gain.value = 0.5;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0, at);
     g.gain.linearRampToValueAtTime(0.004, at + len * 0.45);
     g.gain.linearRampToValueAtTime(0, at + len);
-    trem.connect(tremDepth).connect(g.gain);
-    o.connect(g).connect(k.verb);
+    // The tremolo wobbles a level of its own (1 give or take a half) after the
+    // swell, so the swell still starts and ends at silence: added straight onto
+    // the swell, it left the tone sounding (and cut off with a click) at the end.
+    const wobble = ctx.createGain();
+    wobble.gain.value = 1;
+    trem.connect(tremDepth).connect(wobble.gain);
+    o.connect(g).connect(wobble).connect(k.verb);
     o.start(at);
     trem.start(at);
     o.stop(at + len + 0.1);
@@ -264,7 +269,8 @@ export function buildBand(): HeavensBand {
   return {
     bpm: 54,
     // The music is sparse, so the record's crackle is kept low under it.
-    crackle: 0.35,
+    // (Its steady hiss, between the pops, is what you'd hear as static in the quiet passages.)
+    crackle: 0.15,
     swing: 0,
     room: [6.5, 0.85],
     echoBeats: 1.5,

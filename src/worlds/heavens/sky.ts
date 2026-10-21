@@ -50,8 +50,10 @@ const SKY_VERT = /* glsl */ `
   void main() {
     vDir = position;
     vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    // Pinned to the far plane: always behind everything else.
-    gl_Position = vec4(p.xy, p.w * 0.99999, p.w);
+    // Pinned to the far plane itself, so it's behind everything else whatever the
+    // near plane is (a close-up's near plane would otherwise pull it in to a few
+    // hundred meters, in front of the far peaks).
+    gl_Position = p.xyww;
   }
 `;
 
@@ -89,7 +91,9 @@ const MW_BAKE = /* glsl */ `
     glow += exp(-lat * lat / 0.06) * along * 0.1;
     // Dust: a dark rift down the middle from the heart, thin winding lanes, and patches.
     float wob = 0.022 * sin(l * 2.6 + 0.8) + 0.03 * (fbm3(s * 3.0 + 7.0) - 0.5);
-    float rift = exp(-pow((lat - wob) / (0.014 + 0.012 * heart), 2.0)) * smoothstep(1.8, 0.2, abs(l + 0.4));
+    // (Squared by hand: pow() of a negative number is undefined on a GPU, and often not a number.)
+    float q = (lat - wob) / (0.014 + 0.012 * heart);
+    float rift = exp(-q * q) * (1.0 - smoothstep(0.2, 1.8, abs(l + 0.4)));
     float ridge = 1.0 - abs(fbm3(s * 6.0 + 5.0) * 2.0 - 1.0);
     float lanes = smoothstep(0.82, 0.97, ridge) * exp(-lat * lat / 0.03);
     float patches = smoothstep(0.52, 0.86, fbm3(s * 9.0 + 13.0)) * band;
@@ -129,12 +133,17 @@ const SKY_FRAG = /* glsl */ `
     // The dark sky: a deep blue overhead, a little paler toward the horizon.
     vec3 col = mix(vec3(0.0042, 0.0058, 0.013), vec3(0.0018, 0.0024, 0.0062), smoothstep(0.0, 0.7, h));
     // Airglow: a faint green band low down, and a dull red one higher still.
-    col += vec3(0.003, 0.0085, 0.0055) * exp(-pow((h - 0.05) / 0.05, 2.0));
-    col += vec3(0.004, 0.0016, 0.002) * exp(-pow((h - 0.18) / 0.1, 2.0));
+    // (Squared by hand: pow() of a negative number is undefined on a GPU, and often not a number.)
+    float g1 = (h - 0.05) / 0.05;
+    float g2 = (h - 0.18) / 0.1;
+    col += vec3(0.003, 0.0085, 0.0055) * exp(-g1 * g1);
+    col += vec3(0.004, 0.0016, 0.002) * exp(-g2 * g2);
 
     // The Milky Way, from its picture, on the turning sky.
     vec3 s = uToSky * d;
-    vec2 uv = vec2(atan(s.x, s.z) / 6.2831853 + 0.5, asin(clamp(s.y, -1.0, 1.0)) / 3.1415927 + 0.5);
+    // (atan(0, 0) is undefined: right at the pole, any longitude will do.)
+    vec2 around = length(s.xz) > 1e-6 ? s.xz : vec2(0.0, 1.0);
+    vec2 uv = vec2(atan(around.x, around.y) / 6.2831853 + 0.5, asin(clamp(s.y, -1.0, 1.0)) / 3.1415927 + 0.5);
     vec4 m = texture2D(uMilky, uv);
     vec3 mw = m.rgb * m.rgb / ${MW_SCALE.toFixed(1)};
     // A dust of separate tiny stars over it, thickest in the band: too fine to keep in the picture.
@@ -148,12 +157,13 @@ const SKY_FRAG = /* glsl */ `
     float z = max(dot(d, normalize(uZodiac)), 0.0);
     col += vec3(0.022, 0.019, 0.015) * pow(z, 7.0) * smoothstep(-0.02, 0.06, e) * (1.0 - smoothstep(0.1, 0.6, h));
     // A town's glow under the clouds, far off and very faint.
-    float c = max(dot(normalize(vec3(d.x, 0.0, d.z)), uCity), 0.0);
+    // (Straight up there's no direction along the ground to normalize; keep it off zero.)
+    float c = max(dot(vec3(d.x, 0.0, d.z) / max(length(d.xz), 1e-4), uCity), 0.0);
     col += vec3(0.02, 0.011, 0.005) * pow(c, 18.0) * exp(-h / 0.05);
 
     // Below the horizon: the sea of cloud running out to the edge of the world.
-    float under = smoothstep(0.004, -0.03, e);
-    vec3 sea = mix(vec3(0.016, 0.02, 0.03), vec3(0.008, 0.01, 0.016), smoothstep(0.0, -0.25, e));
+    float under = 1.0 - smoothstep(-0.03, 0.004, e);
+    vec3 sea = mix(vec3(0.016, 0.02, 0.03), vec3(0.008, 0.01, 0.016), 1.0 - smoothstep(-0.25, 0.0, e));
     sea += vec3(0.016, 0.009, 0.004) * pow(c, 10.0) * exp(e / 0.06);
     col = mix(col, sea, under);
     gl_FragColor = vec4(col, 1.0);
@@ -181,7 +191,7 @@ const STAR_VERT = /* glsl */ `
     vSharp = clamp(aStar.x, 0.0, 1.0);
     vec4 p = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
     gl_PointSize = (1.7 + 3.6 * pow(clamp(aStar.x / 3.5, 0.0, 1.0), 0.55)) * uPx;
-    gl_Position = vec4(p.xy, p.w * 0.99998, p.w);
+    gl_Position = p.xyww;
   }
 `;
 const STAR_FRAG = /* glsl */ `
@@ -370,7 +380,7 @@ export function buildSky(quality: Quality, renderer: THREE.WebGLRenderer): Sky {
       void main() {
         vUv = uv;
         vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        gl_Position = vec4(p.xy, p.w * 0.99997, p.w);
+        gl_Position = p.xyww;
       }
     `,
     fragmentShader: /* glsl */ `
@@ -378,8 +388,9 @@ export function buildSky(quality: Quality, renderer: THREE.WebGLRenderer): Sky {
       varying vec2 vUv;
       void main() {
         // Bright at the head (u = 1), fading down the tail; soft across.
-        float across = 1.0 - abs(vUv.y * 2.0 - 1.0);
-        float along = pow(vUv.x, 2.2);
+        float across = max(1.0 - abs(vUv.y * 2.0 - 1.0), 0.0);
+        // (Kept off a hair below zero, where pow() is not a number.)
+        float along = pow(clamp(vUv.x, 0.0, 1.0), 2.2);
         vec3 c = mix(vec3(0.55, 0.75, 1.0), vec3(0.85, 1.0, 0.9), vUv.x);
         gl_FragColor = vec4(c * along * across * across * uLevel * 2.4, 1.0);
       }

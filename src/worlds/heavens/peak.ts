@@ -79,7 +79,7 @@ export function height(x: number, z: number) {
   // Far off, a ring of other peaks standing out of the clouds, none quite as high
   // as this one; the biggest of them off to the south, beyond the desk.
   if (r > 1300) {
-    const ring = THREE.MathUtils.smoothstep(r, 1300, 2000) * (1 - THREE.MathUtils.smoothstep(r, 2950, 3250));
+    const ring = THREE.MathUtils.smoothstep(r, 1300, 2000) * (1 - THREE.MathUtils.smoothstep(r, 2700, 3000));
     const range = ridged(x * 0.0021, z * 0.0021, 5);
     const big = Math.pow(fbm2(x * 0.0009 + 4, z * 0.0009, 3), 2.2) * 2.2;
     const south = Math.exp(-(((a + 0.08) / 0.55) ** 2)) * Math.exp(-(((r - 2450) / 420) ** 2));
@@ -199,10 +199,11 @@ export function buildPeak(quality: Quality): Peak {
   const r = rng(808);
 
   // --- the ground: one polar grid, fine near the top, coarse out at the far peaks -----
+  // It all stays inside the camera's far plane (3200 m), so its edge never shows.
   const rings = quality === 'high' ? 170 : 110;
   const segs = quality === 'high' ? 288 : 168;
   const inner = 0.4;
-  const outer = 3300;
+  const outer = 3050;
   const positions: number[] = [];
   const index: number[] = [];
   for (let i = 0; i < rings; i++) {
@@ -240,7 +241,17 @@ export function buildPeak(quality: Quality): Peak {
   // --- the sea of cloud ----------------------------------------------------------------
   const sea = new THREE.Mesh(
     new THREE.CircleGeometry(outer, 96),
-    new THREE.ShaderMaterial({ vertexShader: GROUND_VERT, fragmentShader: CLOUD_FRAG, uniforms: { ...night, uCity: { value: CITY } } }),
+    new THREE.ShaderMaterial({
+      vertexShader: GROUND_VERT,
+      fragmentShader: CLOUD_FRAG,
+      uniforms: { ...night, uCity: { value: CITY } },
+      // Two kilometers off, the depth buffer can't tell the cloud tops from the
+      // foot of a peak a few meters away, and the two would shimmer where they
+      // meet. Nudged toward the camera, the cloud always wins there.
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -8,
+    }),
   );
   sea.rotation.x = -Math.PI / 2;
   sea.position.set(CENTER.x, CLOUDS, CENTER.z);

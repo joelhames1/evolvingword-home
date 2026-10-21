@@ -61,7 +61,8 @@ export function easel(map: THREE.Object3D, floorY: number) {
     const leg = rod(at(s * 0.93, down, 0.2), at(s * 0.85, 0.58, -0.03), 0.022, wood, 8);
     group.add(leg);
   }
-  group.add(rod(at(0, down, -0.72), at(0, 0.3, -0.06), 0.022, wood, 8));
+  // (Its foot stays short of the wall behind, rather than going through it.)
+  group.add(rod(at(0, down, -0.3), at(0, 0.3, -0.06), 0.022, wood, 8));
   const ledge = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.035, 0.09), wood);
   ledge.position.copy(at(0, -0.43, 0.01));
   ledge.quaternion.copy(map.getWorldQuaternion(new THREE.Quaternion()));

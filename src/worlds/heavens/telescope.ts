@@ -8,40 +8,46 @@ import { CENTER } from './peak';
 
 /** Where the tube pivots, above the floor. */
 export const PIVOT = 2.5;
+/** Where the fork's arms stand either side of the tube. */
+const ARM = 0.4;
 /** Half the tube's length, and where the eyepiece sits behind the pivot. */
 const HALF = 1.5;
 
 /** The plate on the pier: engraved brass. */
 function plate() {
-  const [c, g] = canvas(1024, 384);
-  const grad = g.createLinearGradient(0, 0, 0, 384);
+  // The same shape as the plate on the pier, so the letters aren't squeezed.
+  const [c, g] = canvas(1024, 704);
+  const grad = g.createLinearGradient(0, 0, 0, 704);
   grad.addColorStop(0, '#d9b46a');
   grad.addColorStop(0.5, '#b88c44');
   grad.addColorStop(1, '#8e6630');
   g.fillStyle = grad;
-  g.fillRect(0, 0, 1024, 384);
+  g.fillRect(0, 0, 1024, 704);
   // Brushed.
-  for (let i = 0; i < 900; i++) {
+  for (let i = 0; i < 1400; i++) {
     g.fillStyle = `rgba(255,240,200,${Math.random() * 0.05})`;
-    g.fillRect(0, Math.random() * 384, 1024, 1);
+    g.fillRect(0, Math.random() * 704, 1024, 1);
   }
-  g.strokeStyle = 'rgba(60,36,10,0.7)';
-  g.lineWidth = 5;
-  g.strokeRect(22, 22, 980, 340);
+  g.strokeStyle = 'rgba(60,36,10,0.75)';
+  g.lineWidth = 8;
+  g.strokeRect(30, 30, 964, 644);
+  g.lineWidth = 3;
+  g.strokeRect(48, 48, 928, 608);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   // Engraved: a dark cut with a bright lip below it.
   const cut = (text: string, font: string, y: number, spacing: number) => {
     g.font = font;
     (g as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${spacing}px`;
-    g.fillStyle = 'rgba(255,236,190,0.55)';
-    g.fillText(text, 512, y + 2);
-    g.fillStyle = '#3a2408';
-    g.fillText(text, 512, y);
+    g.fillStyle = 'rgba(255,236,190,0.6)';
+    g.fillText(text, 512, y + 3, 880);
+    g.fillStyle = '#2e1c06';
+    g.fillText(text, 512, y, 880);
   };
-  cut('THE HEAVENS DECLARE', '600 74px "EB Garamond", serif', 112, 10);
-  cut('THE GLORY OF GOD', '600 74px "EB Garamond", serif', 200, 10);
-  cut('PSALM 19:1', 'italic 400 46px "EB Garamond", serif', 290, 4);
+  cut('THE HEAVENS', '600 120px "EB Garamond", serif', 190, 12);
+  cut('DECLARE THE', '600 120px "EB Garamond", serif', 320, 12);
+  cut('GLORY OF GOD', '600 120px "EB Garamond", serif', 450, 12);
+  cut('PSALM 19:1', 'italic 500 76px "EB Garamond", serif', 580, 4);
   return texture(c);
 }
 
@@ -98,33 +104,41 @@ export function buildTelescope(plaqueAz: number): Telescope {
   band.position.y = 0.97;
   group.add(band);
   // The plate, curved to the pier, facing where you'd stand.
+  // Big enough to read from across the room, and catching a little light even
+  // in the dark (the metal would otherwise only show what it reflects).
   const a = THREE.MathUtils.degToRad(plaqueAz);
-  const span = 0.75;
-  const plaque = new THREE.Mesh(new THREE.CylinderGeometry(0.392, 0.396, 0.22, 24, 1, true, Math.PI - a - span / 2, span), new THREE.MeshStandardMaterial({ map: plate(), roughness: 0.32, metalness: 0.75 }));
+  const span = 1.1;
+  const engraved = plate();
+  const plaque = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.389, 0.409, 0.3, 32, 1, true, Math.PI - a - span / 2, span),
+    new THREE.MeshStandardMaterial({ map: engraved, emissiveMap: engraved, emissive: '#6b5434', roughness: 0.4, metalness: 0.45 }),
+  );
   plaque.position.y = 0.7;
   group.add(plaque);
 
   // The fork: a turntable, a yoke, two tall arms holding the tube's trunnions.
+  // Kept narrow: it turns at eye height just behind where you sit at the desk,
+  // so nothing of it may swing out past half a meter (the desk's camera is at 0.6).
   const fork = new THREE.Group();
   fork.position.y = 1.17;
   group.add(fork);
   const table = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.5, 0.1, 48), black));
   table.position.y = 0.05;
   fork.add(table);
-  const yoke = cast(new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.16, 0.46), iron));
+  const yoke = cast(new THREE.Mesh(new THREE.BoxGeometry(ARM * 2 + 0.1, 0.16, 0.32), iron));
   yoke.position.y = 0.18;
   fork.add(yoke);
   for (const side of [-1, 1]) {
-    const arm = cast(new THREE.Mesh(new THREE.BoxGeometry(0.12, PIVOT - 1.17 - 0.18, 0.36), iron));
-    arm.position.set(side * 0.48, 0.18 + (PIVOT - 1.17 - 0.18) / 2, 0);
+    const arm = cast(new THREE.Mesh(new THREE.BoxGeometry(0.1, PIVOT - 1.17 - 0.18, 0.3), iron));
+    arm.position.set(side * ARM, 0.18 + (PIVOT - 1.17 - 0.18) / 2, 0);
     fork.add(arm);
-    const cap = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.12, 32), iron));
+    const cap = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.11, 32), iron));
     cap.rotation.z = Math.PI / 2;
-    cap.position.set(side * 0.48, PIVOT - 1.17, 0);
+    cap.position.set(side * ARM, PIVOT - 1.17, 0);
     fork.add(cap);
     const boss = cast(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.05, 32), brass));
     boss.rotation.z = Math.PI / 2;
-    boss.position.set(side * 0.56, PIVOT - 1.17, 0);
+    boss.position.set(side * (ARM + 0.075), PIVOT - 1.17, 0);
     fork.add(boss);
   }
 

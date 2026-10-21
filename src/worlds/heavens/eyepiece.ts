@@ -37,7 +37,7 @@ export const TARGETS: Target[] = [
       'Heavier than all the other planets put together. The stripes are bands of cloud, and the red spot is a storm wider than the Earth that has been going for at least 150 years.',
       'The four dots in a line are the moons Galileo found in 1610: Io, Europa, Ganymede and Callisto. Look again tomorrow and they will have moved.',
     ],
-    note: 'Click the view, or the telescope, for the next one.',
+    note: 'Click the view, or Next, for the next one.',
   },
   {
     id: 'lagoon',
@@ -59,7 +59,7 @@ export const TARGETS: Target[] = [
       'A ball of a few hundred thousand stars about 22,000 light years away, packed so close that from a planet in the middle the night would never get dark.',
       'Its stars are among the oldest in the galaxy, more than twice the age of the Sun.',
     ],
-    note: 'Most of what you see is starlight older than the Earth.',
+    note: 'Most of the stars you see here are older than the Earth.',
   },
 ];
 
