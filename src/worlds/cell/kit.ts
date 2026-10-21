@@ -8,7 +8,8 @@
 // the map on the cell wall, the shirts on a strand of messenger RNA with
 // ribosomes at work on it, and the shoes by a motor protein out for a walk.
 import * as THREE from 'three';
-import type { Shot } from '../../camera';
+import { SHOTS, type Shot } from '../../camera';
+import { DIPLOMAS } from '../../content';
 import type { Kit, KitModule, Studio, Wall } from '../kit';
 import { buildHelix } from './dna';
 import { buildMembrane } from './membrane';
@@ -112,7 +113,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   er.rotation.set(0.35, -0.25, 0.1);
   group.add(er);
   const er2 = buildER(9, 6, 3.2, 2, quality);
-  er2.position.copy(at(STOPS.line, 1.0, 3.4, -4.8));
+  // (High enough that the flights to the map pass under it.)
+  er2.position.copy(at(STOPS.line, 1.0, 4.2, -4.8));
   er2.rotation.set(0, STOPS.line.rotation.y, 0.08);
   group.add(er2);
 
@@ -164,9 +166,11 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const threadMat = glass({ color: '#ffd6a8', edge: '#ffe6c8', core: 0.9, rim: 0.4, power: 1 });
   const bar = (s: THREE.Group, x0: number, x1: number, y: number, z: number) => group.add(filament([at(s, x0, y, z), at(s, (x0 + x1) / 2, y + 0.04, z), at(s, x1, y, z)], 0.028, act, 8));
   const hang = (s: THREE.Group, x: number, y0: number, y1: number, z = 0.012) => group.add(thread(at(s, x, y0, z), at(s, x, y1, z), threadMat));
-  // Honors: the diplomas and the medal board on threads from a bar overhead.
+  // Honors: the diplomas and the medal board on threads from a bar overhead
+  // (a pair for each diploma, where the studio hangs it).
   bar(STOPS.honors, -1.75, 1.9, 2.45, -0.04);
-  [-0.75, -0.2, 0.35].forEach((x, i) => {
+  DIPLOMAS.forEach((_, i) => {
+    const x = -0.75 + i * 0.55;
     const top = 1.62 + (i % 2) * 0.04 + 0.18;
     hang(STOPS.honors, x - 0.16, top, 2.43);
     hang(STOPS.honors, x + 0.16, top, 2.43);
@@ -288,7 +292,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     // A step back from the map, with the wall's light round it.
     places: { pos: at(STOPS.map, 0.5, 0.2, 3.3), target: at(STOPS.map, 0.05, -0.1, 0), fov: 50, lean: 0.06 },
     works: { pos: at(STOPS.line, 1.3, 1.85, 3.0), target: at(STOPS.line, 1.05, 1.75, 0), fov: 50, lean: 0.06 },
-    track: { pos: at(STOPS.track, 2.3, 1.05, 1.7), target: at(STOPS.track, -0.4, 0.4, -0.5), fov: 50, lean: 0.05 },
+    // Nearer the shoes, the kinesin walking past behind them.
+    track: { pos: at(STOPS.track, 1.55, 0.95, 1.75), target: at(STOPS.track, -0.25, 0.35, -0.4), fov: 48, lean: 0.05 },
   });
 
   // What to click for the nucleus and the great mitochondrion: plain shapes, cheap to test.
@@ -301,6 +306,87 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const tmpM = new THREE.Matrix4();
   const tmpV = v(0, 0, 0);
   const UP = v(0, 1, 0);
+
+  // --- the ways between ------------------------------------------------------------
+  // What a flight has to keep clear of, as capsules: the columns, the shirts on their
+  // line, the kinesin's walk past the shoes, the strand, the desk, the pieces on
+  // their stops, the nucleus and the great organelles.
+  type Capsule = { a: THREE.Vector3; b: THREE.Vector3; r: number };
+  const capsule = (a: THREE.Vector3, b: THREE.Vector3, r: number): Capsule => ({ a, b, r });
+  const ball = (c: THREE.Vector3, r: number) => capsule(c, c, r);
+  const NUCLEUS_CLEAR = NUCLEUS.r + 0.6;
+  const blocks: Capsule[] = [
+    ...columns.map((c) => capsule(c.clone().setY(-14), c.clone().setY(18), 0.45)),
+    capsule(at(STOPS.line, -0.4, 1.9, 0), at(STOPS.line, 2.5, 1.9, 0), 1.0),
+    capsule(at(STOPS.line, -2, 4.2, -4.8), at(STOPS.line, 4, 4.2, -4.8), 1.9),
+    capsule(along(0).setY(1.2), along(1.3).setY(1.2), 1.25),
+    capsule(HELIX.clone().setX(-2.5), HELIX.clone().setX(2.5), 0.8),
+    capsule(v(-2.1, 0.9, -1.4), v(2.1, 0.9, -1.4), 0.7),
+    capsule(at(STOPS.honors, -1.8, 1.3, 0), at(STOPS.honors, 1.95, 1.3, 0), 1.15),
+    capsule(at(STOPS.map, -1.3, 1.2, 0), at(STOPS.map, 1.3, 1.2, 0), 1.0),
+    ball(at(STOPS.track, 0, 0.3, 0.25), 1.0),
+    ball(NUCLEUS.at, NUCLEUS_CLEAR),
+    ...mitos.map((m) => ball(m.group.parent!.position, 2.6)),
+    ball(golgi.position, 2.2),
+    ball(golgi2.position, 1.8),
+  ];
+  const seg = new THREE.Line3();
+  const near = (p: THREE.Vector3, c: Capsule) => {
+    seg.set(c.a, c.b);
+    return seg.closestPointToPoint(p, true, new THREE.Vector3());
+  };
+  const gap = (p: THREE.Vector3, c: Capsule) => p.distanceTo(near(p, c)) - c.r;
+  const roomy = (p: THREE.Vector3, skip: Capsule[]) => p.distanceTo(CELL.center) < CELL.radius - 2 && blocks.every((c) => skip.includes(c) || gap(p, c) > 0.15);
+  /** Waypoints that keep the straight leg from p to q clear of everything but what p or q sit in. */
+  const clearLeg = (p: THREE.Vector3, q: THREE.Vector3, depth = 0): THREE.Vector3[] => {
+    const skip = blocks.filter((c) => gap(p, c) < 0.1 || gap(q, c) < 0.1);
+    let worst: { at: THREE.Vector3; c: Capsule; d: number } | null = null;
+    const n = Math.max(8, Math.ceil(p.distanceTo(q) / 0.1));
+    for (let i = 1; i < n; i++) {
+      const x = p.clone().lerp(q, i / n);
+      for (const c of blocks) {
+        if (skip.includes(c)) continue;
+        const d = gap(x, c);
+        if (d < 0 && (!worst || d < worst.d)) worst = { at: x, c, d };
+      }
+    }
+    if (!worst || depth > 3) return [];
+    // Push the worst point out of the way: straight out from what it's in, or to
+    // either side, or up, whichever is the shortest step to somewhere clear.
+    const { at: x, c } = worst;
+    const leg = q.clone().sub(p).normalize();
+    const side = leg.clone().cross(UP);
+    const out = x.clone().sub(near(x, c));
+    const ways = [out, side, side.clone().negate(), UP].filter((d) => d.lengthSq() > 1e-4).map((d) => d.clone().normalize());
+    for (let s = 0.2; s < 6; s += 0.2)
+      for (const d of ways) {
+        const w = x.clone().addScaledVector(d, s);
+        if (gap(w, c) > 0.3 && roomy(w, skip)) return [...clearLeg(p, w, depth + 1), w, ...clearLeg(w, q, depth + 1)];
+      }
+    return [];
+  };
+  // The way in and out of the nucleus: straight out through its envelope from the library.
+  const libraryFace = v(0, 0, 1).applyQuaternion(STOPS.library.quaternion);
+  const door = (p: THREE.Vector3) => {
+    const oc = p.clone().sub(NUCLEUS.at);
+    const b = oc.dot(libraryFace);
+    const out = -b + Math.sqrt(Math.max(0, b * b - (oc.lengthSq() - NUCLEUS_CLEAR * NUCLEUS_CLEAR)));
+    return p.clone().addScaledVector(libraryFace, out + 0.3);
+  };
+  const inNucleus = (p: THREE.Vector3) => p.distanceTo(NUCLEUS.at) < NUCLEUS.r + 0.1;
+  // And up out of the clutter on the desk, for a close-up there on its way anywhere else.
+  const DESK = v(0, 1.2, -1.2);
+  const onDesk = (p: THREE.Vector3) => p.y < 1.3 && Math.abs(p.x) < 2 && p.z < -0.5 && p.z > -2.2;
+  const exit = (p: THREE.Vector3, other: THREE.Vector3) => (inNucleus(p) && !inNucleus(other) ? door(p) : onDesk(p) && other.distanceTo(DESK) > 3 ? v(p.x, 1.5, -0.35) : null);
+  const route = (from: THREE.Vector3, to: THREE.Vector3) => {
+    const pts = [from, exit(from, to), exit(to, from), to].filter((p): p is THREE.Vector3 => !!p);
+    const via: THREE.Vector3[] = [];
+    for (let i = 1; i < pts.length; i++) {
+      via.push(...clearLeg(pts[i - 1], pts[i]));
+      if (i < pts.length - 1) via.push(pts[i]);
+    }
+    return via.length ? via : undefined;
+  };
 
   const kit: Kit = {
     objects: [group],
@@ -333,10 +419,11 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       // The first frame's step can come out a hair below zero; nothing here should ever run backward.
       const dt = Math.max(0, rawDt);
       shared.uTime.value = t;
-      // Thinner haze looking in from outside, so the lantern shows what's in it.
-      const inside = camera.position.distanceTo(CELL.center) < CELL.radius;
-      shared.uHazeK.value = inside ? 0.05 : 0.012;
-      membrane.outside.visible = !inside;
+      // Thinner haze looking in from outside, so the lantern shows what's in it,
+      // eased across the wall: a jump from one to the other pops the whole picture.
+      const out = camera.position.distanceTo(CELL.center);
+      shared.uHazeK.value = THREE.MathUtils.lerp(0.05, 0.012, THREE.MathUtils.smoothstep(out, CELL.radius - 2, CELL.radius + 1));
+      membrane.outside.visible = out > CELL.radius;
       nucleus.tick(t);
       mitos.forEach((m) => m.tick(t));
       vesicles.tick(t, dt, camera);
@@ -359,9 +446,18 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         c.beads.instanceMatrix.needsUpdate = true;
       }
     },
+    route,
+    // Each shirt from straight in front, a little to its right, clear of the columns at the ends of the line.
+    projectShot: (focus) => ({
+      pos: focus.clone().add(at(STOPS.line, 0.15, 0.08, 1.5).sub(STOPS.line.position)),
+      target: focus.clone().add(v(0, 0.03, 0)),
+      fov: 40,
+      lean: 0.03,
+      shift: 0.13,
+    }),
     // Closer to the wall, the louder the world outside it.
     outside: (camera) => THREE.MathUtils.clamp((camera.position.distanceTo(CELL.center) - 9) / 5, 0, 1),
-    debug: { nucleus, helix, kinesin, mitos, membrane, stops: STOPS },
+    debug: { nucleus, helix, kinesin, mitos, membrane, stops: STOPS, columns, shots: SHOTS },
   };
   return kit;
 };

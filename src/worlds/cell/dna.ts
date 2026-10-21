@@ -12,8 +12,9 @@ import type { Board, Evolution } from '../kit';
 import { pearl } from './shaders';
 
 /**
- * What the strand spells between visitors' own words: John 1:1, then Darwin's
- * last sentence of the Origin, a few words at a time (both public domain).
+ * What the strand spells between visitors' own words: the first verse of a
+ * gospel, then the last sentence of On the Origin of Species, a few words at a
+ * time (both public domain).
  */
 export const PHRASES = ['EVOLVING WORD', 'IN THE BEGINNING', 'THE WORD', 'FROM SO SIMPLE', 'A BEGINNING', 'ENDLESS FORMS', 'MOST BEAUTIFUL', 'MAKE SOMETHING'];
 

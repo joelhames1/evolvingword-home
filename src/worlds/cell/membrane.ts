@@ -53,31 +53,49 @@ const WALL_FRAG = /* glsl */ `
     // Behind the map, a window always, and bright, so the map hangs against the light.
     float off = 1.0 - dot(d, uBright.xyz);
     float behind = uBright.w > 0.0 ? 1.0 - smoothstep(uBright.w, uBright.w * 1.8, off) : 0.0;
-    win = max(win, behind);
-    vec3 small = voronoi(d * 11.0 + big.z * 13.0);
-    float lead = smoothstep(0.0, 0.05, small.y - small.x);
-    vec3 pane = paneColor(small.z, big.z);
-    // Light behind the glass isn't even: brighter patches, fine streaks in the glass itself.
-    float patchy = 0.55 + 0.9 * vnoise(d * 6.0 + big.z * 5.0);
-    float streak = 0.85 + 0.3 * vnoise(vec3(d.x * 140.0, d.y * 30.0, d.z * 140.0));
-    float lit = mix(0.25 + 1.0 * pow(hash13(vec3(big.z * 91.0)), 1.4), 1.0, behind);
+    // And round it a rose window of small panes, in a round frame of its own: up
+    // close, the wall's usual panes are as big as the map and read as a blur.
+    float rose = uBright.w > 0.0 ? 1.0 - step(uBright.w * 6.0, off) : 0.0;
+    float frame = uBright.w > 0.0 ? 1.0 - smoothstep(0.0, uBright.w * 0.35, abs(off - uBright.w * 6.0)) : 0.0;
+    win = max(win, max(behind, rose));
+    edge = max(edge, rose);
     float sun = max(0.4 + 1.3 * pow(max(dot(d, uSun), 0.0), 1.6), 1.5 * behind);
     float up = max(mix(0.35, 1.0, smoothstep(-0.8, 0.9, d.y)), behind);
-    // Dimmer toward the frame, as light through a deep window is.
-    float inset = smoothstep(0.08, 0.32, edge);
-    float glow = 0.7 + 0.6 * (1.0 - smoothstep(0.0, 0.6, small.x));
-    float breathe = 0.88 + 0.12 * sin(uTime * 0.21 + big.z * 30.0 + small.z * 4.0);
-    vec3 glassCol = pane * lit * sun * up * glow * patchy * streak * breathe * mix(0.25, 1.0, inset);
-    // Soft leading: dark, but with a little of the glass's light about it.
-    glassCol = mix(glassCol * 0.12, glassCol, lead);
+    float glassy = win * smoothstep(0.03, 0.09, edge);
+    // Each kind of wall worked out only where it shows: the full screen of it is the heaviest thing drawn here.
+    vec3 glassCol = vec3(0.0);
+    if (glassy > 0.0) {
+      // The rose is one window, whatever windows of the wall it spans: no seams where they'd meet.
+      float id = mix(big.z, 0.45, rose);
+      vec3 small = voronoi(d * mix(11.0, 38.0, rose) + id * 13.0);
+      float lead = smoothstep(0.0, 0.05, small.y - small.x);
+      vec3 pane = paneColor(small.z, id);
+      // Light behind the glass isn't even: brighter patches, fine streaks in the glass itself.
+      float patchy = 0.55 + 0.9 * vnoise(d * 6.0 + id * 5.0);
+      float streak = 0.85 + 0.3 * vnoise(vec3(d.x * 140.0, d.y * 30.0, d.z * 140.0));
+      float lit = mix(0.25 + 1.0 * pow(hash13(vec3(big.z * 91.0)), 1.4), 1.0, behind);
+      // Dimmer away from the map, so the map is what stands out against it.
+      lit = mix(lit, 0.35 + 0.65 * behind, rose);
+      // Dimmer toward the frame, as light through a deep window is.
+      float inset = smoothstep(0.08, 0.32, edge);
+      float glow = 0.7 + 0.6 * (1.0 - smoothstep(0.0, 0.6, small.x));
+      float breathe = 0.88 + 0.12 * sin(uTime * 0.21 + id * 30.0 + small.z * 4.0);
+      glassCol = pane * lit * sun * up * glow * patchy * streak * breathe * mix(0.25, 1.0, inset);
+      // Soft leading: dark, but with a little of the glass's light about it.
+      glassCol = mix(glassCol * 0.12, glassCol, lead);
+    }
     // The plain membrane: a deep rose, faintly pebbled, a little sheen where the light catches it.
-    vec3 fine = voronoi(d * 130.0);
-    float pebble = smoothstep(0.0, 0.35, fine.x) * 0.5 + 0.5;
-    vec3 wall = vec3(0.075, 0.025, 0.03) * pebble * (0.6 + 0.6 * vnoise(d * 9.0)) * sun * up;
-    vec3 col = mix(wall, glassCol, win * smoothstep(0.03, 0.09, edge));
+    vec3 wall = vec3(0.0);
+    if (glassy < 1.0) {
+      vec3 fine = voronoi(d * 130.0);
+      float pebble = smoothstep(0.0, 0.35, fine.x) * 0.5 + 0.5;
+      wall = vec3(0.075, 0.025, 0.03) * pebble * (0.6 + 0.6 * vnoise(d * 9.0)) * sun * up;
+    }
+    vec3 col = mix(wall, glassCol, glassy);
     // The ribs between the windows: darker bands with a lit edge.
     float rib = 1.0 - smoothstep(0.02, 0.07, edge);
     col = mix(col, vec3(0.03, 0.01, 0.01) + vec3(0.12, 0.05, 0.03) * smoothstep(0.0, 0.02, edge) * win, rib * 0.9);
+    col = mix(col, vec3(0.05, 0.018, 0.014), frame * 0.92);
     // Less haze on the glass itself than on what's in front of it: the windows read from anywhere.
     float f = 1.0 - exp(-insideLength(cameraPosition, vWorld) * uHazeK * 0.7);
     col = mix(col * 0.85, hazeColor(normalize(vWorld - cameraPosition)), f);
@@ -106,6 +124,8 @@ const SKIN_FRAG = /* glsl */ `
     vec3 r = reflect(-v, d);
     float spec = max(dot(r, normalize(uSun + vec3(-0.3, 0.1, 0.5))), 0.0);
     col += vec3(1.0, 0.92, 0.8) * (pow(spec, 220.0) * 2.5 + pow(spec, 18.0) * 0.12);
+    // Flying in through it, the skin right round the lens is all rim: let it go there.
+    col *= smoothstep(0.3, 2.5, length(cameraPosition - vWorld));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -120,7 +140,7 @@ const SHAFT_VERT = /* glsl */ `
     vUv = uv;
     vec4 w = modelMatrix * vec4(position, 1.0);
     vWorld = w.xyz;
-    vNrm = normalize(mat3(modelMatrix) * normal);
+    vNrm = mat3(modelMatrix) * normal;
     gl_Position = projectionMatrix * viewMatrix * w;
   }
 `;
@@ -133,13 +153,15 @@ const SHAFT_FRAG = /* glsl */ `
   ${HAZE}
   float h(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5); }
   void main() {
-    vec3 v = normalize(cameraPosition - vWorld);
-    float core = pow(abs(dot(normalize(vNrm), v)), 2.0);
-    float along = smoothstep(1.0, 0.9, vUv.y) * smoothstep(0.0, 0.18, vUv.y);
+    vec3 toEye = cameraPosition - vWorld;
+    vec3 v = normalize(toEye);
+    float core = pow(min(abs(dot(unit(vNrm), v)), 1.0), 2.0);
+    float along = (1.0 - smoothstep(0.9, 1.0, vUv.y)) * smoothstep(0.0, 0.18, vUv.y);
     vec2 g = vec2(vUv.x * 50.0, vUv.y * 70.0 - uTime * 0.18 + uSeed);
-    float dust = step(0.986, h(floor(g))) * smoothstep(0.45, 0.0, length(fract(g) - 0.5));
+    float dust = step(0.986, h(floor(g))) * (1.0 - smoothstep(0.0, 0.45, length(fract(g) - 0.5)));
     float pulse = 0.8 + 0.2 * sin(uTime * 0.13 + uSeed * 3.0);
-    float a = core * along * (0.2 + dust * 1.0) * pulse;
+    // Faded where the camera passes through the shaft's skin, so flying through one doesn't flash.
+    float a = core * along * (0.2 + dust * 1.0) * pulse * smoothstep(0.2, 1.4, length(toEye));
     gl_FragColor = vec4(uTint * a * through(vWorld), 1.0);
   }
 `;

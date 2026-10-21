@@ -72,6 +72,9 @@ function buildShoe(left: boolean) {
     pos.setXYZ(i, x * 0.148, y * (0.05 + heel * 0.045), z * (0.043 - Math.max(0, x) * 0.008));
   }
   g.computeVertexNormals();
+  // The pole at the top is left with no normal (it only touches flattened triangles), which shades as NaN: it points up.
+  const gn = g.attributes.normal;
+  for (let i = 0; i < gn.count; i++) if (Math.hypot(gn.getX(i), gn.getY(i), gn.getZ(i)) < 1e-6) gn.setXYZ(i, 0, 1, 0);
   const upper = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: upperTexture(), roughness: 0.75 }));
   upper.position.y = 0.03;
   upper.castShadow = true;
