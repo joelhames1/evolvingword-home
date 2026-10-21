@@ -41,7 +41,10 @@ describe('the owner switch', () => {
   const post = (body: unknown) => new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify(body) });
 
   it('reads the store from the connection string Vercel sets', () => {
-    expect(store('https://edge-config.vercel.com/ecfg_abc?token=t')).toEqual({ id: 'ecfg_abc', token: 't' });
+    expect(store('https://edge-config.vercel.com/ecfg_abc?token=t')).toEqual({ id: 'ecfg_abc', token: 't', origin: 'https://edge-config.vercel.com' });
+    process.env.GLOBAL_CONFIG = 'https://global-config.vercel.com/gcfg_new?token=n';
+    expect(store()).toMatchObject({ id: 'gcfg_new', origin: 'https://global-config.vercel.com' });
+    delete process.env.GLOBAL_CONFIG;
     expect(store(undefined)).toBeNull();
     expect(store('nonsense')).toBeNull();
   });

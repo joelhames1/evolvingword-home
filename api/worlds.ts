@@ -1,12 +1,14 @@
 // Which worlds the chooser shows, live: the owner's choice, kept in a Vercel
-// Edge Config store so it changes without a deploy.
+// Global Config store (called Edge Config until mid 2026) so it changes
+// without a deploy.
 //
 //   GET  /api/worlds                               -> { shown: [...] } or { shown: null } (use the repo's list)
 //   POST /api/worlds { password, shown: [...] }    -> sets it (known worlds only, at most five)
 //   POST /api/worlds { password, shown: null }     -> clears it, back to the repo's list
 //
-// Setup (all in the Vercel dashboard, see the README): an Edge Config store
-// connected to the project (which sets EDGE_CONFIG), and three environment
+// Setup (all in the Vercel dashboard, see the README): a Global Config store
+// connected to the project (which sets GLOBAL_CONFIG, or EDGE_CONFIG on a store
+// made before the rename), and three environment
 // variables: OWNER_PASSWORD, VERCEL_API_TOKEN (a token that can write to the
 // store) and, for a team account, VERCEL_TEAM_ID. Without them, GET answers
 // { shown: null } and the site uses the list in src/worlds/shown.ts.
@@ -24,14 +26,16 @@ const json = (body: unknown, status = 200) =>
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' },
   });
 
-/** The store's id and read token, from the connection string Vercel sets. */
-export function store(conn = process.env.EDGE_CONFIG): { id: string; token: string } | null {
+/** The store's id, read token and host, from the connection string Vercel sets. */
+export function store(
+  conn = process.env.GLOBAL_CONFIG || process.env.EDGE_CONFIG,
+): { id: string; token: string; origin: string } | null {
   if (!conn) return null;
   try {
     const url = new URL(conn);
-    const id = url.pathname.replace(/^\//, '');
+    const id = url.pathname.split('/').filter(Boolean).pop();
     const token = url.searchParams.get('token');
-    return id && token ? { id, token } : null;
+    return id && token ? { id, token, origin: url.origin } : null;
   } catch {
     return null;
   }
@@ -49,7 +53,7 @@ export async function same(a: string, b: string) {
 async function read(): Promise<string[] | null> {
   const s = store();
   if (!s) return null;
-  const res = await fetch(`https://edge-config.vercel.com/${s.id}/item/${KEY}?token=${s.token}`);
+  const res = await fetch(`${s.origin}/${s.id}/item/${KEY}?token=${s.token}`);
   if (!res.ok) return null;
   return cleanShown(await res.json());
 }
