@@ -211,6 +211,10 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
       SHOTS[shot].target.applyMatrix4(m);
     }
     moved('line').decompose(v(0, 0, 0), lineTurn, v(1, 1, 1));
+    // The line keeps world positions for its shirts; bring them along too.
+    const lineMoved = moved('line');
+    for (const item of line.items) item.focus.applyMatrix4(lineMoved);
+    line.center.applyMatrix4(lineMoved);
   }
   Object.assign(SHOTS, kit.closeups?.(studio) ?? {});
 

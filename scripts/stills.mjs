@@ -15,7 +15,7 @@ const browser = await chromium.launch({
 for (const world of worlds) {
   const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
   await page.goto(`${base}/?shot=vista&full&world=${world}`);
-  await page.addStyleTag({ content: '.top,.controls,.letterbox,#tooltip,#hints{display:none!important}' });
+  await page.addStyleTag({ content: '.top,.controls,.letterbox,.turn,#tooltip,#hints,#slow{display:none!important}' });
   await page.waitForTimeout(8000);
   await page.evaluate(() => {
     window.__ew.rig.visible = 1;

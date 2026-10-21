@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { ALPHABET, clean, MAX_PHRASE } from '../../src/evolve';
 import { MAX_WORLDS, WORLDS } from '../../src/worlds';
+import { SHOWN } from '../../src/worlds/shown';
 import { PHRASES as LAKE } from '../../src/worlds/alps/flap';
 import { PHRASES as CITY } from '../../src/worlds/city/city';
 import { PHRASES as BAND } from '../../src/worlds/monastery/band';
 import { DEST, FONT, glyph, PHRASES as DEPARTURES } from '../../src/worlds/tower/board';
 
 describe('the worlds', () => {
-  it('has a globe for each, never more than the chooser is laid out for', () => {
+  it('has every world, and shows no more globes than the chooser is laid out for', () => {
     expect(WORLDS.length).toBeGreaterThanOrEqual(4);
-    expect(WORLDS.length).toBeLessThanOrEqual(MAX_WORLDS);
+    expect(SHOWN.length).toBeLessThanOrEqual(MAX_WORLDS);
+    for (const id of SHOWN) expect(WORLDS.map((w) => w.id)).toContain(id);
     expect(new Set(WORLDS.map((w) => w.id)).size).toBe(WORLDS.length);
     expect(WORLDS.map((w) => w.id)).toEqual(expect.arrayContaining(['alps', 'city', 'tower', 'monastery']));
   });

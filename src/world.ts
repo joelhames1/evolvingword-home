@@ -92,7 +92,8 @@ export function createWorld(host: HTMLElement, quality: Quality): World {
 
   const frame = (now?: number) => {
     timer.update(now);
-    const dt = Math.min(timer.getDelta(), 0.1);
+    // Never backwards (the first frame can come out a hair negative), never a big jump.
+    const dt = THREE.MathUtils.clamp(timer.getDelta(), 0, 0.1);
     const t = timer.getElapsed();
     for (const f of ticks) f(t, dt);
     composer.render(dt);
