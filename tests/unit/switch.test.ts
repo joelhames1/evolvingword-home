@@ -125,3 +125,40 @@ describe('the owner switch, finding the store', () => {
     expect((await res.json()).error).toContain('404: Not found (store ecfg_abc, team team_x)');
   });
 });
+
+describe('the owner switch, with nothing saved yet', () => {
+  const env = { ...process.env };
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...env };
+  });
+  const itemMissing = () => new Response(JSON.stringify({ error: { message: 'Edge Config Item not found.' } }), { status: 404 });
+  const setUp = () => {
+    process.env.EDGE_CONFIG = 'https://edge-config.vercel.com/ecfg_abc?token=read-123';
+    process.env.OWNER_PASSWORD = 'open sesame';
+    process.env.VERCEL_API_TOKEN = 'write-456';
+    process.env.VERCEL_TEAM_ID = 'team_x';
+  };
+  const post = (shown: unknown) => handler(new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify({ password: 'open sesame', shown }) }));
+
+  it('clearing a choice that was never saved is fine', async () => {
+    setUp();
+    vi.stubGlobal('fetch', async () => itemMissing());
+    const res = await post(null);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ shown: null });
+  });
+
+  it('a first save creates the item when upsert won’t', async () => {
+    setUp();
+    const ops: string[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
+      const operation = JSON.parse(init!.body as string).items[0].operation;
+      ops.push(operation);
+      return operation === 'create' ? new Response('{}') : itemMissing();
+    });
+    const res = await post(['tower']);
+    expect(res.status).toBe(200);
+    expect(ops).toEqual(['upsert', 'create']);
+  });
+});

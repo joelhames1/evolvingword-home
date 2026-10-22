@@ -69,12 +69,15 @@ async function why(res: Response) {
   return `store said ${res.status}`;
 }
 
+/** A 404 about the item, not the store: the store was found, the key just isn't in it yet. */
+const missingItem = (message: string) => /item/i.test(message);
+
 async function write(shown: string[] | null) {
   const s = store();
   const token = process.env.VERCEL_API_TOKEN;
   if (!s || !token) throw new Error('not set up');
   const auth = { authorization: `Bearer ${token}` };
-  const body = JSON.stringify({ items: [shown ? { operation: 'upsert', key: KEY, value: shown } : { operation: 'delete', key: KEY }] });
+  const op = (operation: string) => JSON.stringify({ items: [shown ? { operation, key: KEY, value: shown } : { operation, key: KEY }] });
   // The store belongs to an account or a team (every account is a team now),
   // and the API only finds it when asked under the right one. Without
   // VERCEL_TEAM_ID, try the token's own account, then each team it can reach.
@@ -86,13 +89,19 @@ async function write(shown: string[] | null) {
   for (let i = 0; i < teams.length; i++) {
     const team = teams[i] ? `?teamId=${encodeURIComponent(teams[i]!)}` : '';
     for (const kind of ['edge-config', 'global-config']) {
-      const res = await fetch(`https://api.vercel.com/v1/${kind}/${s.id}/items${team}`, {
-        method: 'PATCH',
-        headers: { ...auth, 'content-type': 'application/json' },
-        body,
-      });
+      const patch = (operation: string) =>
+        fetch(`https://api.vercel.com/v1/${kind}/${s.id}/items${team}`, { method: 'PATCH', headers: { ...auth, 'content-type': 'application/json' }, body: op(operation) });
+      let res = await patch(shown ? 'upsert' : 'delete');
       if (res.ok) return;
       last = await why(res);
+      if (res.status === 404 && missingItem(last)) {
+        // Found the store. Clearing a choice that was never saved is already done;
+        // a first save may need to create the item rather than upsert it.
+        if (!shown) return;
+        res = await patch('create');
+        if (res.ok) return;
+        throw new Error(await why(res));
+      }
       if (res.status !== 404) throw new Error(last);
     }
     if (!looked && i === teams.length - 1) {
