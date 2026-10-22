@@ -162,3 +162,28 @@ describe('the owner switch, with nothing saved yet', () => {
     expect(ops).toEqual(['upsert', 'create']);
   });
 });
+
+describe('the owner switch, asked outside the owning team', () => {
+  const env = { ...process.env };
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env = { ...env };
+  });
+
+  it('takes a 403 without a team as a cue to look under the teams', async () => {
+    process.env.EDGE_CONFIG = 'https://edge-config.vercel.com/ecfg_abc?token=read-123';
+    process.env.OWNER_PASSWORD = 'open sesame';
+    process.env.VERCEL_API_TOKEN = 'write-456';
+    delete process.env.VERCEL_TEAM_ID;
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      if (url.endsWith('/v2/teams')) return new Response(JSON.stringify({ teams: [{ id: 'team_mine' }] }));
+      if (url.includes('teamId=team_mine')) return new Response('{}');
+      return new Response(JSON.stringify({ error: { message: "You don't have permission" } }), { status: 403 });
+    });
+    const res = await handler(new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify({ password: 'open sesame', shown: ['tower'] }) }));
+    expect(res.status).toBe(200);
+    expect(urls.at(-1)).toContain('teamId=team_mine');
+  });
+});

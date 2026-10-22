@@ -94,15 +94,18 @@ async function write(shown: string[] | null) {
       let res = await patch(shown ? 'upsert' : 'delete');
       if (res.ok) return;
       last = await why(res);
+      // Asked outside the team that owns it, Vercel can see the store but
+      // answers 404 or 403 to writes; look under the teams before believing it.
+      if (!teams[i] && !given && (res.status === 403 || res.status === 404)) break;
       if (res.status === 404 && missingItem(last)) {
         // Found the store. Clearing a choice that was never saved is already done;
         // a first save may need to create the item rather than upsert it.
         if (!shown) return;
         res = await patch('create');
         if (res.ok) return;
-        throw new Error(await why(res));
+        throw new Error(`${await why(res)} (store ${s.id}${teams[i] ? `, team ${teams[i]}` : ''})`);
       }
-      if (res.status !== 404) throw new Error(last);
+      if (res.status !== 404) throw new Error(`${last} (store ${s.id}${teams[i] ? `, team ${teams[i]}` : ''})`);
     }
     if (!looked && i === teams.length - 1) {
       looked = true;
