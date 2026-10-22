@@ -20,13 +20,18 @@ describe('the list of worlds to show', () => {
 
 describe('the owner switch', () => {
   const env = { ...process.env };
-  const calls: { url: string; init?: RequestInit }[] = [];
+  let saved: string | null = null;
+  const calls: { url: string; command: string[]; auth: string }[] = [];
   beforeEach(() => {
     calls.length = 0;
-    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-      calls.push({ url, init });
-      if (url.includes('/item/shown')) return new Response(JSON.stringify(['tower', 'alps']), { status: 200 });
-      return new Response('{}', { status: 200 });
+    saved = JSON.stringify(['tower', 'alps']);
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      const command = JSON.parse(init.body as string) as string[];
+      calls.push({ url, command, auth: (init.headers as Record<string, string>).authorization });
+      if (command[0] === 'GET') return new Response(JSON.stringify({ result: saved }));
+      if (command[0] === 'SET') saved = command[2];
+      if (command[0] === 'DEL') saved = null;
+      return new Response(JSON.stringify({ result: 'OK' }));
     });
   });
   afterEach(() => {
@@ -34,19 +39,18 @@ describe('the owner switch', () => {
     process.env = { ...env };
   });
   const setUp = () => {
-    process.env.EDGE_CONFIG = 'https://edge-config.vercel.com/ecfg_abc?token=read-123';
+    process.env.KV_REST_API_URL = 'https://fine-owl-123.upstash.io/';
+    process.env.KV_REST_API_TOKEN = 'write-456';
+    process.env.KV_REST_API_READ_ONLY_TOKEN = 'read-123';
     process.env.OWNER_PASSWORD = 'open sesame';
-    process.env.VERCEL_API_TOKEN = 'write-456';
   };
-  const post = (body: unknown) => new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify(body) });
+  const post = (body: unknown) => handler(new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify(body) }));
+  const writes = () => calls.filter((c) => c.command[0] !== 'GET');
 
-  it('reads the store from the connection string Vercel sets', () => {
-    expect(store('https://edge-config.vercel.com/ecfg_abc?token=t')).toEqual({ id: 'ecfg_abc', token: 't', origin: 'https://edge-config.vercel.com' });
-    process.env.GLOBAL_CONFIG = 'https://global-config.vercel.com/gcfg_new?token=n';
-    expect(store()).toMatchObject({ id: 'gcfg_new', origin: 'https://global-config.vercel.com' });
-    delete process.env.GLOBAL_CONFIG;
-    expect(store(undefined)).toBeNull();
-    expect(store('nonsense')).toBeNull();
+  it('finds the store under either name Upstash gives it', () => {
+    expect(store({ KV_REST_API_URL: 'https://a.upstash.io/', KV_REST_API_TOKEN: 't' })).toEqual({ url: 'https://a.upstash.io', token: 't', readToken: 't' });
+    expect(store({ UPSTASH_REDIS_REST_URL: 'https://b.upstash.io', UPSTASH_REDIS_REST_TOKEN: 'u' })?.url).toBe('https://b.upstash.io');
+    expect(store({})).toBeNull();
   });
 
   it('compares passwords exactly', async () => {
@@ -55,135 +59,51 @@ describe('the owner switch', () => {
   });
 
   it('says nothing is set when it isn’t set up, so the repo list is used', async () => {
-    delete process.env.EDGE_CONFIG;
-    const res = await handler(new Request('https://x/api/worlds'));
-    expect(await res.json()).toEqual({ shown: null });
-    expect((await handler(post({ password: 'x', shown: ['alps'] }))).status).toBe(503);
+    delete process.env.KV_REST_API_URL;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    process.env.OWNER_PASSWORD = 'open sesame';
+    expect(await (await handler(new Request('https://x/api/worlds'))).json()).toEqual({ shown: null });
+    expect((await post({ password: 'open sesame', shown: ['alps'] })).status).toBe(503);
   });
 
-  it('gives the live choice', async () => {
+  it('gives the live choice, read with the read-only token', async () => {
     setUp();
     const res = await handler(new Request('https://x/api/worlds'));
     expect(await res.json()).toEqual({ shown: ['tower', 'alps'] });
     expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(calls[0]).toMatchObject({ url: 'https://fine-owl-123.upstash.io', auth: 'Bearer read-123' });
+  });
+
+  it('gives nothing when nothing is saved', async () => {
+    setUp();
+    saved = null;
+    expect(await (await handler(new Request('https://x/api/worlds'))).json()).toEqual({ shown: null });
   });
 
   it('only saves with the password, and only real worlds', async () => {
     setUp();
     // A wrong guess waits a second before saying so.
     const t0 = Date.now();
-    expect((await handler(post({ password: 'guess', shown: ['alps'] }))).status).toBe(401);
+    expect((await post({ password: 'guess', shown: ['alps'] })).status).toBe(401);
     expect(Date.now() - t0).toBeGreaterThanOrEqual(900);
-    expect(calls.filter((c) => c.init?.method === 'PATCH')).toHaveLength(0);
+    expect(writes()).toHaveLength(0);
 
-    const res = await handler(post({ password: 'open sesame', shown: ['monastery', 'nowhere', 'tower'] }));
+    const res = await post({ password: 'open sesame', shown: ['monastery', 'nowhere', 'tower'] });
     expect(await res.json()).toEqual({ shown: ['monastery', 'tower'] });
-    const patch = calls.find((c) => c.init?.method === 'PATCH')!;
-    expect(patch.url).toBe('https://api.vercel.com/v1/edge-config/ecfg_abc/items');
-    expect((patch.init!.headers as Record<string, string>).authorization).toBe('Bearer write-456');
-    expect(JSON.parse(patch.init!.body as string)).toEqual({ items: [{ operation: 'upsert', key: 'shown', value: ['monastery', 'tower'] }] });
+    expect(writes()[0]).toMatchObject({ auth: 'Bearer write-456', command: ['SET', 'evolvingword:shown', '["monastery","tower"]'] });
+    expect(await (await handler(new Request('https://x/api/worlds'))).json()).toEqual({ shown: ['monastery', 'tower'] });
 
-    expect((await handler(post({ password: 'open sesame', shown: ['nowhere'] }))).status).toBe(400);
-    const cleared = await handler(post({ password: 'open sesame', shown: null }));
+    expect((await post({ password: 'open sesame', shown: ['nowhere'] })).status).toBe(400);
+    const cleared = await post({ password: 'open sesame', shown: null });
     expect(await cleared.json()).toEqual({ shown: null });
-    expect(JSON.parse(calls.filter((c) => c.init?.method === 'PATCH').at(-1)!.init!.body as string).items[0]).toEqual({ operation: 'delete', key: 'shown' });
-  });
-});
-
-describe('the owner switch, finding the store', () => {
-  const env = { ...process.env };
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    process.env = { ...env };
+    expect(writes().at(-1)!.command).toEqual(['DEL', 'evolvingword:shown']);
   });
 
-  it('looks under each team the token can reach when no team is given', async () => {
-    process.env.EDGE_CONFIG = 'https://edge-config.vercel.com/ecfg_abc?token=read-123';
-    process.env.OWNER_PASSWORD = 'open sesame';
-    process.env.VERCEL_API_TOKEN = 'write-456';
-    delete process.env.VERCEL_TEAM_ID;
-    const urls: string[] = [];
-    vi.stubGlobal('fetch', async (url: string) => {
-      urls.push(url);
-      if (url.endsWith('/v2/teams')) return new Response(JSON.stringify({ teams: [{ id: 'team_other' }, { id: 'team_mine' }] }));
-      if (url.includes('teamId=team_mine')) return new Response('{}');
-      return new Response(JSON.stringify({ error: { message: 'Not found' } }), { status: 404 });
-    });
-    const res = await handler(new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify({ password: 'open sesame', shown: ['tower'] }) }));
-    expect(res.status).toBe(200);
-    expect(urls.at(-1)).toBe('https://api.vercel.com/v1/edge-config/ecfg_abc/items?teamId=team_mine');
-  });
-
-  it('passes on what Vercel said when it still can’t find the store', async () => {
-    process.env.EDGE_CONFIG = 'https://edge-config.vercel.com/ecfg_abc?token=read-123';
-    process.env.OWNER_PASSWORD = 'open sesame';
-    process.env.VERCEL_API_TOKEN = 'write-456';
-    process.env.VERCEL_TEAM_ID = 'team_x';
-    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: { message: 'Not found' } }), { status: 404 }));
-    const res = await handler(new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify({ password: 'open sesame', shown: ['tower'] }) }));
+  it('passes on what the store said when it refuses', async () => {
+    setUp();
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'WRONGPASS invalid password' }), { status: 401 }));
+    const res = await post({ password: 'open sesame', shown: ['tower'] });
     expect(res.status).toBe(502);
-    expect((await res.json()).error).toContain('404: Not found (store ecfg_abc, team team_x)');
-  });
-});
-
-describe('the owner switch, with nothing saved yet', () => {
-  const env = { ...process.env };
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    process.env = { ...env };
-  });
-  const itemMissing = () => new Response(JSON.stringify({ error: { message: 'Edge Config Item not found.' } }), { status: 404 });
-  const setUp = () => {
-    process.env.EDGE_CONFIG = 'https://edge-config.vercel.com/ecfg_abc?token=read-123';
-    process.env.OWNER_PASSWORD = 'open sesame';
-    process.env.VERCEL_API_TOKEN = 'write-456';
-    process.env.VERCEL_TEAM_ID = 'team_x';
-  };
-  const post = (shown: unknown) => handler(new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify({ password: 'open sesame', shown }) }));
-
-  it('clearing a choice that was never saved is fine', async () => {
-    setUp();
-    vi.stubGlobal('fetch', async () => itemMissing());
-    const res = await post(null);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ shown: null });
-  });
-
-  it('a first save creates the item when upsert won’t', async () => {
-    setUp();
-    const ops: string[] = [];
-    vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
-      const operation = JSON.parse(init!.body as string).items[0].operation;
-      ops.push(operation);
-      return operation === 'create' ? new Response('{}') : itemMissing();
-    });
-    const res = await post(['tower']);
-    expect(res.status).toBe(200);
-    expect(ops).toEqual(['upsert', 'create']);
-  });
-});
-
-describe('the owner switch, asked outside the owning team', () => {
-  const env = { ...process.env };
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    process.env = { ...env };
-  });
-
-  it('takes a 403 without a team as a cue to look under the teams', async () => {
-    process.env.EDGE_CONFIG = 'https://edge-config.vercel.com/ecfg_abc?token=read-123';
-    process.env.OWNER_PASSWORD = 'open sesame';
-    process.env.VERCEL_API_TOKEN = 'write-456';
-    delete process.env.VERCEL_TEAM_ID;
-    const urls: string[] = [];
-    vi.stubGlobal('fetch', async (url: string) => {
-      urls.push(url);
-      if (url.endsWith('/v2/teams')) return new Response(JSON.stringify({ teams: [{ id: 'team_mine' }] }));
-      if (url.includes('teamId=team_mine')) return new Response('{}');
-      return new Response(JSON.stringify({ error: { message: "You don't have permission" } }), { status: 403 });
-    });
-    const res = await handler(new Request('https://x/api/worlds', { method: 'POST', body: JSON.stringify({ password: 'open sesame', shown: ['tower'] }) }));
-    expect(res.status).toBe(200);
-    expect(urls.at(-1)).toContain('teamId=team_mine');
+    expect((await res.json()).error).toBe('Couldn’t save: store said 401: WRONGPASS invalid password.');
   });
 });

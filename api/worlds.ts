@@ -1,16 +1,14 @@
-// Which worlds the chooser shows, live: the owner's choice, kept in a Vercel
-// Global Config store (called Edge Config until mid 2026) so it changes
-// without a deploy.
+// Which worlds the chooser shows, live: the owner's choice, kept in a small
+// Upstash Redis store so it changes without a deploy.
 //
 //   GET  /api/worlds                               -> { shown: [...] } or { shown: null } (use the repo's list)
 //   POST /api/worlds { password, shown: [...] }    -> sets it (known worlds only, at most five)
 //   POST /api/worlds { password, shown: null }     -> clears it, back to the repo's list
 //
-// Setup (all in the Vercel dashboard, see the README): a Global Config store
-// connected to the project (which sets GLOBAL_CONFIG, or EDGE_CONFIG on a store
-// made before the rename), and three environment
-// variables: OWNER_PASSWORD, VERCEL_API_TOKEN (a token that can write to the
-// store) and, for a team account, VERCEL_TEAM_ID. Without them, GET answers
+// Setup (all in the Vercel dashboard, see the README): an Upstash Redis store
+// from Storage, connected to the project, which sets its REST address and
+// tokens; and one environment variable, OWNER_PASSWORD. The store's tokens
+// reach that store and nothing else. Without them, GET answers
 // { shown: null } and the site uses the list in src/worlds/shown.ts.
 import { cleanShown } from '../src/worlds';
 
@@ -18,7 +16,7 @@ export const config = { runtime: 'edge' };
 
 declare const process: { env: Record<string, string | undefined> };
 
-const KEY = 'shown';
+const KEY = 'evolvingword:shown';
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -26,19 +24,15 @@ const json = (body: unknown, status = 200) =>
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' },
   });
 
-/** The store's id, read token and host, from the connection string Vercel sets. */
-export function store(
-  conn = process.env.GLOBAL_CONFIG || process.env.EDGE_CONFIG,
-): { id: string; token: string; origin: string } | null {
-  if (!conn) return null;
-  try {
-    const url = new URL(conn);
-    const id = url.pathname.split('/').filter(Boolean).pop();
-    const token = url.searchParams.get('token');
-    return id && token ? { id, token, origin: url.origin } : null;
-  } catch {
-    return null;
-  }
+/**
+ * The store's REST address and tokens. Vercel's Upstash connection names them
+ * KV_REST_API_*; a store set up on Upstash directly, UPSTASH_REDIS_REST_*.
+ */
+export function store(env = process.env): { url: string; token: string; readToken: string } | null {
+  const url = env.KV_REST_API_URL || env.UPSTASH_REDIS_REST_URL;
+  const token = env.KV_REST_API_TOKEN || env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  return { url: url.replace(/\/+$/, ''), token, readToken: env.KV_REST_API_READ_ONLY_TOKEN || token };
 }
 
 /** Compares two strings without giving away, by timing, how much of them matched. */
@@ -50,70 +44,30 @@ export async function same(a: string, b: string) {
   return diff === 0;
 }
 
+/** Sends one Redis command over Upstash's REST API. */
+async function redis(command: string[], token: string): Promise<unknown> {
+  const s = store()!;
+  const res = await fetch(s.url, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(command),
+  });
+  const body = (await res.json().catch(() => ({}))) as { result?: unknown; error?: string };
+  if (!res.ok || body.error) throw new Error(`store said ${res.status}${body.error ? `: ${body.error}` : ''}`);
+  return body.result;
+}
+
 async function read(): Promise<string[] | null> {
   const s = store();
   if (!s) return null;
-  const res = await fetch(`${s.origin}/${s.id}/item/${KEY}?token=${s.token}`);
-  if (!res.ok) return null;
-  return cleanShown(await res.json());
+  const value = await redis(['GET', KEY], s.readToken);
+  return typeof value === 'string' ? cleanShown(JSON.parse(value)) : null;
 }
-
-/** What Vercel said went wrong, in its own words where it gave any. */
-async function why(res: Response) {
-  try {
-    const body = (await res.json()) as { error?: { message?: string } };
-    if (body.error?.message) return `store said ${res.status}: ${body.error.message}`;
-  } catch {
-    // No JSON; the status will do.
-  }
-  return `store said ${res.status}`;
-}
-
-/** A 404 about the item, not the store: the store was found, the key just isn't in it yet. */
-const missingItem = (message: string) => /item/i.test(message);
 
 async function write(shown: string[] | null) {
   const s = store();
-  const token = process.env.VERCEL_API_TOKEN;
-  if (!s || !token) throw new Error('not set up');
-  const auth = { authorization: `Bearer ${token}` };
-  const op = (operation: string) => JSON.stringify({ items: [shown ? { operation, key: KEY, value: shown } : { operation, key: KEY }] });
-  // The store belongs to an account or a team (every account is a team now),
-  // and the API only finds it when asked under the right one. Without
-  // VERCEL_TEAM_ID, try the token's own account, then each team it can reach.
-  // Vercel renamed Edge Config to Global Config in 2026; try both paths.
-  const given = process.env.VERCEL_TEAM_ID;
-  let teams: (string | undefined)[] = given ? [given] : [undefined];
-  let looked = !!given;
-  let last = 'store not found';
-  for (let i = 0; i < teams.length; i++) {
-    const team = teams[i] ? `?teamId=${encodeURIComponent(teams[i]!)}` : '';
-    for (const kind of ['edge-config', 'global-config']) {
-      const patch = (operation: string) =>
-        fetch(`https://api.vercel.com/v1/${kind}/${s.id}/items${team}`, { method: 'PATCH', headers: { ...auth, 'content-type': 'application/json' }, body: op(operation) });
-      let res = await patch(shown ? 'upsert' : 'delete');
-      if (res.ok) return;
-      last = await why(res);
-      // Asked outside the team that owns it, Vercel can see the store but
-      // answers 404 or 403 to writes; look under the teams before believing it.
-      if (!teams[i] && !given && (res.status === 403 || res.status === 404)) break;
-      if (res.status === 404 && missingItem(last)) {
-        // Found the store. Clearing a choice that was never saved is already done;
-        // a first save may need to create the item rather than upsert it.
-        if (!shown) return;
-        res = await patch('create');
-        if (res.ok) return;
-        throw new Error(`${await why(res)} (store ${s.id}${teams[i] ? `, team ${teams[i]}` : ''})`);
-      }
-      if (res.status !== 404) throw new Error(`${last} (store ${s.id}${teams[i] ? `, team ${teams[i]}` : ''})`);
-    }
-    if (!looked && i === teams.length - 1) {
-      looked = true;
-      const res = await fetch('https://api.vercel.com/v2/teams', { headers: auth });
-      if (res.ok) teams = teams.concat(((await res.json()) as { teams?: { id: string }[] }).teams?.map((t) => t.id) ?? []);
-    }
-  }
-  throw new Error(`${last} (store ${s.id}${given ? `, team ${given}` : ''})`);
+  if (!s) throw new Error('not set up');
+  await redis(shown ? ['SET', KEY, JSON.stringify(shown)] : ['DEL', KEY], s.token);
 }
 
 export default async function handler(req: Request): Promise<Response> {
@@ -127,7 +81,7 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') return json({ error: 'GET or POST' }, 405);
 
   const password = process.env.OWNER_PASSWORD;
-  if (!password || !store() || !process.env.VERCEL_API_TOKEN) return json({ error: 'The owner switch isn’t set up on Vercel yet.' }, 503);
+  if (!password || !store()) return json({ error: 'The owner switch isn’t set up on Vercel yet: connect an Upstash Redis store and set OWNER_PASSWORD.' }, 503);
   let body: { password?: unknown; shown?: unknown };
   try {
     body = await req.json();

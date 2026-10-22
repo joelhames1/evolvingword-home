@@ -23,11 +23,11 @@ There are two ways to choose, and the live one wins when it's set:
 - **The list in the repo:** `src/worlds/shown.ts`. Edit it (GitHub's web editor works from a phone) and it goes live with the next deploy, about a minute later.
 - **The owner page, live:** `evolvingword.com/owner.html`. Tick the worlds, put them in order, type the password and save; the globes change at once, no deploy. "Use the list in the repo" clears your live choice. The page isn't linked from anywhere and asks search engines to skip it, but the password is what keeps it yours.
 
-The owner page saves through a small function (`api/worlds.ts`) to a Vercel Global Config store (Vercel called it Edge Config until mid 2026). To set it up, once, in the Vercel dashboard:
+The owner page saves through a small function (`api/worlds.ts`) to a tiny Upstash Redis store. Its keys reach that one store and nothing else, so no account-wide Vercel token is involved. To set it up, once, in the Vercel dashboard:
 
-1. **Storage → Global Config** ("Ultra-low latency reads"), name it anything, and connect it to this project. That sets `GLOBAL_CONFIG` for you (an older store sets `EDGE_CONFIG`; either works).
-2. **Account Settings → Tokens → Create**: a token scoped to the account or team that owns the project. Copy it.
-3. **Project → Settings → Environment Variables**, for Production: `OWNER_PASSWORD` (a long passphrase only you know), `VERCEL_API_TOKEN` (the token from step 2), and, if the project belongs to a team, `VERCEL_TEAM_ID` (the team's id, from its settings page).
+1. **Storage → Upstash** (pick **Upstash for Redis**, the free plan is plenty), name it anything, and connect it to this project. That sets `KV_REST_API_URL` and `KV_REST_API_TOKEN` for you.
+2. **Project → Settings → Environment Variables**, for Production: `OWNER_PASSWORD`, a long passphrase only you know.
+3. If you tried the older Edge Config setup, delete `VERCEL_API_TOKEN` and `VERCEL_TEAM_ID` from the project and revoke that token; nothing uses them now.
 4. Redeploy once so the function picks them up.
 
 Until then the page says the switch isn't set up, and the globes follow the list in the repo. A wrong password costs a second each try.
