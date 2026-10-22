@@ -18,11 +18,22 @@ declare const process: { env: Record<string, string | undefined> };
 
 const KEY = 'evolvingword:shown';
 
-const json = (body: unknown, status = 200) =>
+const json = (body: unknown, status = 200, cache = 'no-store') =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-robots-tag': 'noindex' },
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': cache, 'x-robots-tag': 'noindex' },
   });
+
+// Every visit to the home page asks for the list. Vercel's CDN keeps the
+// answer for a few seconds, so a flood of requests can't run through the
+// store's free allowance; a new choice shows within that time.
+const SHARED = 'public, max-age=0, s-maxage=10, stale-while-revalidate=60';
+
+// Wrong passwords are counted in the store: a few per address, then a wait;
+// and a cap across all addresses, so guessing from many machines is slow too.
+// Once either limit is hit, no password is even checked until it lifts.
+const TRIES = { each: 8, all: 40, eachFor: 15 * 60, allFor: 60 * 60 };
+const BODY_MAX = 2048;
 
 /**
  * The store's REST address and tokens. Vercel's Upstash connection names them
@@ -57,6 +68,15 @@ async function redis(command: string[], token: string): Promise<unknown> {
   return body.result;
 }
 
+const sha = async (text: string) =>
+  [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((b) => b.toString(16).padStart(2, '0')).join('');
+
+/** The counters for this caller's address and for everyone, kept by a hash of the address, not the address. */
+async function counters(req: Request) {
+  const ip = req.headers.get('x-real-ip') || req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown';
+  return { each: `${KEY}:wrong:${(await sha(ip)).slice(0, 24)}`, all: `${KEY}:wrong:all` };
+}
+
 async function read(): Promise<string[] | null> {
   const s = store();
   if (!s) return null;
@@ -73,7 +93,7 @@ async function write(shown: string[] | null) {
 export default async function handler(req: Request): Promise<Response> {
   if (req.method === 'GET') {
     try {
-      return json({ shown: await read() });
+      return json({ shown: await read() }, 200, SHARED);
     } catch {
       return json({ shown: null });
     }
@@ -81,14 +101,40 @@ export default async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') return json({ error: 'GET or POST' }, 405);
 
   const password = process.env.OWNER_PASSWORD;
-  if (!password || !store()) return json({ error: 'The owner switch isn’t set up on Vercel yet: connect an Upstash Redis store and set OWNER_PASSWORD.' }, 503);
+  const s = store();
+  if (!password || !s) return json({ error: 'The owner switch isn’t set up on Vercel yet: connect an Upstash Redis store and set OWNER_PASSWORD.' }, 503);
+  // JSON only: another site's page can't send that without the browser asking
+  // this one first, and nothing here says yes.
+  if (!req.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return json({ error: 'Send JSON.' }, 415);
+  if (Number(req.headers.get('content-length') ?? 0) > BODY_MAX) return json({ error: 'Too big.' }, 413);
+
+  const keys = await counters(req);
+  try {
+    const [each, all] = ((await redis(['MGET', keys.each, keys.all], s.token)) as (string | null)[]).map((n) => Number(n ?? 0));
+    if (each >= TRIES.each || all >= TRIES.all) return json({ error: 'Too many wrong passwords. Wait a while and try again.' }, 429);
+  } catch (e) {
+    return json({ error: `Couldn’t check: ${(e as Error).message}.` }, 502);
+  }
+
   let body: { password?: unknown; shown?: unknown };
   try {
-    body = await req.json();
+    const text = await req.text();
+    if (text.length > BODY_MAX) return json({ error: 'Too big.' }, 413);
+    body = JSON.parse(text);
   } catch {
     return json({ error: 'Send JSON.' }, 400);
   }
   if (typeof body.password !== 'string' || !(await same(body.password, password))) {
+    try {
+      // The first wrong try starts each counter's clock; it clears itself when that runs out.
+      for (const [key, ttl] of [
+        [keys.each, TRIES.eachFor],
+        [keys.all, TRIES.allFor],
+      ] as const)
+        if ((await redis(['INCR', key], s.token)) === 1) await redis(['EXPIRE', key, String(ttl)], s.token);
+    } catch {
+      // Counting failed; the pause below still slows guessing.
+    }
     // A pause on every wrong guess makes guessing slow.
     await new Promise((r) => setTimeout(r, 1000));
     return json({ error: 'That isn’t the password.' }, 401);

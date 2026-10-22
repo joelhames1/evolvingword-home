@@ -841,7 +841,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   // For screenshots and tests: jump straight to a shot, no gate.
   const q = new URLSearchParams(location.search);
   const shot = q.get('shot');
-  if (shot && shot in SHOTS) {
+  if (shot && Object.hasOwn(SHOTS, shot)) {
     entered = true;
     gate.style.transition = 'none';
     gate.classList.add('gone');

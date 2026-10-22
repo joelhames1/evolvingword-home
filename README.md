@@ -30,7 +30,7 @@ The owner page saves through a small function (`api/worlds.ts`) to a tiny Upstas
 3. If you tried the older Edge Config setup, delete `VERCEL_API_TOKEN` and `VERCEL_TEAM_ID` from the project and revoke that token; nothing uses them now.
 4. Redeploy once so the function picks them up.
 
-Until then the page says the switch isn't set up, and the globes follow the list in the repo. A wrong password costs a second each try.
+Until then the page says the switch isn't set up, and the globes follow the list in the repo. A wrong password costs a second each try; after 8 wrong tries from one address the switch stops checking for 15 minutes, and after 40 from anywhere, for an hour (the counters live in the store as `evolvingword:shown:wrong:*`; deleting them in Upstash's Browser lifts a lockout at once). A new choice can take up to ten seconds to reach every visitor, because the CDN holds the answer that long.
 
 ## Looking around
 
