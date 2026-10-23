@@ -138,13 +138,14 @@ export function stone(kind: 'ashlar' | 'brick' | 'rock' | 'concrete'): THREE.Tex
       }
     }
   } else {
-    g.fillStyle = kind === 'rock' ? '#4a4844' : '#6c6a66';
+    // (A light ground, so it shades what it's laid on rather than darkening it to black.)
+    g.fillStyle = kind === 'rock' ? '#a8a49c' : '#b4b1aa';
     g.fillRect(0, 0, 512, 512);
   }
   // Weathering over it all: blotches and grit.
   for (let i = 0; i < 2600; i++) {
     const v = r() < 0.5 ? 255 : 0;
-    g.fillStyle = `rgba(${v},${v},${v},${r() * (kind === 'rock' ? 0.09 : 0.05)})`;
+    g.fillStyle = `rgba(${v},${v},${v},${r() * (kind === 'rock' ? 0.16 : 0.07)})`;
     const s = 2 + r() * (kind === 'rock' ? 26 : 10);
     g.fillRect(r() * 512, r() * 512, s, s);
   }

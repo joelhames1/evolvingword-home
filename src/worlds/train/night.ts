@@ -62,7 +62,7 @@ const SPILL = /* glsl */ `
     vec3 d = world - uSpark.xyz;
     d.z = abs(world.z) - uSpark.z;
     d.x = d.x > 0.0 ? d.x * 1.6 : d.x * 0.35;
-    return vec3(1.0, 0.42, 0.12) * uSpark.w * exp(-dot(d, d) * 0.4);
+    return vec3(1.0, 0.42, 0.12) * uSpark.w * exp(-dot(d, d) * 0.24);
   }
   float spillAt(vec3 world, vec3 n) {
     float side = world.z;
@@ -138,7 +138,7 @@ const NIGHT = /* glsl */ `
       vec3 d = vec3(lx, ${STATION_LAMPS.y.toFixed(3)}, ${STATION_LAMPS.z.toFixed(3)}) - world;
       float dd = max(dot(d, d), 1e-3);
       float ndl = dot(n, d * inversesqrt(dd));
-      sum += there * clamp(ndl * 0.8 + 0.2, 0.0, 1.0) / (1.0 + dd * 0.28);
+      sum += there * clamp(ndl * 0.8 + 0.2, 0.0, 1.0) / (1.0 + dd * 0.42);
     }
     return albedo * uStationColor * sum * uStation.w;
   }
@@ -158,8 +158,9 @@ const NIGHT = /* glsl */ `
     float fog = 1.0 - exp(-d * uHazeDensity);
     float low = exp(-max(world.y - uMistLevel, 0.0) / 14.0);
     fog = max(fog, uMist * low * (1.0 - exp(-d / 700.0)));
-    // And the edge of the land, wherever it's seen, gone into the haze.
-    fog = max(fog, smoothstep(1300.0, 1500.0, d));
+    // And the edges of the land that's been built (behind, ahead and out to the sides), gone into the haze.
+    fog = max(fog, max(smoothstep(820.0, 1020.0, -world.x), smoothstep(1050.0, 1320.0, world.x)));
+    fog = max(fog, smoothstep(1330.0, 1400.0, abs(world.z)));
     return mix(col, moonHaze(toP / max(d, 1e-3)), clamp(fog, 0.0, 1.0));
   }
 `;

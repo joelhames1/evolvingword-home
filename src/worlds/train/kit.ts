@@ -227,14 +227,21 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     }
     return true;
   };
-  /** Room to stand beside the line from here until the train has stopped: no tunnel and no sheds along the way. */
+  /**
+   * Room to stand beside the line, where the sparks shot is, from here until the train has stopped:
+   * no tunnel, sheds or crossing along the way, and the ground (a cutting's side, a hill) well below.
+   */
   const roomOutside = (s: number, v: number) => {
     const a = s - 40;
     const b = s + (v * v) / (2 * 1.4) + 60;
     for (const l of journey.legs) {
       const L = LAYOUT[l.land];
-      for (const [x0, x1] of [...(L.sheds ?? []), ...(L.tunnel ? [L.tunnel] : [])]) if (l.start + x1 + 20 > a && l.start + x0 - 20 < b) return false;
+      for (const [x0, x1] of [...(L.sheds ?? []), ...(L.tunnel ? [L.tunnel] : []), ...(L.crossing !== undefined ? [[L.crossing, L.crossing] as [number, number]] : [])])
+        if (l.start + x1 + 25 > a && l.start + x0 - 25 < b) return false;
     }
+    const at = SHOTS.sparks?.pos;
+    if (!at) return false;
+    for (let u = a; u <= b; u += 4) for (const dz of [-1.2, 0, 1.2]) if (land.ground(u + at.x, at.z + dz) > at.y - 0.6) return false;
     return true;
   };
   const toggleWindow = () => {
@@ -625,7 +632,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         const step = STATION_LAMPS.step;
         const first = Math.ceil((stop - 104 + 6 - w) / step) * step + w;
         const last = Math.floor((stop + 54 - 4 - 1e-3 - w) / step) * step + w;
-        stationLamps.set(w - s, first - s, last - s, l.land === 'city' ? 0.75 : 0.65);
+        stationLamps.set(w - s, first - s, last - s, l.land === 'city' ? 0.85 : 0.75);
         (uniforms.uStationColor.value as THREE.Color).copy(l.land === 'city' ? LAMP_WHITE : LAMP_WARM);
       }
 

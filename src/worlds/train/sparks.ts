@@ -70,7 +70,7 @@ export function buildSparks(opts: { count: number; reduced: boolean }): Sparks {
         if (aHeat <= 0.0) { gl_Position = off; return; }
         // The streak runs back from where it is along the way it came, as a long exposure would catch it.
         float speed = length(aVel);
-        vec3 back = speed > 1e-4 ? aVel * (min(speed * uLen, 0.8) / speed) : vec3(0.0);
+        vec3 back = speed > 1e-4 ? aVel * (min(speed * uLen, 1.0) / speed) : vec3(0.0);
         vec4 h = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         vec4 t = projectionMatrix * modelViewMatrix * vec4(position - back, 1.0);
         if (h.w < 0.05 || t.w < 0.05) { gl_Position = off; return; }
@@ -95,10 +95,10 @@ export function buildSparks(opts: { count: number; reduced: boolean }): Sparks {
         float along = clamp(vC.x, 0.0, 1.0);
         float k = across * across * (0.08 + 0.92 * along * along);
         vec3 hot = mix(vec3(1.0, 0.24, 0.03), vec3(1.0, 0.72, 0.36), clamp(vHeat * along * 1.15, 0.0, 1.0));
-        gl_FragColor = vec4(hot * k * (0.5 + 2.8 * vHeat), 1.0);
+        gl_FragColor = vec4(hot * k * (0.7 + 3.4 * vHeat), 1.0);
       }
     `,
-    uniforms: { uRes: { value: new THREE.Vector2(1, 1) }, uLen: { value: 0.03 }, uWidth: { value: 1.6 } },
+    uniforms: { uRes: { value: new THREE.Vector2(1, 1) }, uLen: { value: 0.042 }, uWidth: { value: 1.6 } },
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
@@ -230,8 +230,8 @@ export function buildSparks(opts: { count: number; reduced: boolean }): Sparks {
       p[k + 1] = RAIL_HEAD + 0.01;
       p[k + 2] = side * (RAIL_Z + 0.02 + rand() * 0.06);
       u[k] = -(0.35 + rand() * 0.55) * v - 0.5;
-      u[k + 1] = -0.4 + rand() * 1.8;
-      u[k + 2] = side * (0.3 + rand() * 1.8);
+      u[k + 1] = -0.4 + rand() * 2.0;
+      u[k + 2] = side * (0.6 + rand() * 2.6);
       life[i] = 0.08 + rand() * 0.22;
     } else if (r < 0.9) {
       // Off the shoe at the back of the wheel: down with the tread.
@@ -250,7 +250,7 @@ export function buildSparks(opts: { count: number; reduced: boolean }): Sparks {
       u[k] = -(0.3 + rand() * 0.4) * v;
       u[k + 1] = 0.8 + rand() * 1.6;
       u[k + 2] = side * (3 + rand() * 4);
-      life[i] = 0.3 + rand() * 0.3;
+      life[i] = 0.35 + rand() * 0.35;
     }
     hot[i] = 1;
   };
@@ -329,7 +329,7 @@ export function buildSparks(opts: { count: number; reduced: boolean }): Sparks {
       }
       streaks.visible = alive > 0;
       const size = renderer.getDrawingBufferSize(streakMat.uniforms.uRes.value as THREE.Vector2);
-      streakMat.uniforms.uWidth.value = Math.max(1.5, size.y / 400);
+      streakMat.uniforms.uWidth.value = Math.max(1.6, size.y / 330);
 
       // The smoke.
       let puffs = 0;
