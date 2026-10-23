@@ -1,8 +1,10 @@
 // Outside the glass: a walled garden at golden hour. A striped lawn running out
 // from a gravel walk, borders along the front of the house, clipped yew,
 // fruit trees and the tall trees beyond the wall, all going gold in the low sun,
-// and across the lawn a grass bank where the bedding spells out the word. The
-// sky is warm at the horizon and the sun sits low over the garden's far corner.
+// and across the lawn a grass bank where the bedding spells out the word, a
+// balustrade along its top. Everything throws a long shadow across the grass
+// (worked out once, into a map of the ground). The sky is warm at the horizon
+// and the sun sits low over the garden's far corner.
 // Everything out here lights itself (see outdoor.ts), so the lamps in the house
 // don't shine through the glass onto the lawn.
 import * as THREE from 'three';
@@ -19,6 +21,77 @@ export const BANK = { center: v(0, 2.3, -12.6), tilt: (50 * Math.PI) / 180, widt
 /** Where the bank's face meets the lawn, and its top edge. */
 export const bankFoot = () => BANK.center.z + BANK.center.y / Math.tan(BANK.tilt);
 export const bankTop = () => BANK.center.z - (BANK.top - BANK.center.y) / Math.tan(BANK.tilt);
+
+/** Below this height the bank's face eases out into the lawn; above this it rolls over onto the top. Between, a true plane: the bedding lies there. */
+const TOE = 0.45;
+const CREST = 2.85;
+/** Where the bank falls away at either end, and where the ground behind it comes down again, far off. */
+const ENDS: [number, number] = [10.4, 13.6];
+const BEHIND: [number, number] = [36, 46];
+
+/**
+ * The height of the ground at (x, z): the lawn at 0, and the bank across it,
+ * its face the plane at BANK.tilt through BANK.center, with a soft toe where
+ * it meets the lawn (a mown edge) and a soft crest where it rolls over onto
+ * the level ground behind, whose trees stand at BANK.top. At either end it
+ * comes down to the lawn in a long curve rather than stopping in a wall.
+ */
+export function ground(x: number, z: number) {
+  const top = BANK.top;
+  const lin = (bankFoot() - z) * Math.tan(BANK.tilt);
+  let h: number;
+  if (lin < TOE) h = TOE * Math.exp((lin - TOE) / TOE);
+  else if (lin > CREST) h = CREST + (top - CREST) * (1 - Math.exp(-(lin - CREST) / (top - CREST)));
+  else h = lin;
+  const ends = 1 - THREE.MathUtils.smoothstep(Math.abs(x), ENDS[0], ENDS[1]);
+  const back = 1 - THREE.MathUtils.smoothstep(-z, BEHIND[0], BEHIND[1]);
+  return h * ends * back;
+}
+
+/** How far the ground stands below its true height where it's all but level: a lawn plane lies there, a hair above. */
+const sink = (h: number) => h - 0.06 * (1 - THREE.MathUtils.smoothstep(h, 0, 0.06));
+
+/**
+ * The bank and the level ground behind it, as one sheet over the lawn: rows
+ * close together over the toe, the face and the crest, and far apart behind,
+ * where it's all flat. Normals from the ground's own slope. Where the ground
+ * is level the sheet dips just under the lawn's plane, so the two never fight.
+ */
+export function bankGeometry(high: boolean) {
+  const nx = high ? 124 : 62;
+  const x0 = -ENDS[1] - 1.6;
+  const x1 = ENDS[1] + 1.6;
+  const front = bankFoot() + 2.8;
+  const crestBack = bankTop() - 2.6;
+  const zs: number[] = [];
+  const nFace = high ? 64 : 30;
+  for (let i = 0; i <= nFace; i++) zs.push(front + ((crestBack - front) * i) / nFace);
+  for (let i = 1; i <= 10; i++) zs.push(crestBack + (-BEHIND[1] - 1 - crestBack) * Math.pow(i / 10, 1.4));
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  const e = 0.05;
+  const n = new THREE.Vector3();
+  for (const z of zs)
+    for (let i = 0; i <= nx; i++) {
+      const x = x0 + ((x1 - x0) * i) / nx;
+      pos.push(x, sink(ground(x, z)), z);
+      n.set(-(ground(x + e, z) - ground(x - e, z)) / (2 * e), 1, -(ground(x, z + e) - ground(x, z - e)) / (2 * e)).normalize();
+      nrm.push(n.x, n.y, n.z);
+    }
+  const index: number[] = [];
+  for (let r = 0; r + 1 < zs.length; r++)
+    for (let i = 0; i < nx; i++) {
+      const a = r * (nx + 1) + i;
+      const b = a + nx + 1;
+      // (Rows run away from the house, so this winding faces up.)
+      index.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  geo.setIndex(index);
+  return geo;
+}
 
 export interface Grounds {
   group: THREE.Group;
@@ -106,41 +179,153 @@ const LAWN_VERT = /* glsl */ `
     gl_Position = projectionMatrix * viewMatrix * w;
   }
 `;
-// The lawn: mown in stripes near the house, rougher and more golden further off,
-// a gravel walk along the front of the glass and round to the door.
+// The lawn and the bank: one shader for both, and for the gravel walk and the
+// border along the front of the house. Mown in stripes that lighten and darken
+// with the way you look along them, turned in a headland by the bank and by the
+// border; broad greens, drifts of darker clover and daisies in the grass; the
+// bank cut longer, with a crisp mown edge at its foot; the walk raked gravel
+// with stone edging. The long shadows of the trees, the hedges, the yews and the
+// balustrade are painted once into a map of the ground (see shadeMap), and
+// looking toward the low sun the grass shines, dew catching here and there.
+// Detail that would come out smaller than a pixel fades away rather than shimmer.
 const LAWN_FRAG = /* glsl */ `
   ${DAYLIGHT}
   uniform vec4 uWalk;
+  uniform vec4 uBeds;
+  uniform sampler2D uShade;
+  uniform vec4 uShadeBox;
   varying vec3 vWorld;
   varying vec3 vNrm;
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
   float noise(vec2 p) {
     vec2 i = floor(p);
     vec2 f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
     return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
   }
+  /** A soft-edged square wave: +1 in one half of each period, -1 in the other, the edges w wide. */
+  float bands(float x, float period, float w) {
+    float tri = abs(fract(x / period) - 0.5) * 4.0 - 1.0;
+    return clamp(tri * period / max(w * 4.0, 1e-4), -1.0, 1.0);
+  }
+  /** Between lo and hi, edges a soft aa wide. */
+  float within(float x, float lo, float hi, float aa) { return smoothstep(lo - aa, lo + aa, x) * (1.0 - smoothstep(hi - aa, hi + aa, x)); }
+  /** Little round things scattered in cells: 1 inside one, 0 outside, the edge a pixel soft. */
+  float dots(vec2 p, float cell, float chance, float r, float aa, float seed) {
+    vec2 c = floor(p / cell);
+    vec2 at = (c + 0.2 + 0.6 * vec2(hash(c + seed), hash(c + seed + 7.1))) * cell;
+    float there = step(hash(c + seed + 3.3), chance);
+    return there * (1.0 - smoothstep(r - aa, r + aa, length(p - at)));
+  }
   void main() {
     vec2 p = vWorld.xz;
+    vec3 toEye = cameraPosition - vWorld;
+    float dist = length(toEye);
+    vec3 v = toEye / max(dist, 1e-3);
+    float nl = length(vNrm);
+    vec3 n = nl > 1e-5 ? vNrm / nl : vec3(0.0, 1.0, 0.0);
+    // Meters to a pixel here, and how much fine pattern can show without shimmering.
+    float px = max(length(fwidth(p)), 1e-5);
+    float aa = max(0.004, px * 0.75);
+    float fine = 1.0 - smoothstep(0.006, 0.03, px);
+    float mid = 1.0 - smoothstep(0.02, 0.09, px);
     float far = smoothstep(18.0, 60.0, length(p));
-    float n = noise(p * 1.7) * 0.5 + noise(p * 7.0) * 0.3 + noise(p * 0.3) * 0.4;
-    // Mown stripes, a couple of meters wide, running out from the house.
-    float stripe = step(0.5, fract(p.x / 2.4)) * (1.0 - far);
-    vec3 grass = mix(vec3(0.12, 0.24, 0.05), vec3(0.2, 0.32, 0.07), n);
-    grass *= 0.9 + stripe * 0.16;
-    grass = mix(grass, vec3(0.33, 0.3, 0.12), far * 0.6);
-    // The walk: gravel along the front, and round the end to the door.
-    float walk = step(uWalk.x, p.y) * step(p.y, uWalk.y) * step(abs(p.x), uWalk.z);
-    walk = max(walk, step(uWalk.w, p.x) * step(p.x, uWalk.w + 1.3) * step(uWalk.x, p.y) * step(p.y, 1.6));
-    // Gravel: buff, with a pebble's worth of light and dark in it.
-    float pebble = noise(p * 55.0) * 0.6 + noise(p * 13.0) * 0.4;
-    vec3 gravel = mix(vec3(0.3, 0.26, 0.2), vec3(0.46, 0.4, 0.31), pebble);
-    vec3 albedo = mix(grass, gravel, walk);
-    vec3 col = daylight(albedo, normalize(vNrm), vWorld);
-    // Looking toward the low sun, the grass glows gold: light through the blades and off their edges.
-    vec3 look = vWorld - cameraPosition;
-    float toward = pow(max(dot(look / max(length(look), 1e-3), uSunDir), 0.0), 3.0);
-    col += uSunColor * albedo * vec3(1.0, 0.9, 0.5) * toward * (1.0 - walk) * (0.35 + 0.3 * n);
+    // Height over the lawn (the lawn's plane sits a few centimeters under the house's floor).
+    float y = vWorld.y + 0.04;
+
+    // --- the grass ---
+    float broad = noise(p * 0.19) * 0.6 + noise(p * 0.71 + 3.0) * 0.4;
+    float blades = noise(p * 9.0) * 0.55 + noise(p * 31.0) * 0.45;
+    vec3 grass = mix(vec3(0.095, 0.2, 0.04), vec3(0.2, 0.32, 0.075), smoothstep(0.15, 0.85, broad));
+    float clover = smoothstep(0.6, 0.78, noise(p * 1.1 + 4.0)) * (0.55 + 0.45 * noise(p * 5.0));
+    grass = mix(grass, vec3(0.075, 0.19, 0.075), clover * 0.6);
+    grass *= mix(1.0, 0.8 + 0.4 * blades, mix(0.3, 1.0, fine));
+    // The bank is cut longer: a little yellower and rougher, no stripes, and a crisp edge at its foot
+    // where the mower stopped, a shadowed line along it.
+    float ay = max(fwidth(y), 1e-4);
+    float bank = smoothstep(0.14 - ay, 0.14 + ay, y);
+    grass = mix(grass, grass * vec3(1.08, 1.04, 0.86) * (0.9 + 0.2 * noise(p * 3.0 + 9.0)), bank);
+    grass *= 1.0 - 0.3 * within(y, 0.115, 0.14, ay) * mid;
+    // Mown stripes between the border and the bank, a mower's width each, the grass laid one way
+    // then the other (lighter looking along the lay); turned at either end in a headland.
+    vec2 look = normalize(p - cameraPosition.xz + 1e-4);
+    float stripes = within(abs(p.x), -1.0, 13.4, aa) * within(p.y, uBeds.y + 0.25, uBeds.x - 0.04, aa) * (1.0 - bank) * (1.0 - far);
+    float head = max(within(p.y, uBeds.x - 1.25, uBeds.x, aa), within(p.y, uBeds.y, uBeds.y + 2.4, aa));
+    float lay = mix(bands(p.x, 2.4, aa) * look.y, bands(p.y, 2.4, aa) * look.x, head);
+    grass *= 1.0 + 0.2 * lay * stripes;
+    grass = mix(grass, vec3(0.3, 0.29, 0.12), far * 0.55);
+    vec3 albedo = grass;
+    #if LAWN_DETAIL
+      // Daisies (more on the bank, and among the clover), half shut at this hour: white, a gold eye.
+      if (mid > 0.0) {
+        // (A daisy smaller than a pixel fades out rather than showing as a white speck.)
+        float chance = mix(0.018, 0.07, bank) * (0.4 + clover);
+        float seen = mid * clamp(0.011 / px, 0.0, 1.0);
+        seen *= seen;
+        float daisy = dots(p, 0.17, chance, 0.011, aa, 1.7) * seen;
+        float eye = dots(p, 0.17, chance, 0.004, aa, 1.7) * seen;
+        albedo = mix(albedo, vec3(0.86, 0.84, 0.78), daisy);
+        albedo = mix(albedo, vec3(0.85, 0.62, 0.12), eye);
+      }
+    #endif
+
+    // --- the walk along the house, round the end to the door, and out through the border ---
+    float onGrass = 1.0;
+    if (p.y > uBeds.x - 0.3 && p.y < 1.8 && abs(p.x) < 12.0) {
+      float gapPath = within(abs(p.x), -1.0, uBeds.z, aa) * within(p.y, uBeds.x, uWalk.x, aa);
+      float walk = max(within(p.y, uWalk.x, uWalk.y + 0.2, aa) * within(abs(p.x), -1.0, uWalk.z, aa), within(p.x, uWalk.w, uWalk.w + 1.3, aa) * within(p.y, uWalk.x, 1.6, aa));
+      walk = max(walk, gapPath);
+      // The border between the walk and the lawn: dark earth under the plants, its lawn edge cut clean.
+      float border = within(p.y, uBeds.x, uWalk.x, aa) * within(abs(p.x), -1.0, uWalk.z - 0.2, aa) * (1.0 - gapPath);
+      // Raked gravel: buff, pebbles you can see close to, the rake's lines along the walk.
+      vec2 g = p * 34.0;
+      float pebble = noise(g) * 0.55 + noise(g * 2.3 + 5.0) * 0.45;
+      #if LAWN_DETAIL
+        vec2 cell = floor(g);
+        vec2 f = fract(g) - 0.5 + 0.15 * (vec2(hash(cell + 2.0), hash(cell + 5.0)) - 0.5);
+        float stone = 0.5 * hash(cell) + 0.5 * (1.0 - smoothstep(0.2, 0.5, length(f)));
+        pebble = mix(pebble, stone, fine * 0.8);
+      #endif
+      float rake = 0.5 + 0.5 * sin(p.y * 70.0 + noise(p * 3.0) * 4.0);
+      vec3 gravel = mix(vec3(0.3, 0.26, 0.2), vec3(0.5, 0.44, 0.34), pebble) * (0.94 + 0.06 * rake * mid);
+      vec3 earth = mix(vec3(0.1, 0.07, 0.05), vec3(0.17, 0.12, 0.08), noise(p * 14.0));
+      // Stone edging between the gravel and the border (and along the path through it), a dark joint beside it.
+      float inBorder = within(p.y, uBeds.x, uWalk.x + 0.06, aa);
+      float dz = min(abs(p.y - uWalk.x), mix(1e3, abs(abs(p.x) - uBeds.z), inBorder));
+      float kerb = (1.0 - smoothstep(0.05 - aa, 0.05 + aa, dz)) * within(abs(p.x), -1.0, uWalk.z, aa);
+      float dj = abs(fract(p.x / 0.6 + 0.5) - 0.5) * 0.6;
+      float joint = (1.0 - smoothstep(0.003, 0.003 + aa, dj)) * mid;
+      vec3 stoneCol = vec3(0.63, 0.58, 0.48) * (0.9 + 0.1 * noise(p * 20.0)) * (1.0 - 0.4 * joint);
+      float lip = within(dz, 0.05, 0.068, aa) * within(abs(p.x), -1.0, uWalk.z, aa);
+      // The border's lawn edge: cut clean, a little shadowed where the turf stands above the earth.
+      float cut = within(p.y, uBeds.x - 0.035, uBeds.x, aa) * within(abs(p.x), -1.0, uWalk.z - 0.2, aa) * (1.0 - gapPath);
+      albedo = mix(albedo, earth, border);
+      albedo = mix(albedo, gravel, walk);
+      albedo = mix(albedo, stoneCol, kerb);
+      albedo *= 1.0 - 0.45 * lip * mid - 0.35 * cut * mid;
+      onGrass = (1.0 - walk) * (1.0 - border) * (1.0 - kerb);
+    }
+
+    // --- the light ---
+    // The long shadows, looked up where the sun's ray through this point meets the level ground.
+    vec2 base = p - uSunDir.xz * (max(vWorld.y, 0.0) / max(uSunDir.y, 0.05));
+    vec2 suv = (base - uShadeBox.xy) * uShadeBox.zw;
+    float inMap = step(0.0, suv.x) * step(suv.x, 1.0) * step(0.0, suv.y) * step(suv.y, 1.0);
+    vec2 sh2 = texture2D(uShade, clamp(suv, 0.0, 1.0)).rg;
+    float shade = mix(sh2.r, sh2.g, smoothstep(1.2, 2.6, vWorld.y)) * inMap;
+    float lit = 1.0 - shade * 0.88;
+    vec3 amb = mix(uGround, uSky, n.y * 0.5 + 0.5);
+    vec3 col = albedo * (amb + uSunColor * max(dot(n, uSunDir), 0.0) * lit);
+    // Looking toward the low sun the grass glows gold, light through the blades and off their edges,
+    // with a broad sheen off the lawn; and close by, dew catches it here and there.
+    float toward = pow(max(dot(-v, uSunDir), 0.0), 3.0);
+    col += uSunColor * albedo * vec3(1.0, 0.9, 0.5) * toward * onGrass * (0.35 + 0.3 * blades) * lit;
+    vec3 refl = reflect(-v, n);
+    col += uSunColor * vec3(0.9, 0.75, 0.45) * pow(max(dot(refl, uSunDir), 0.0), 12.0) * 0.06 * onGrass * lit;
+    #if LAWN_DETAIL
+      float dew = smoothstep(0.9, 0.97, noise(p * 47.0 + 11.0)) * fine * onGrass;
+      col += uSunColor * vec3(1.0, 0.95, 0.8) * dew * toward * toward * 1.4 * lit;
+    #endif
     gl_FragColor = vec4(fade(col, vWorld), 1.0);
   }
 `;
@@ -167,6 +352,116 @@ function clump(r: number, seed: number, detail = 2) {
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * A clipped yew cone two meters tall, its foot on the ground: tucked in at the
+ * bottom, its flanks a little full, its tip rounded, and its whole surface
+ * just uneven from the shears, leaning a touch, each its own (by seed).
+ * Shaded darker toward its foot (vertex colors).
+ */
+export function yewGeometry(seed: number, high: boolean) {
+  const H = 2.0;
+  const R = 0.58;
+  const steps = high ? 18 : 10;
+  const profile: THREE.Vector2[] = [new THREE.Vector2(0, 0)];
+  for (let k = 0; k <= steps; k++) {
+    const t = k / steps;
+    const r = R * Math.pow(1 - t, 0.78) * (0.82 + 0.18 * THREE.MathUtils.smoothstep(t, 0, 0.07));
+    profile.push(new THREE.Vector2(Math.max(r, 1e-3), H * t));
+  }
+  profile.push(new THREE.Vector2(0, H));
+  // Turned by hand, so the seam round the back shares its vertices (smooth all the way round).
+  const seg = high ? 28 : 16;
+  const lean = Math.sin(seed) * 0.04;
+  const pos: number[] = [];
+  const col: number[] = [];
+  for (const pr of profile)
+    for (let j = 0; j < seg; j++) {
+      const th = (j / seg) * Math.PI * 2;
+      const k = 1 + 0.035 * Math.sin(th * 5 + pr.y * 3 + seed) + 0.025 * Math.sin(th * 11 - pr.y * 7 + seed * 2) + 0.015 * Math.sin(th * 23 + pr.y * 13);
+      pos.push(Math.cos(th) * pr.x * k + lean * pr.y, pr.y, Math.sin(th) * pr.x * k);
+      const shade = 0.7 + 0.3 * THREE.MathUtils.smoothstep(pr.y, 0, 1.4);
+      col.push(shade, shade, shade);
+    }
+  const index: number[] = [];
+  for (let i = 0; i + 1 < profile.length; i++)
+    for (let j = 0; j < seg; j++) {
+      const a = i * seg + j;
+      const b = i * seg + ((j + 1) % seg);
+      index.push(a, a + seg, b, b, a + seg, b + seg);
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  return geo.toNonIndexed();
+}
+
+/**
+ * The stone balustrade along the top of the bank, its foot at height y on the
+ * line z: a moulded plinth and handrail, turned balusters (bellied, a waist,
+ * a collar), and at either end a pedestal with an urn on it. Weathered in its
+ * vertex colors: darker toward the foot where the damp gets in, a bloom of
+ * lichen here and there.
+ */
+export function balustradeGeometry(high: boolean, z: number, y: number) {
+  const half = BANK.width / 2;
+  const parts: THREE.BufferGeometry[] = [];
+  const P = (pts: number[][]) => pts.map(([a, b]) => new THREE.Vector2(a, b));
+  /** A moulding along the balustrade: its section (across, up) run the whole length. */
+  const moulding = (section: number[][], len: number, at: number) => {
+    const geo = new THREE.ExtrudeGeometry(new THREE.Shape(P(section)), { depth: len, bevelEnabled: false, steps: 1 });
+    geo.rotateY(Math.PI / 2);
+    geo.translate(-len / 2, y + at, z);
+    return geo;
+  };
+  parts.push(
+    moulding([[-0.15, 0], [0.15, 0], [0.15, 0.07], [0.12, 0.1], [-0.12, 0.1], [-0.15, 0.07]], half * 2, 0),
+    moulding([[-0.11, 0], [0.11, 0], [0.11, 0.025], [0.135, 0.045], [0.135, 0.075], [0.105, 0.105], [0.05, 0.12], [-0.05, 0.12], [-0.105, 0.105], [-0.135, 0.075], [-0.135, 0.045], [-0.11, 0.025]], half * 2, 0.65),
+  );
+  // The balusters: one turned, and copied all along (quicker than turning each).
+  const one = plain(new THREE.LatheGeometry(P([[0, 0], [0.065, 0], [0.065, 0.045], [0.045, 0.06], [0.04, 0.08], [0.055, 0.13], [0.068, 0.2], [0.062, 0.26], [0.044, 0.32], [0.032, 0.37], [0.036, 0.4], [0.05, 0.43], [0.05, 0.47], [0.062, 0.5], [0.062, 0.55], [0, 0.55]]), high ? 10 : 6));
+  const xs: number[] = [];
+  for (let x = -half + 0.3; x <= half - 0.3 + 1e-6; x += 0.24) xs.push(x);
+  const n1 = one.attributes.position.count;
+  const pos = new Float32Array(n1 * 3 * xs.length);
+  const nrm = new Float32Array(n1 * 3 * xs.length);
+  const src = one.attributes.position.array as Float32Array;
+  const srcN = one.attributes.normal.array as Float32Array;
+  xs.forEach((x, k) => {
+    for (let i = 0; i < n1; i++) {
+      const o = (k * n1 + i) * 3;
+      pos[o] = src[i * 3] + x;
+      pos[o + 1] = src[i * 3 + 1] + y + 0.1;
+      pos[o + 2] = src[i * 3 + 2] + z;
+    }
+    nrm.set(srcN, k * n1 * 3);
+  });
+  const row = new THREE.BufferGeometry();
+  row.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  row.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  parts.push(row);
+  const urn = P([[0, 0], [0.15, 0], [0.15, 0.04], [0.1, 0.06], [0.065, 0.1], [0.07, 0.14], [0.17, 0.2], [0.25, 0.3], [0.27, 0.38], [0.29, 0.4], [0.28, 0.43], [0.22, 0.44], [0.18, 0.47], [0.1, 0.52], [0.04, 0.55], [0.05, 0.6], [0, 0.63]]);
+  for (const x of [-half, half]) {
+    parts.push(new THREE.BoxGeometry(0.4, 0.1, 0.4).translate(x, y + 0.05, z), new THREE.BoxGeometry(0.34, 0.74, 0.34).translate(x, y + 0.47, z), new THREE.BoxGeometry(0.42, 0.07, 0.42).translate(x, y + 0.875, z));
+    parts.push(new THREE.LatheGeometry(urn, high ? 22 : 12).translate(x, y + 0.91, z));
+  }
+  const geo = mergeGeometries(parts.map((g) => plain(g)));
+  // (A lathe leaves its end normals unscaled.)
+  geo.normalizeNormals();
+  const p = geo.attributes.position;
+  const c = geo.attributes.color;
+  for (let i = 0; i < p.count; i++) {
+    const px = p.getX(i);
+    const py = p.getY(i) - y;
+    const pz = p.getZ(i);
+    const damp = 0.78 + 0.22 * THREE.MathUtils.smoothstep(py, -0.05, 0.8);
+    const lichen = THREE.MathUtils.smoothstep(Math.sin(px * 3.1 + py * 5.0) * Math.sin(px * 1.7 - py * 2.3 + pz * 4.0), 0.45, 0.85);
+    c.setXYZ(i, damp * (1 - lichen * 0.08), damp * (1 - lichen * 0.04), damp * (1 - lichen * 0.3));
+  }
   return geo;
 }
 
@@ -204,6 +499,226 @@ const tinted = (g: THREE.BufferGeometry, c: THREE.Color) => {
   return g;
 };
 
+/** The level ground the shadow map covers (x and z, meters): the lawn and the ground behind the bank, and as far as the low sun throws a shadow from them. */
+export const SHADE = { x0: -34, x1: 42, z0: -50, z1: 6 };
+
+/** Something that throws a shadow: a ball of leaves, a pole (a trunk), or a solid (any convex shape, by its corners). `top` for what stands on the level ground behind the bank. */
+export interface Casters {
+  balls: { at: THREE.Vector3; r: number; a: number; top?: boolean }[];
+  poles: { from: THREE.Vector3; to: THREE.Vector3; r: number; top?: boolean }[];
+  solids: { corners: THREE.Vector3[]; a: number }[];
+  /** The balustrade along the top of the bank: where it stands, and how far it runs either way. */
+  rail: { z: number; y: number; half: number };
+}
+
+/** Where a point's shadow falls on the level ground, along the sun's ray (x, z). */
+const castOnGround = (p: THREE.Vector3): [number, number] => [p.x - (SUN.x * p.y) / SUN.y, p.z - (SUN.z * p.y) / SUN.y];
+
+/** Convex hull of points in the plane (monotone chain), counterclockwise. */
+function hull(pts: [number, number][]) {
+  const s = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [];
+  for (const p of s) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper: [number, number][] = [];
+  for (let i = s.length - 1; i >= 0; i--) {
+    const p = s[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
+/**
+ * The garden's long shadows, painted once onto a map of the level ground: in
+ * the first channel what falls on the lawn (the bank's own, the balustrade's
+ * with a stripe for every baluster, the hedges', the yews', the fruit trees'
+ * dappled through their leaves), in the second what falls on the ground behind
+ * the bank (its trees'). A point higher up looks itself up where the sun's ray
+ * through it meets the ground (see the lawn's shader). Drawn straight into the
+ * numbers (no canvas: quick, and the same everywhere), each shape's edge a
+ * pixel soft, then softened once more; the bank's own shadow worked out ray by
+ * ray against its shape. Returns the two channels, each 0 (sunlit) to 1.
+ */
+export function shadePixels(high: boolean, casters: Casters) {
+  const W = high ? 768 : 384;
+  const H = high ? 576 : 288;
+  const { x0, x1, z0, z1 } = SHADE;
+  const sx = W / (x1 - x0);
+  const sy = H / (z1 - z0);
+  const cell = 1 / Math.min(sx, sy);
+  const layers = [new Float32Array(W * H), new Float32Array(W * H)];
+  // The sun's way across the ground, and square to it.
+  const dx = -SUN.x / Math.hypot(SUN.x, SUN.z);
+  const dz = -SUN.z / Math.hypot(SUN.x, SUN.z);
+  /** Darkens the pixels in a box by what `cover` says for each one's middle (0..1), at `alpha`. */
+  const paint = (layer: Float32Array, minX: number, maxX: number, minZ: number, maxZ: number, alpha: number, cover: (x: number, z: number) => number) => {
+    const i0 = Math.max(0, Math.floor((minX - x0) * sx));
+    const i1 = Math.min(W - 1, Math.ceil((maxX - x0) * sx));
+    const j0 = Math.max(0, Math.floor((minZ - z0) * sy));
+    const j1 = Math.min(H - 1, Math.ceil((maxZ - z0) * sy));
+    for (let j = j0; j <= j1; j++) {
+      const z = z0 + (j + 0.5) / sy;
+      for (let i = i0; i <= i1; i++) {
+        const c = cover(x0 + (i + 0.5) / sx, z);
+        if (c <= 0) continue;
+        const k = j * W + i;
+        layer[k] = 1 - (1 - layer[k]) * (1 - alpha * Math.min(1, c));
+      }
+    }
+  };
+  for (const b of casters.balls) {
+    const [cx, cz] = castOnGround(b.at);
+    const A = b.r / SUN.y;
+    const B = b.r;
+    // (The ellipse's own box, turned with it; nothing at all if it's off the map.)
+    const hx = Math.hypot(A * dx, B * dz);
+    const hz = Math.hypot(A * dz, B * dx);
+    if (cx + hx < x0 || cx - hx > x1 || cz + hz < z0 || cz - hz > z1) continue;
+    // (Written out rather than through paint(): there are hundreds of these.)
+    const layer = layers[b.top ? 1 : 0];
+    const i0 = Math.max(0, Math.floor((cx - hx - x0) * sx));
+    const i1 = Math.min(W - 1, Math.ceil((cx + hx - x0) * sx));
+    const j0 = Math.max(0, Math.floor((cz - hz - z0) * sy));
+    const j1 = Math.min(H - 1, Math.ceil((cz + hz - z0) * sy));
+    const edge = B / cell;
+    for (let j = j0; j <= j1; j++) {
+      const rz = z0 + (j + 0.5) / sy - cz;
+      for (let i = i0; i <= i1; i++) {
+        const rx = x0 + (i + 0.5) / sx - cx;
+        const u = (rx * dx + rz * dz) / A;
+        const w = (rz * dx - rx * dz) / B;
+        const q = u * u + w * w;
+        if (q >= 1.3) continue;
+        const c = Math.min(1, (1 - Math.sqrt(q)) * edge + 0.5);
+        if (c <= 0) continue;
+        const k = j * W + i;
+        layer[k] = 1 - (1 - layer[k]) * (1 - b.a * c);
+      }
+    }
+  }
+  for (const p of casters.poles) {
+    const [ax, az] = castOnGround(p.from);
+    const [bx, bz] = castOnGround(p.to);
+    const ex = bx - ax;
+    const ez = bz - az;
+    const len2 = Math.max(ex * ex + ez * ez, 1e-6);
+    paint(layers[p.top ? 1 : 0], Math.min(ax, bx) - p.r, Math.max(ax, bx) + p.r, Math.min(az, bz) - p.r, Math.max(az, bz) + p.r, 0.85, (x, z) => {
+      const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / len2));
+      return (p.r - Math.hypot(x - ax - ex * t, z - az - ez * t)) / cell + 0.5;
+    });
+  }
+  for (const solid of casters.solids) {
+    const pts = hull(solid.corners.map(castOnGround));
+    const edges = pts.map((p, i) => {
+      const q = pts[(i + 1) % pts.length];
+      const l = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+      // Inward normal (the hull runs counterclockwise).
+      return [p[0], p[1], -(q[1] - p[1]) / l, (q[0] - p[0]) / l];
+    });
+    const xs = pts.map((p) => p[0]);
+    const zs = pts.map((p) => p[1]);
+    paint(layers[0], Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs), solid.a, (x, z) => {
+      let d = Infinity;
+      for (const [px, pz, nx, nz] of edges) d = Math.min(d, (x - px) * nx + (z - pz) * nz);
+      return d / cell + 0.5;
+    });
+  }
+  // The bank's own shadow, and the balustrade's beyond it: for each point of the lawn in front of the
+  // bank, follow the ray toward the sun back over the bank and see whether the ground (or the rail, a
+  // baluster, a post) stands in its way. The bank's shape across, from a table; its ends, worked out.
+  const { rail } = casters;
+  const toSun = -SUN.z;
+  const rise = SUN.y / toSun;
+  const step = 0.08;
+  const zBack = bankTop() - 3.5;
+  const profile: number[] = [];
+  for (let zz = bankFoot() + 3.5; zz > zBack; zz -= step) profile.push(ground(0, zz));
+  const zFront = bankFoot() + 3.5;
+  const balusterR = (yy: number) => (yy < 0.18 ? 0.06 : yy < 0.3 ? 0.035 + (yy - 0.18) * 0.25 : yy < 0.45 ? 0.065 - (yy - 0.3) * 0.17 : 0.045);
+  const low = layers[0];
+  const j0 = Math.max(0, Math.floor((bankFoot() - 1.5 - z0) * sy));
+  const j1 = Math.min(H - 1, Math.ceil((bankFoot() + 3.2 - z0) * sy));
+  // (Two by two pixels: the edge is softened after anyway.)
+  for (let j = j0; j <= j1; j += 2) {
+    const z = z0 + (j + 1) / sy;
+    for (let i = 0; i < W; i += 2) {
+      const x = x0 + (i + 1) / sx;
+      let dark = 0;
+      for (let k = Math.max(0, Math.ceil((zFront - z) / step)); k < profile.length; k++) {
+        const zz = zFront - k * step;
+        const ray = (z - zz) * rise;
+        if (ray > BANK.top + 0.05) break;
+        const h = profile[k];
+        if (h <= ray) continue;
+        const ends = 1 - THREE.MathUtils.smoothstep(Math.abs(x + (SUN.x * (z - zz)) / toSun), ENDS[0], ENDS[1]);
+        if (h * ends > ray) {
+          dark = 1;
+          break;
+        }
+      }
+      if (!dark && z > rail.z) {
+        // Where the ray crosses the balustrade's line, and how high it is there.
+        const bx = x + (SUN.x * (z - rail.z)) / toSun;
+        const yy = (z - rail.z) * rise - rail.y;
+        const ax = Math.abs(bx);
+        if (ax < rail.half + 0.3 && yy > 0 && yy < 1.55) {
+          const post = ax > rail.half - 0.17;
+          if (post && (yy < 0.91 || (yy < 1.54 && ax > rail.half - 0.26 && ax < rail.half + 0.26))) dark = 1;
+          else if (ax <= rail.half && (yy < 0.1 || (yy > 0.65 && yy < 0.77))) dark = 1;
+          else if (ax <= rail.half && yy < 0.65) {
+            const kk = (bx + rail.half - 0.3) / 0.24;
+            if (Math.abs(kk - Math.round(kk)) * 0.24 < balusterR(yy - 0.1)) dark = 1;
+          }
+        }
+      }
+      if (!dark) continue;
+      low[j * W + i] = 1;
+      if (i + 1 < W) low[j * W + i + 1] = 1;
+      if (j + 1 < H) {
+        low[(j + 1) * W + i] = 1;
+        if (i + 1 < W) low[(j + 1) * W + i + 1] = 1;
+      }
+    }
+  }
+  // The lawn's softened once: a penumbra, and the leaves' dapple run together a little (the ground
+  // behind the bank is only ever seen from far off, where the texture's own filtering does it).
+  for (const layer of [low]) {
+    const tmp = new Float32Array(W * H);
+    for (let j = 0; j < H; j++)
+      for (let i = 0; i < W; i++) {
+        const k = j * W + i;
+        tmp[k] = (layer[k] * 2 + layer[i > 0 ? k - 1 : k] + layer[i < W - 1 ? k + 1 : k]) * 0.25;
+      }
+    for (let j = 0; j < H; j++)
+      for (let i = 0; i < W; i++) {
+        const k = j * W + i;
+        layer[k] = (tmp[k] * 2 + tmp[j > 0 ? k - W : k] + tmp[j < H - 1 ? k + W : k]) * 0.25;
+      }
+  }
+  return { W, H, low: layers[0], top: layers[1] };
+}
+
+/** The shadow map as a texture for the lawn's shader: the lawn's shadows in red, the ground behind the bank's in green. */
+export function shadeMap(high: boolean, casters: Casters) {
+  const { W, H, low, top } = shadePixels(high, casters);
+  const data = new Uint8Array(W * H * 4);
+  for (let k = 0; k < W * H; k++) {
+    data[k * 4] = Math.round(low[k] * 255);
+    data[k * 4 + 1] = Math.round(top[k] * 255);
+  }
+  const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return { texture: tex };
+}
+
 export function buildGrounds(quality: 'high' | 'low'): Grounds {
   const group = new THREE.Group();
   const high = quality === 'high';
@@ -234,14 +749,29 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
   group.add(dome);
 
   // --- the lawn and the walk --------------------------------------------------------------------------
-  const lawn = new THREE.Mesh(
-    new THREE.PlaneGeometry(1400, 1400, 1, 1),
-    new THREE.ShaderMaterial({ vertexShader: LAWN_VERT, fragmentShader: LAWN_FRAG, uniforms: { ...daylight, uWalk: { value: new THREE.Vector4(HOUSE.kneeOut - 1.2, HOUSE.kneeOut + 0.02, 9.5, HOUSE.x0 - 1.6) } } }),
-  );
+  // (The shadow map is painted at the end, once everything that throws one is placed.)
+  const shadeTex = { value: null as THREE.Texture | null };
+  const shadeBox = { value: new THREE.Vector4(SHADE.x0, SHADE.z0, 1 / (SHADE.x1 - SHADE.x0), 1 / (SHADE.z1 - SHADE.z0)) };
+  const walkZ = HOUSE.kneeOut - 1.2;
+  const lawnMat = new THREE.ShaderMaterial({
+    vertexShader: LAWN_VERT,
+    fragmentShader: LAWN_FRAG,
+    uniforms: {
+      ...daylight,
+      uWalk: { value: new THREE.Vector4(walkZ, HOUSE.kneeOut + 0.02, 9.5, HOUSE.x0 - 1.6) },
+      // The border's lawn edge, the foot of the bank, and half the width of the path through the border.
+      uBeds: { value: new THREE.Vector4(walkZ - 1.15, bankFoot(), 0.55, 0) },
+      uShade: shadeTex,
+      uShadeBox: shadeBox,
+    },
+    defines: { LAWN_DETAIL: high ? 1 : 0 },
+  });
+  const lawn = new THREE.Mesh(new THREE.PlaneGeometry(1400, 1400, 1, 1), lawnMat);
   lawn.rotation.x = -Math.PI / 2;
   // Well under the house's floor: a depth buffer can't tell two surfaces a few millimeters apart.
   lawn.position.y = -0.04;
   group.add(lawn);
+  const casters: Casters = { balls: [], poles: [], solids: [], rail: { z: 0, y: 0, half: BANK.width / 2 } };
 
   // --- the garden wall, on from the house's back wall either way --------------------------------------
   const wallBrick = brick(23, { moss: true });
@@ -276,11 +806,17 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     for (let i = 0; i < hp.count; i++) hp.setXYZ(i, hp.getX(i) + Math.sin(hp.getZ(i) * 3.1) * 0.04, hp.getY(i) + (hp.getY(i) > 1.1 ? Math.sin(hp.getZ(i) * 1.7) * 0.05 : 0), hp.getZ(i));
     hedge.computeVertexNormals();
     put(solidLeaf, hedge, s * 14.5, 1.2, -13.5, '#24391c');
+    const corners: THREE.Vector3[] = [];
+    for (const cx of [-0.7, 0.7]) for (const cy of [0, 2.42]) for (const cz of [-10, 10]) corners.push(v(s * 14.5 + cx, cy, -13.5 + cz));
+    casters.solids.push({ corners, a: 0.95 });
   }
-  // Yew cones and balls along the walk.
+  // Yew cones and balls along the walk: clipped, but not by a machine.
   for (const x of [-8.6, -3.2, 3.2, 8.6]) {
-    put(solidLeaf, new THREE.ConeGeometry(0.55, 1.9, 18, 6), x, 0.95, -4.35, '#253d1d');
+    put(solidLeaf, yewGeometry(7 + x * 5, high), x, 0, -4.35, '#253d1d');
     put(solidLeaf, clump(0.36, 7 + x * 3, 3), x, 0.25, -4.35, '#253d1d');
+    const corners = [v(x, 2.0, -4.35)];
+    for (let k = 0; k < 10; k++) corners.push(v(x + Math.cos(k * 0.628) * 0.58, 0.3, -4.35 + Math.sin(k * 0.628) * 0.58));
+    casters.solids.push({ corners, a: 0.9 });
   }
   // Every tree's crown: a few dark masses of leaves at its heart, and round them sprays of leaves
   // (cards painted with a cluster of leaves), all lit as one crown: each knows the middle of its
@@ -288,32 +824,50 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
   type Blob = { at: THREE.Vector3; s: THREE.Vector3; color: THREE.Color; crown: THREE.Vector4 };
   const blobs: Blob[] = [];
   const sprays: { m: THREE.Matrix4; color: THREE.Color; crown: THREE.Vector4 }[] = [];
-  const crown = (x: number, y: number, z: number, rad: number, height: number, color: string, n: number) => {
+  const crown = (x: number, y: number, z: number, rad: number, height: number, color: string, n: number, top = false, R = r) => {
     const base = new THREE.Color(color);
     const middle = new THREE.Vector4(x, y, z, Math.max(rad, height * 0.5));
     // The masses that give the crown its shape (not a ball: lobed, a little lopsided).
-    const masses = Array.from({ length: 3 + Math.floor(r() * 3) }, () => {
-      const d = v(r() - 0.5, (r() - 0.4) * 0.9, r() - 0.5).normalize();
-      return { at: v(x + d.x * rad * 0.4, y + d.y * height * 0.28, z + d.z * rad * 0.4), s: rad * (0.42 + r() * 0.16) };
+    const masses = Array.from({ length: 3 + Math.floor(R() * 3) }, () => {
+      const d = v(R() - 0.5, (R() - 0.4) * 0.9, R() - 0.5).normalize();
+      return { at: v(x + d.x * rad * 0.4, y + d.y * height * 0.28, z + d.z * rad * 0.4), s: rad * (0.42 + R() * 0.16) };
     });
-    for (const m of masses) blobs.push({ at: m.at, s: v(m.s, m.s * height * 0.5 / rad * 0.85, m.s), color: base.clone().multiplyScalar(0.8), crown: middle });
+    for (const m of masses) {
+      blobs.push({ at: m.at, s: v(m.s, m.s * height * 0.5 / rad * 0.85, m.s), color: base.clone().multiplyScalar(0.8), crown: middle });
+      // Its shadow: dense at the heart of each mass, dappled by the sprays round it.
+      casters.balls.push({ at: m.at, r: m.s * 0.8, a: 0.5, top });
+    }
     // The sprays, mostly out at the surface of the masses, facing every which way.
     for (let i = 0; i < n; i++) {
       const m = masses[i % masses.length];
-      const d = v(r() - 0.5, r() - 0.45, r() - 0.5).normalize();
-      const k = 0.55 + Math.pow(r(), 0.5) * 0.6;
+      const d = v(R() - 0.5, R() - 0.45, R() - 0.5).normalize();
+      const k = 0.55 + Math.pow(R(), 0.5) * 0.6;
       const at = v(m.at.x + d.x * m.s * k, m.at.y + d.y * m.s * (height * 0.5 / rad) * k, m.at.z + d.z * m.s * k);
-      const size = rad * (0.42 + r() * 0.3);
-      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 6.28, r() * 6.28, r() * 6.28));
-      sprays.push({ m: new THREE.Matrix4().compose(at, q, v(size, size, size)), color: base.clone().offsetHSL((r() - 0.5) * 0.03, (r() - 0.5) * 0.1, (r() - 0.5) * 0.06), crown: middle });
+      const size = rad * (0.42 + R() * 0.3);
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(R() * 6.28, R() * 6.28, R() * 6.28));
+      sprays.push({ m: new THREE.Matrix4().compose(at, q, v(size, size, size)), color: base.clone().offsetHSL((R() - 0.5) * 0.03, (R() - 0.5) * 0.1, (R() - 0.5) * 0.06), crown: middle });
+      // (Every other spray is enough for the dapple in its shadow.)
+      if (i % 2 === 0) casters.balls.push({ at, r: size * 0.38, a: 0.42, top });
     }
   };
+  const trunkShade = (x: number, y: number, z: number, h: number, rad: number, top = false) => casters.poles.push({ from: v(x, y, z), to: v(x, y + h, z), r: rad, top });
   // Fruit trees on the lawn to the left, toward the sun.
   for (let i = 0; i < 5; i++) {
     const x = -17.5 + (i % 2) * 2.6 + r() * 0.6;
     const z = -5.5 - i * 2.8 + r();
     put(wood, trunk(1.6, 0.09), x, 0, z, '#4a3a2c');
+    trunkShade(x, 0, z, 1.7, 0.09);
     crown(x, 2.3, z, 1.25 + r() * 0.3, 1.8, ['#56732e', '#5e782c', '#4d6a2a'][i % 3], high ? 44 : 30);
+  }
+  // An old tree on the lawn itself, toward the sun: out of the way of the view across to the bank,
+  // but its long shadow reaches right across the stripes toward the house. (Its own dice, so the
+  // rest of the garden comes out as it always has.)
+  {
+    const R = rng(1911);
+    const [x, z] = [-11.8, -9.3];
+    put(wood, trunk(2.6, 0.2), x, 0, z, '#463628');
+    trunkShade(x, 0, z, 2.8, 0.2);
+    crown(x, 3.7, z, 2.3, 3.0, '#4e6c28', high ? 70 : 44, false, R);
   }
   // Tall trees beyond the wall behind the house (a copper beech among them), and far off beyond the bank across the lawn.
   for (let i = 0; i < 14; i++) {
@@ -327,8 +881,25 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     const x = -26 + i * 4.8 + r() * 2;
     const z = bankTop() - 9 - r() * 12;
     const h = 2.6 + r() * 2.5;
-    put(wood, trunk(h * 0.6, 0.18), x, BANK.top, z, '#3e3228');
-    crown(x, BANK.top + h * 0.85, z, 1.9 + r() * 1.3, 2.6 + r() * 1.2, ['#4a6a28', '#3e5c24', '#56722e', '#44622a'][i % 4], high ? 48 : 32);
+    // Standing on the ground behind the bank (or, past its ends, on the lawn).
+    const gy = ground(x, z);
+    put(wood, trunk(h * 0.6, 0.18), x, gy, z, '#3e3228');
+    trunkShade(x, gy, z, h * 0.7, 0.18, gy > 1.5);
+    crown(x, gy + h * 0.85, z, 1.9 + r() * 1.3, 2.6 + r() * 1.2, ['#4a6a28', '#3e5c24', '#56722e', '#44622a'][i % 4], high ? 48 : 32, gy > 1.5);
+  }
+  // And further back on that ground, bigger trees filling the gaps: a wood behind the balustrade
+  // rather than a row of single trees against the sky. (Their own dice again.)
+  {
+    const R = rng(2207);
+    for (let i = 0; i < 8; i++) {
+      const x = -22 + i * 6.2 + (R() - 0.5) * 2.5;
+      const z = bankTop() - 17 - R() * 9;
+      const h = 4.5 + R() * 3;
+      const gy = ground(x, z);
+      put(wood, trunk(h * 0.55, 0.26), x, gy, z, '#3a2f26');
+      trunkShade(x, gy, z, h * 0.6, 0.26, gy > 1.5);
+      crown(x, gy + h * 0.9, z, 3.0 + R() * 1.2, 3.8 + R() * 1.5, ['#40602a', '#4a6a2c', '#3a5824', '#52702e'][i % 4], high ? 56 : 36, gy > 1.5, R);
+    }
   }
   // The borders along the front of the house: mounds of green, flowering.
   const mounds: Blob[] = [];
@@ -340,6 +911,7 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     // A dark heart of leaves, and over it sprays of leaves on every side, so the shrub reads as leaves, not a ball.
     const mound = { at, s: v(s, s * tall, s).multiplyScalar(0.82), color: new THREE.Color(['#33501f', '#3e5a24', '#4a6428'][Math.floor(r() * 3)]), crown: new THREE.Vector4(at.x, at.y - s * 0.3, at.z, s * tall) };
     mounds.push(mound);
+    casters.balls.push({ at: at.clone(), r: s * 0.95, a: 0.55 });
     for (let k = 0; k < (high ? 15 : 8); k++) {
       const d = v(r() - 0.5, -0.25 + r(), r() - 0.5).normalize();
       const p = at.clone().add(v(d.x * s, d.y * s * tall, d.z * s).multiplyScalar(0.8));
@@ -412,57 +984,15 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
   leafy(daisyGeometry(), heads);
 
   // --- the bank across the lawn, where the word is bedded out, and its balustrade -----------------
-  const foot = bankFoot();
-  const top = bankTop();
-  const bankShape = new THREE.Shape([new THREE.Vector2(foot + 0.6, 0), new THREE.Vector2(foot, 0), new THREE.Vector2(top, BANK.top), new THREE.Vector2(top - 6, BANK.top), new THREE.Vector2(top - 6, 0)]);
-  const bankGeo = new THREE.ExtrudeGeometry(bankShape, { depth: BANK.width, bevelEnabled: false });
-  bankGeo.rotateY(-Math.PI / 2);
-  bankGeo.translate(BANK.width / 2, 0, 0);
-  const bank = new THREE.Mesh(bankGeo, new THREE.ShaderMaterial({ vertexShader: LAWN_VERT, fragmentShader: LAWN_FRAG, uniforms: { ...daylight, uWalk: { value: new THREE.Vector4(1e4, 1e4, 0, 1e4) } } }));
+  // One sheet of ground with the lawn's own grass on it (and the lawn's program): the face, a soft
+  // crest, the level ground behind, the ends falling away.
+  const bank = new THREE.Mesh(bankGeometry(high), lawnMat);
   group.add(bank);
-  // A stone balustrade along the top of the bank, and steps up it at either end.
-  const balusters: THREE.BufferGeometry[] = [];
-  const balProfile = [
-    [0, 0],
-    [0.06, 0],
-    [0.06, 0.05],
-    [0.035, 0.1],
-    [0.065, 0.3],
-    [0.04, 0.45],
-    [0.06, 0.5],
-    [0.06, 0.55],
-    [0, 0.55],
-  ].map(([a, b]) => new THREE.Vector2(a, b));
-  for (let x = -BANK.width / 2 + 0.3; x <= BANK.width / 2 - 0.3; x += 0.24) {
-    const b = new THREE.LatheGeometry(balProfile, 8);
-    b.translate(x, BANK.top + 0.08, top - 0.35);
-    balusters.push(plain(b));
-  }
-  const rail = new THREE.BoxGeometry(BANK.width, 0.1, 0.22);
-  rail.translate(0, BANK.top + 0.68, top - 0.35);
-  const plinth = new THREE.BoxGeometry(BANK.width, 0.1, 0.26);
-  plinth.translate(0, BANK.top + 0.05, top - 0.35);
-  balusters.push(plain(rail), plain(plinth));
-  for (const x of [-BANK.width / 2, BANK.width / 2]) {
-    const post = new THREE.BoxGeometry(0.34, 0.9, 0.34);
-    post.translate(x, BANK.top + 0.45, top - 0.35);
-    balusters.push(plain(post));
-    const urn = new THREE.LatheGeometry(
-      [
-        [0, 0],
-        [0.12, 0],
-        [0.08, 0.08],
-        [0.22, 0.25],
-        [0.24, 0.4],
-        [0.2, 0.42],
-        [0, 0.42],
-      ].map(([a, b]) => new THREE.Vector2(a, b)),
-      14,
-    );
-    urn.translate(x, BANK.top + 0.9, top - 0.35);
-    balusters.push(plain(urn));
-  }
-  const balustrade = new THREE.Mesh(mergeGeometries(balusters), outdoor(daylight, { color: '#d8ccb0', vertexColors: true }));
+  // A stone balustrade along the top, set back a little behind the crest.
+  const railZ = bankTop() - 0.7;
+  const railY = ground(0, railZ);
+  casters.rail = { z: railZ, y: railY, half: BANK.width / 2 };
+  const balustrade = new THREE.Mesh(balustradeGeometry(high, railZ, railY), outdoor(daylight, { color: '#d8ccb0', vertexColors: true }));
   group.add(balustrade);
 
   // --- far off: low hills in the haze ----------------------------------------------------------
@@ -478,6 +1008,9 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
   const hills = new THREE.Mesh(whiteColors(hillGeo), outdoor(daylight, { color: '#6d7a52', vertexColors: true }));
   hills.position.set(0, 0, -420);
   group.add(hills);
+
+  // --- the long shadows, now that everything that throws one is in its place --------------------------
+  shadeTex.value = shadeMap(high, casters).texture;
 
   return {
     group,

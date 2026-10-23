@@ -146,7 +146,9 @@ test('the greenhouse: breed a flower by clicking two, watch it grow, and find it
 
   const pots = await ew(page, (w) => w.garden().pots.map((p: Ew | null) => (p ? p.code : null)));
   const [a, b] = pots.map((p: string | null, i: number) => (p ? i : -1)).filter((i: number) => i >= 0);
-  const empty = pots.indexOf(null);
+  // (Seeds go into the most visible empty pot first: the near row, from the bench end.)
+  const empty = await ew(page, (w) => w.nextPot() as number);
+  expect(pots[empty]).toBeNull();
   /** Where a pot's plant is on screen, to click it for real. */
   const onScreen = (i: number) =>
     page.evaluate((i) => {
@@ -176,7 +178,10 @@ test('the greenhouse: breed a flower by clicking two, watch it grow, and find it
   const child = await ew(page, (w) => w.garden().pots.find((p: Ew | null) => p && p.parents)!);
   expect(child.parents).toEqual([pots[a], pots[b]]);
   expect(await ew(page, (w) => w.garden().crosses)).toBe(1);
-  await expect(page.locator('#card-title')).toHaveText('A seed is in', { timeout: 30_000 });
+  // The camera goes to watch it come up; the card says which pot (and, grown this fast, soon what it is).
+  await page.waitForFunction(() => (window as unknown as { __ew: Ew }).__ew.rig.current === 'grow', null, { timeout: 30_000 });
+  await settled(page);
+  await expect(page.locator('#card-kicker')).toContainText(new RegExp(`pot ${empty + 1}\\b`, 'i'), { timeout: 30_000 });
   // It grows: sprout, stem, leaves, buds, and in flower.
   await page.waitForFunction(
     (i) => {
@@ -411,5 +416,131 @@ test('the greenhouse: grows and breeds with no storage at all, and from a garden
   const pots = await ew(page, (w) => w.garden().pots.map((p: Ew | null, i: number) => (p ? i : -1)).filter((i: number) => i >= 0));
   await page.evaluate(([a, b]) => (window as unknown as { __ew: Ew }).__ew.breed(a, b), [pots[0], pots[1]]);
   expect(await ew(page, (w) => w.garden().crosses)).toBe(1);
+  expect(problems).toEqual([]);
+});
+
+/**
+ * Where points land on screen, and which of them are off the picture, behind
+ * the letterbox's bars or under the card: run in the page, for the pots (by
+ * slot) or for any world points.
+ */
+/** Until the letterbox has finished closing (the lens is fitted to the picture between its bars). */
+const barsStill = async (page: Page) => {
+  const bar = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bar'));
+  for (let k = 0, last = ''; k < 40; k++) {
+    const now = await bar();
+    if (now === last) return;
+    last = now;
+    await page.waitForTimeout(500);
+  }
+};
+
+const hidden = async (page: Page, slots: number[], extra: number[][] = []) => {
+  await barsStill(page);
+  return visibility(page, slots, extra);
+};
+const visibility = (page: Page, slots: number[], extra: number[][] = []) =>
+  page.evaluate(
+    ([slots, extra]) => {
+      const w = (window as unknown as { __ew: Ew }).__ew;
+      const canvas = document.querySelector('#scene canvas')!.getBoundingClientRect();
+      const bar = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bar')) || 0;
+      const card = document.getElementById('card')!;
+      const shown = !card.hidden && !document.body.classList.contains('tucked') && getComputedStyle(card).display !== 'none';
+      const r = shown ? card.getBoundingClientRect() : null;
+      const at = w.camera.position.clone();
+      const pts: [string, unknown][] = [
+        // (Halfway up the pot.)
+        ...slots.map((i): [string, unknown] => [`pot ${i + 1}`, w.potAt(i).add(at.clone().set(0, 0.09, 0))]),
+        ...extra.map((p, k): [string, unknown] => [`point ${k}`, at.clone().set(p[0], p[1], p[2])]),
+      ];
+      const out: string[] = [];
+      for (const [name, p] of pts) {
+        const q = (p as { project(c: unknown): { x: number; y: number; z: number } }).project(w.camera);
+        const x = canvas.left + ((q.x + 1) / 2) * canvas.width;
+        const y = canvas.top + ((1 - q.y) / 2) * canvas.height;
+        if (q.z > 1 || x < canvas.left || x > canvas.right || y < canvas.top + bar || y > canvas.bottom - bar) out.push(`${name} off the picture at ${Math.round(x)},${Math.round(y)}`);
+        else if (r && x > r.left && x < r.right && y > r.top && y < r.bottom) out.push(`${name} under the card at ${Math.round(x)},${Math.round(y)}`);
+      }
+      return out;
+    },
+    [slots, extra] as const,
+  );
+
+test('the greenhouse: every pot clear of the card at any window shape, and after a cross the camera goes to watch the seed come up', async ({ page }) => {
+  test.setTimeout(420_000);
+  const problems = watch(page);
+  await fresh(page);
+  const all = Array.from({ length: 16 }, (_, i) => i);
+  for (const [width, height] of [
+    [1440, 900],
+    [900, 900],
+    [1100, 1250],
+    [800, 1000],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.goto('/?shot=staging&full&world=greenhouse');
+    await page.waitForFunction(() => 'garden' in ((window as unknown as { __ew?: object }).__ew ?? {}), null, { timeout: 120_000 });
+    await expect(page.locator('#card-title')).toHaveText('Breed a flower', { timeout: 60_000 });
+    await settled(page);
+    expect(await hidden(page, all), `the staging at ${width}x${height}`).toEqual([]);
+    // With the card tucked away, the picture slides back to the middle and every pot is still in it.
+    await page.locator('#card .tuck').click();
+    await page.waitForFunction(() => !(window as unknown as { __ew: Ew }).__ew.camera.view?.enabled, null, { timeout: 30_000 });
+    await page.waitForTimeout(500);
+    expect(await hidden(page, all), `the staging at ${width}x${height}, card hidden`).toEqual([]);
+    await page.locator('#untuck').click();
+  }
+
+  // At 900x900: a cross, and the camera goes to the pot the seed went into, clear of the card.
+  await page.setViewportSize({ width: 900, height: 900 });
+  await page.goto('/?shot=staging&full&world=greenhouse');
+  await page.waitForFunction(() => 'garden' in ((window as unknown as { __ew?: object }).__ew ?? {}), null, { timeout: 120_000 });
+  await expect(page.locator('#card-title')).toHaveText('Breed a flower', { timeout: 60_000 });
+  await settled(page);
+  // Slow enough to watch: about five seconds from seed to flower.
+  await ew(page, (w) => w.speed(4));
+  // And on the way there and back, the camera never inside anything.
+  await ew(page, (w) => {
+    w.inside = [] as string[];
+    const look = () => {
+      if (w.solid(w.camera.position)) w.inside.push(`${w.rig.current} ${w.camera.position.toArray().map((x: number) => x.toFixed(2))}`);
+      requestAnimationFrame(look);
+    };
+    look();
+  });
+  const [a, b] = await ew(page, (w) => w.garden().pots.map((p: Ew | null, i: number) => (p ? i : -1)).filter((i: number) => i >= 0));
+  const next = await ew(page, (w) => w.nextPot() as number);
+  // The first pot a seed goes into is in the near row, at the end by the potting bench.
+  expect(next).toBe(6);
+  await page.evaluate(([a, b]) => void (window as unknown as { __ew: Ew }).__ew.breed(a, b), [a, b]);
+  await page.waitForFunction(() => (window as unknown as { __ew: Ew }).__ew.rig.current === 'grow', null, { timeout: 60_000 });
+  await settled(page);
+  expect(await ew(page, (w) => w.growing())).toBe(next);
+  await expect(page.locator('#card-kicker')).toContainText(new RegExp(`pot ${next + 1}\\b`, 'i'), { timeout: 30_000 });
+  expect(await hidden(page, [next]), 'the new pot, while it grows').toEqual([]);
+  // Once it opens: what it is, the flower still clear of the card.
+  await expect(page.locator('#card-kicker')).toContainText('Just opened', { timeout: 60_000 });
+  await expect(page.locator('#card-actions button', { hasText: 'Share it' })).toBeVisible();
+  const bloom = await ew(page, (w) => w.flowers.blooms(w.growing()).map((b: { at: { x: number; y: number; z: number } }) => [b.at.x, b.at.y, b.at.z]));
+  expect(await hidden(page, [next], bloom), 'the new flower, open').toEqual([]);
+  // Esc steps back to the staging.
+  await page.keyboard.press('Escape');
+  await settled(page);
+  expect(await current(page)).toBe('staging');
+  expect(await ew(page, (w) => w.inside)).toEqual([]);
+
+  // Leaving while it grows: nothing about it turns up anywhere else.
+  const [c, d] = await ew(page, (w) => w.garden().pots.map((p: Ew | null, i: number) => (p && i !== w.growing() ? i : -1)).filter((i: number) => i >= 0));
+  await ew(page, (w) => w.speed(1));
+  await page.evaluate(([c, d]) => void (window as unknown as { __ew: Ew }).__ew.breed(c, d), [c, d]);
+  await page.waitForFunction(() => (window as unknown as { __ew: Ew }).__ew.rig.current === 'grow', null, { timeout: 60_000 });
+  await page.keyboard.press('ArrowRight');
+  await settled(page);
+  expect(await current(page)).toBe('desk');
+  await ew(page, (w) => w.speed(20));
+  await page.waitForTimeout(3000);
+  expect(await current(page)).toBe('desk');
+  await expect(page.locator('#card-kicker')).not.toContainText('Just opened');
   expect(problems).toEqual([]);
 });

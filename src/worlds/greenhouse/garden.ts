@@ -4,7 +4,7 @@
 // back from there is checked as if a stranger had written it, and anything odd
 // means a fresh start from the first seeds. Plain numbers, for the tests.
 import { cross, decode, encode, hash, seeded, STARTERS, WANTED, type Genome } from './genome';
-import { POTS } from './plan';
+import { FILL_ORDER, POTS } from './plan';
 
 export { POTS };
 /** Seed to full bloom, in milliseconds. */
@@ -62,7 +62,8 @@ export function seedFrom(garden: Garden, a: Genome, b: Genome): Genome {
   return cross(a, b, r);
 }
 
-export const emptyPot = (garden: Garden) => garden.pots.findIndex((p) => !p);
+/** The empty pot a seed or a gift goes into: the first free one in the order they're filled (see FILL_ORDER), or -1. */
+export const emptyPot = (garden: Garden) => FILL_ORDER.find((i) => !garden.pots[i]) ?? -1;
 
 /**
  * Crosses the plants in pots a and b and sows the seed in the first empty pot.

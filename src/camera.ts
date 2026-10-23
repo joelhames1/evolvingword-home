@@ -15,6 +15,11 @@ export interface Shot {
   near?: number;
   /** Slide the picture right by this share of its width, to clear a card on the left (negative: left, for the notepad). */
   shift?: number;
+  /**
+   * Points that must all be in the picture, clear of the card (or the notepad)
+   * and the letterbox, whatever the window's shape: the lens widens until they fit.
+   */
+  fit?: THREE.Vector3[];
 }
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -51,6 +56,15 @@ export class Rig {
   private shift = 0;
   private fromShift = 0;
   private toShift = 0;
+  /** The points the shot being flown to (or at) must keep in view, and where it looks from. */
+  private fit: THREE.Vector3[] | null = null;
+  private fitAt = new THREE.Vector3();
+  private fitQ = new THREE.Quaternion();
+  private fitInv = new THREE.Quaternion();
+  private fitP = new THREE.Vector3();
+  /** How much wider than its own the lens is for the fit (1 for none), now and as the flight began. */
+  private widen = 1;
+  private fromWiden = 1;
   private t0 = 0;
   private duration = 1;
   private now = 0;
@@ -86,11 +100,49 @@ export class Rig {
     this.fov = s.fov;
     this.near = s.near ?? 0.05;
     this.shift = s.shift ?? 0;
+    this.aim(s, this.quat);
+    this.fromWiden = this.widen;
     this.lean = s.lean ?? 0.1;
     this.leanIn = 1;
     this.path = null;
     this.moving = false;
     this.finish();
+  }
+
+  /** The shot's points to keep in view, and the pose they're seen from. */
+  private aim(s: Shot, q: THREE.Quaternion) {
+    this.fit = s.fit?.length ? s.fit : null;
+    this.fitAt.copy(s.pos);
+    this.fitQ.copy(q);
+    this.fitInv.copy(q).invert();
+  }
+
+  /**
+   * For a shot with fit points, the lens it needs, as a factor on `tall` (the
+   * tangent of half its height as the squeeze above would have it): the shot's
+   * own lens (`base`), or wider, until every point lands between the
+   * letterbox's bars and clear of the card. `left` and `right` are the pixels
+   * kept clear at either side, `offset` the lens shift in pixels. Without fit
+   * points, 1: the squeeze as it is.
+   */
+  private widening(tall: number, base: number, w: number, h: number, left: number, right: number, offset: number) {
+    if (!this.fit) return 1;
+    const a = w / h;
+    const vis = Math.max(0.2, Math.min(1, this.visible)) * 0.92;
+    const lo = (2 * (left + w * 0.03 - offset)) / w - 1;
+    const hi = (2 * (w - right - w * 0.03 - offset)) / w - 1;
+    let need = base;
+    for (const p of this.fit) {
+      const c = this.fitP.copy(p).sub(this.fitAt).applyQuaternion(this.fitInv);
+      const d = -c.z;
+      if (d < 0.02) continue;
+      const sx = c.x / d / a;
+      const sy = Math.abs(c.y / d);
+      need = Math.max(need, sy / vis);
+      if (sx > 0 && hi > 0.05) need = Math.max(need, sx / hi);
+      if (sx < 0 && lo < -0.05) need = Math.max(need, sx / lo);
+    }
+    return need / tall;
   }
 
   /** A flight cut short by a jump or a new flight still counts as over, so whatever waits on it carries on. */
@@ -121,6 +173,8 @@ export class Rig {
     this.near = Math.min(this.near, this.toNear);
     this.fromShift = this.shift;
     this.toShift = s.shift ?? 0;
+    this.aim(s, this.toQ);
+    this.fromWiden = this.widen;
     this.t0 = this.now;
     const turn = this.fromQ.angleTo(this.toQ);
     this.duration = opts.duration ?? s.duration ?? Math.min(3, 1.1 + this.pos.distanceTo(s.pos) * 0.4 + turn * 0.35);
@@ -134,9 +188,12 @@ export class Rig {
   update(t: number, dt: number) {
     this.now = t;
     const cam = this.camera;
+    /** How far along the flight (1 when still). */
+    let along = 1;
     if (this.path) {
       const k = Math.min(1, (t - this.t0) / this.duration);
       const e = ease(k);
+      along = e;
       cam.position.copy(this.path.getPoint(e));
       // Turn a touch ahead of the move, like a person turning their head.
       cam.quaternion.slerpQuaternions(this.fromQ, this.toQ, ease(Math.min(1, k * 1.12)));
@@ -179,10 +236,14 @@ export class Rig {
     const room = Math.max(1, w - covers) / h;
     const squeeze = Math.min(2.4, Math.max(1, (designed * (1 - 0.18 * (1 - m))) / room));
     const tall = Math.tan(THREE.MathUtils.degToRad(this.fov) / 2) * squeeze / (this.visible < 1 ? this.visible : 1);
-    const fov = Math.min(78, THREE.MathUtils.radToDeg(2 * Math.atan(tall)));
     // Slide the picture sideways (a lens shift, not a turn) to make room for a card.
     const sideways = (inset: number, k: number) => Math.round(Math.max(k * w, (inset / 2) * Math.min(1, k / 0.08)));
     const offset = shift > 0 ? sideways(this.inset, shift) : shift < 0 ? -sideways(this.insetRight, -shift) : 0;
+    // A shot with points to keep in view takes the lens they need instead (card or no card), easing in and out with the flight.
+    const base = Math.tan(THREE.MathUtils.degToRad(this.fov) / 2) / (this.visible < 1 ? this.visible : 1);
+    const aimWiden = this.widening(tall, base, w, h, shift > 0 ? covers : 0, shift < 0 ? covers : 0, offset);
+    this.widen = this.fromWiden + (aimWiden - this.fromWiden) * along;
+    const fov = Math.min(this.fit || Math.abs(this.widen - 1) > 1e-3 ? 100 : 78, THREE.MathUtils.radToDeg(2 * Math.atan(tall * this.widen)));
     const view = cam.view;
     const shifted = view?.enabled ? view.offsetX : 0;
     if (Math.abs(cam.fov - fov) > 1e-4 || cam.near !== this.near || -offset !== shifted || (view?.enabled && view.fullWidth !== w)) {

@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { ALPHABET, clean, MAX_PHRASE } from '../../src/evolve';
 import { WORLDS } from '../../src/worlds';
 import { PHRASES } from '../../src/worlds/greenhouse/bed';
-import { daisyGeometry, spireGeometry } from '../../src/worlds/greenhouse/grounds';
+import { balustradeGeometry, BANK, bankFoot, bankGeometry, bankTop, daisyGeometry, ground, SHADE, shadePixels, spireGeometry, yewGeometry } from '../../src/worlds/greenhouse/grounds';
+import { chalkNumbers, crozier, TREE_CROWN, treeFernFronds, treeFernTrunk } from '../../src/worlds/greenhouse/flowers';
+import { FILL_ORDER, HOUSE, POT_AT, potPlace, POTS as POT_COUNT, WALL } from '../../src/worlds/greenhouse/plan';
 import { regroup } from '../../src/worlds/greenhouse/studio';
 import { DRONE, SCALE, voicing } from '../../src/worlds/greenhouse/sound';
 import { FONT } from '../../src/worlds/tower/board';
@@ -431,7 +433,7 @@ describe('the garden outside', () => {
       expect([p.getX(i), p.getY(i), p.getZ(i)].every(Number.isFinite), `vertex ${i}`).toBe(true);
     }
     const c = g.attributes.color;
-    for (let i = 0; i < c.count; i++) expect(Math.min(c.getX(i), c.getY(i), c.getZ(i)), `shade ${i}`).toBeGreaterThanOrEqual(0);
+    if (c) for (let i = 0; i < c.count; i++) expect(Math.min(c.getX(i), c.getY(i), c.getZ(i)), `shade ${i}`).toBeGreaterThanOrEqual(0);
   };
 
   it('grows its border spires and flowers with a sound normal at every vertex', () => {
@@ -468,4 +470,147 @@ describe('the garden outside', () => {
     // The same triangles, each with the same material as before.
     expect(tris(geo, mats)).toEqual(was);
   });
+
+  it('shapes the bank with a soft toe and crest, and a true plane where the word is bedded out', () => {
+    const t = Math.tan(BANK.tilt);
+    // The plane through the middle of the letters, across every bed (sixteen of them, 0.84 m each) and a little either side.
+    for (let x = -7.5; x <= 7.5; x += 0.5)
+      for (let y = 1.7; y <= 2.8; y += 0.1) {
+        const z = bankFoot() - y / t;
+        expect(Math.abs(ground(x, z) - y), `${x}, ${y}`).toBeLessThan(1e-6);
+      }
+    // The lawn in front is level, the ground behind at the top, and never anything but a number in between.
+    expect(ground(0, bankFoot() + 3)).toBeLessThan(0.003);
+    expect(Math.abs(ground(0, bankTop() - 3) - BANK.top)).toBeLessThan(0.02);
+    for (let x = -20; x <= 20; x += 0.7) for (let z = -50; z <= 0; z += 0.3) expect(Number.isFinite(ground(x, z))).toBe(true);
+    // Never steeper than the face, and it comes down to the lawn at either end.
+    for (let z = bankFoot() + 2; z > bankTop() - 2; z -= 0.05) expect((ground(0, z - 0.01) - ground(0, z)) / 0.01).toBeLessThanOrEqual(t + 1e-3);
+    expect(ground(14, -14)).toBe(0);
+    expect(ground(-14, -14)).toBe(0);
+    for (const high of [true, false]) {
+      const g = bankGeometry(high);
+      sound(g);
+      // Faces up, everywhere.
+      const n = g.attributes.normal;
+      for (let i = 0; i < n.count; i++) expect(n.getY(i)).toBeGreaterThan(0.3);
+    }
+  });
+
+  it("throws long shadows across the lawn: the bank's at its foot, nothing far out in the sun", () => {
+    const rail = { z: bankTop() - 0.7, y: ground(0, bankTop() - 0.7), half: BANK.width / 2 };
+    const { W, H, low, top } = shadePixels(false, { balls: [], poles: [], solids: [], rail });
+    expect(low.length).toBe(W * H);
+    const at = (x: number, z: number) => low[Math.floor((z - SHADE.z0) / ((SHADE.z1 - SHADE.z0) / H)) * W + Math.floor((x - SHADE.x0) / ((SHADE.x1 - SHADE.x0) / W))];
+    // Just in front of the foot, in the bank's shadow; well out on the lawn, in the sun.
+    expect(at(0, bankFoot() + 0.4)).toBeGreaterThan(0.9);
+    expect(at(0, bankFoot() + 6)).toBe(0);
+    expect(at(0, -4)).toBe(0);
+    // The balustrade's shadow lies just beyond the bank's, broken up by the balusters.
+    let lit = 0;
+    let dark = 0;
+    for (let x = 8; x < 18; x += 0.05) {
+      const k = at(x, bankFoot() + 1.72);
+      if (k > 0.5) dark++;
+      else lit++;
+    }
+    expect(dark).toBeGreaterThan(0);
+    expect(lit).toBeGreaterThan(0);
+    for (const k of [...low, ...top]) expect(k >= 0 && k <= 1).toBe(true);
+  });
+
+  it('clips its yews and turns its balustrade with sound normals', () => {
+    for (const high of [true, false]) {
+      const y = yewGeometry(3, high);
+      sound(y);
+      y.computeBoundingBox();
+      expect(y.boundingBox!.min.y).toBeGreaterThanOrEqual(-1e-6);
+      expect(y.boundingBox!.max.y).toBeCloseTo(2, 1);
+      sound(balustradeGeometry(high, bankTop() - 0.7, 3.19));
+    }
+  });
 });
+
+describe('the tree fern, and the pots', () => {
+  const sound = (g: THREE.BufferGeometry) => {
+    const n = g.attributes.normal;
+    const p = g.attributes.position;
+    expect(n.count).toBe(p.count);
+    for (let i = 0; i < n.count; i++) {
+      const len = Math.hypot(n.getX(i), n.getY(i), n.getZ(i));
+      expect(Number.isFinite(len) && Math.abs(len - 1) < 1e-3, `normal ${i}`).toBe(true);
+      expect([p.getX(i), p.getY(i), p.getZ(i)].every(Number.isFinite), `vertex ${i}`).toBe(true);
+    }
+  };
+
+  it('stands a fibrous trunk in the corner, its top where the crown rises, fiddleheads rolled up in it', () => {
+    for (const high of [true, false]) {
+      const g = treeFernTrunk(high);
+      sound(g);
+      g.computeBoundingBox();
+      const box = g.boundingBox!;
+      expect(box.min.y).toBeGreaterThanOrEqual(-0.01);
+      // The fiddleheads come up out of the crown, a little above the top of the trunk.
+      expect(box.max.y).toBeGreaterThan(TREE_CROWN.y + 0.05);
+      expect(box.max.y).toBeLessThan(TREE_CROWN.y + 0.6);
+      // Inside the house's glass and brick.
+      expect(box.max.x).toBeLessThan(HOUSE.x1);
+      expect(box.max.z).toBeLessThan(HOUSE.back);
+    }
+    // A crozier: a stalk, then a coil that tightens, the further round the smaller.
+    const path = crozier(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0, 0), 0.1);
+    const n = path.length;
+    expect(path[0].y).toBe(0);
+    expect(Math.max(...path.map((p) => p.y))).toBeGreaterThan(0.08);
+    expect(path[n - 1].distanceTo(path[n - 2])).toBeLessThan(path[Math.floor(n / 2)].distanceTo(path[Math.floor(n / 2) - 1]));
+  });
+
+  it('gives it a crown of long lacy fronds that keep clear of the glass and the brick, with old brown ones hanging', () => {
+    const fronds = treeFernFronds(99);
+    const living = fronds.filter((f) => f.dir.y > 0);
+    const hanging = fronds.filter((f) => f.dir.y < -0.5);
+    expect(living.length).toBeGreaterThanOrEqual(24);
+    expect(hanging.length).toBeGreaterThanOrEqual(6);
+    expect(Math.max(...living.map((f) => f.len))).toBeGreaterThan(1.6);
+    for (const f of fronds) {
+      expect(f.shape).toBe(7);
+      expect(f.width / f.len).toBeGreaterThan(0.2);
+      // Its reach (an arc of `arch` radians over its length, from its rise) stays inside the house.
+      const th = Math.atan2(f.dir.y, Math.hypot(f.dir.x, f.dir.z));
+      const a = Math.max(f.arch, 1e-3);
+      const reach = ((Math.sin(th) - Math.sin(th - a)) / a) * f.len;
+      const o = new THREE.Vector3(f.dir.x, 0, f.dir.z).normalize();
+      const tip = f.at.clone().addScaledVector(o, Math.max(0, reach));
+      expect(tip.x).toBeLessThan(HOUSE.x1 - 0.05);
+      expect(tip.z).toBeLessThan(HOUSE.back - 0.05);
+      // And none reaches along the back wall over the show board.
+      if (f.dir.y > 0 && o.x < -0.3 && o.z > -0.35) expect(tip.x).toBeGreaterThan(WALL.honors + 0.75);
+    }
+  });
+
+  it('chalks every pot on the staging with its number, just proud of the pot', () => {
+    const g = chalkNumbers(POT_COUNT);
+    sound(g);
+    const p = g.attributes.position;
+    // Every stroke on its own pot's side, toward the aisle, never inside the pot.
+    for (let i = 0; i < p.count; i++) {
+      const v = new THREE.Vector3().fromBufferAttribute(p, i);
+      const pot = POT_AT.slice(0, POT_COUNT).reduce((a, b) => (a.distanceTo(v) < b.distanceTo(v) ? a : b));
+      const r = Math.hypot(v.x - pot.x, v.z - pot.z);
+      expect(r).toBeGreaterThan(0.06);
+      expect(r).toBeLessThan(0.1);
+      expect(v.z).toBeGreaterThan(pot.z);
+    }
+  });
+
+  it('fills the most visible empty pots first, and says where a pot is in words', () => {
+    expect([...FILL_ORDER].sort((a, b) => a - b)).toEqual(Array.from({ length: POT_COUNT }, (_, i) => i));
+    // The near row before the back row.
+    expect(FILL_ORDER.slice(0, 8).every((i) => i < 8)).toBe(true);
+    expect(emptyPot(starter(0))).toBe(6);
+    expect(potPlace(0)).toBe('the near row, far left');
+    expect(potPlace(6)).toBe('the near row, second from the right');
+    expect(potPlace(10)).toBe('the back row, third from the left');
+    expect(potPlace(15)).toBe('the back row, far right');
+  });
+});
+
