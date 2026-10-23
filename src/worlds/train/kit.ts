@@ -17,10 +17,10 @@ import { buildLand } from './chunks';
 import { SHED_PILLARS, type Sweep } from './scenery';
 import { buildConsist } from './consist';
 import { BRAKE_AT, buildControls, LEVER_AT, type LeverState } from './controls';
-import { DWELL, FIRST_LEAD, Journey, LAYOUT, LEVER_LIT, LEVER_LOCK, NAMES, VIADUCT_LIMIT, type Land, type TrainEvent } from './journey';
-import { STATION_LAMPS } from './ground';
+import { DWELL, FIRST_LEAD, Journey, LAYOUT, LEVER_LIT, LEVER_LOCK, NAMES, VIADUCT_LIMIT, type Land, type Leg, type TrainEvent } from './journey';
 import { smooth } from './mesher';
-import { nightUniforms } from './night';
+import { nightUniforms, STATION_TEX } from './night';
+import { planFor, type StationPlan } from './station';
 import { CORRIDOR, MIDDLE, ROOM, route, solid, TABLE, WINDOW, WINDOW_X, clear, where, THROUGH, BUNK } from './plan';
 import { buildRouteMap } from './routemap';
 import { buildSky } from './sky';
@@ -60,6 +60,8 @@ const AIR: Record<Land, { haze: number; mist: number; color: THREE.Color }> = {
 const hazeCol = new THREE.Color();
 const NO_SHEDS: [number, number][] = [];
 const LAMP_WARM = new THREE.Color('#ffb874');
+/** The crossing's lamps flash in turn, once round every this many seconds. */
+const CROSSING_BLINK = 1.1;
 const LAMP_WHITE = new THREE.Color('#ffe2bc');
 const signAt = new THREE.Vector3();
 
@@ -139,6 +141,40 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const hintsEl = () => document.getElementById('hints');
   let hints = '';
   let quietAt = 0;
+
+  /** Each stretch's station, worked out once. */
+  const plans = new WeakMap<Leg, StationPlan | null>();
+  const planOf = (l: Leg) => {
+    let p = plans.get(l);
+    if (p === undefined) plans.set(l, (p = planFor(l)));
+    return p;
+  };
+  /** The station whose light is in the strip now. */
+  let stationNow: StationPlan | null = null;
+  /**
+   * Fills the strip along the station that its light reads (see STATION_TEX): red where light comes out
+   * through the front of the house at platform level (lit windows, the hatch, the fanlights), green under the canopy.
+   */
+  const fillStation = (P: StationPlan | null) => {
+    const tex = uniforms.uStationTex.value as THREE.DataTexture;
+    const data = (tex.image as { data: Uint8Array }).data;
+    data.fill(0);
+    if (P) {
+      const T = STATION_TEX;
+      const per = T.size / T.length;
+      const add = (u0: number, u1: number, ch: number, k: number) => {
+        const a = (u0 - P.stop - T.from) * per;
+        const e = (u1 - P.stop - T.from) * per;
+        for (let i = Math.max(0, Math.floor(a)); i <= Math.min(T.size - 1, Math.ceil(e)); i++) {
+          const c = Math.min(1, Math.max(0, Math.min(i + 1, e) - Math.max(i, a)));
+          data[i * 4 + ch] = Math.min(255, data[i * 4 + ch] + Math.round(c * k * 255));
+        }
+      };
+      for (const g of P.glows) add(g.u0, g.u1, 0, Math.min(1, g.k * 0.8));
+      add(P.c0, P.c1, 1, 1);
+    }
+    tex.needsUpdate = true;
+  };
 
   /** How deep in the tunnel our window is (0 outside). */
   const tunnelAt = (u: number) => {
@@ -571,8 +607,14 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         const tri = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, -500, 0, 1, -500, 0, 0, -500, 1], 3));
         tri.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
         for (const m of land.materials) warm.add(new THREE.Mesh(tri, m));
+        // (Into a target like the one the film look draws into, so they're compiled just as they'll be drawn, not once more for the screen.)
+        const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+        const was = renderer.getRenderTarget();
+        renderer.setRenderTarget(target);
         renderer.compile(warm, camera, scene);
         renderer.compile(sparks.group, camera, scene);
+        renderer.setRenderTarget(was);
+        target.dispose();
         tri.dispose();
       }
       lastRenderer = renderer;
@@ -617,24 +659,35 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       (uniforms.uHaze.value as THREE.Color).copy(hazeCol);
       uniforms.uMist.value = mist;
       (uniforms.uGlow.value as THREE.Color).setRGB(0.07, 0.04, 0.015).multiplyScalar(glowK);
+      const fieldsK = (mix.a.land === 'fields' ? 1 - kB : 0) + (mix.b.land === 'fields' ? kB : 0);
+      (uniforms.uLand.value as THREE.Vector3).set(((s % 24) + 24) % 24, glowK, fieldsK);
       sky.setCity(glowK);
       sky.setHaze(hazeCol, uniforms.uMoonGlow.value as THREE.Color);
 
-      // A station near us: its platform lamps light what's round them.
-      const stationLamps = uniforms.uStation.value as THREE.Vector4;
-      stationLamps.w = 0;
+      // A station near us: its platform lamps, its lit windows and its canopy light (and shade) what's round them.
+      let close: StationPlan | null = null;
+      let nearest = 1500;
       for (const l of journey.legs) {
-        const st = LAYOUT[l.land].station;
-        if (!st) continue;
-        const stop = l.start + st.at;
-        if (Math.abs(stop - s) > 1500) continue;
-        const w = stop + WINDOW_X + STATION_LAMPS.offset;
-        const step = STATION_LAMPS.step;
-        const first = Math.ceil((stop - 104 + 6 - w) / step) * step + w;
-        const last = Math.floor((stop + 54 - 4 - 1e-3 - w) / step) * step + w;
-        stationLamps.set(w - s, first - s, last - s, l.land === 'city' ? 0.85 : 0.75);
-        (uniforms.uStationColor.value as THREE.Color).copy(l.land === 'city' ? LAMP_WHITE : LAMP_WARM);
+        const P = planOf(l);
+        if (P && Math.abs(P.stop - s) < nearest) ((nearest = Math.abs(P.stop - s)), (close = P));
       }
+      if (close !== stationNow) {
+        stationNow = close;
+        fillStation(close);
+      }
+      const stationLamps = uniforms.uStation.value as THREE.Vector4;
+      const own = uniforms.uStationLights.value as THREE.Vector4[];
+      if (close && close.lamps.length) {
+        const first = close.lamps[0] - s;
+        stationLamps.set(first, first, close.lamps[close.lamps.length - 1] - s, close.kind === 'city' ? 0.85 : 0.75);
+        (uniforms.uStationColor.value as THREE.Color).copy(close.kind === 'city' ? LAMP_WHITE : LAMP_WARM);
+        (uniforms.uStationGeo.value as THREE.Vector4).x = close.stop + STATION_TEX.from - s;
+        for (let i = 0; i < own.length; i++) {
+          const q = close.lights[i];
+          if (q) own[i].set(q.u - s, q.y, q.z, q.power);
+          else own[i].w = 0;
+        }
+      } else stationLamps.w = 0;
 
       // Tunnel, sheds and the moon through the window.
       tunnelK = tunnelAt(uWin);
@@ -724,15 +777,26 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         band.whistle();
       }
 
-      // The level crossing's bells as we come up to it, go by and leave it behind.
+      // The level crossing's bells as we come up to it, go by and leave it behind; its red lamps, flashing in turn, light the road.
       let bellLevel = 0;
       let bellPan = 0;
       let closing = 0;
+      const red = uniforms.uCross.value as THREE.Vector4[];
+      red[0].w = red[1].w = 0;
       for (const l of journey.legs) {
         const c = LAYOUT[l.land].crossing;
         if (c === undefined) continue;
         const du = l.start + c - uWin;
         if (Math.abs(du) > 600) continue;
+        // (The pair on each side: the left one lit for the first half of each beat, the right one for the second; see the crossing in scenery.ts.)
+        const right = (t / CROSSING_BLINK) % 1 >= 0.5;
+        for (const [i, side] of [
+          [0, -1],
+          [1, 1],
+        ] as const) {
+          const cu = l.start + c;
+          red[i].set(cu - side * 4.2 + (right ? 0.32 : -0.32) - s, land.ground(cu, side * 4.6) + 2.2, side * 4.42, 22);
+        }
         const d = Math.hypot(du, 6);
         bellLevel = Math.max(bellLevel, Math.min(1, 40 / d));
         bellPan = Math.max(-1, Math.min(1, du / 40));

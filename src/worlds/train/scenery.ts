@@ -7,95 +7,12 @@
 // to a landscape look quite alike.
 import * as THREE from 'three';
 import { LAYOUT, type Leg } from './journey';
-import { BALLAST, CESS, COLORS, gorgeAt, gorgeHalf, PLATFORM, RAIL_TOP, STATION_LAMPS, WATER } from './ground';
-import { hash, Mesher, noise, place, SHAPES } from './mesher';
-import { WINDOW_X } from './plan';
+import { BALLAST, CESS, COLORS, gorgeAt, gorgeHalf, RAIL_TOP, WATER } from './ground';
+import { hash, type Mesher, noise, place, SHAPES } from './mesher';
+import { addGeometry, DARK, lamp, LIT, pool, slab, x, type Build } from './parts';
+import { station, underStation } from './station';
 
-export interface PointSpec {
-  pos: THREE.Vector3;
-  color: THREE.Color;
-  size?: number;
-  blink?: number;
-  phase?: number;
-  duty?: number;
-}
-/** A lamp close to the line, whose light sweeps through the compartment as it goes by. */
-export interface Sweep {
-  u: number;
-  y: number;
-  z: number;
-  color: THREE.Color;
-  power: number;
-}
-/** Something with its own texture: a station's flap sign, name board or clock. */
-export interface Fixture {
-  kind: 'flap' | 'clock' | 'name' | 'poster';
-  name?: string;
-  u: number;
-  y: number;
-  z: number;
-  w: number;
-  h: number;
-}
-
-/** What a stretch of land is built into. Positions in the meshers are local: x = u − u0. */
-export interface Build {
-  u0: number;
-  u1: number;
-  /** The ground's height (every landscape blended, the railway on it). */
-  ground(u: number, z: number): number;
-  /** How much this stretch shapes the land at u. */
-  weight(leg: Leg, u: number): number;
-  decor: Mesher;
-  stone: Mesher;
-  brick: Mesher;
-  rock: Mesher;
-  city: Mesher;
-  /** Light on the ground: drawn added over what's there. */
-  pools: Mesher;
-  lights: PointSpec[];
-  sweeps: Sweep[];
-  fixtures: Fixture[];
-  /** Places a thing only once per stretch: true if u falls in this piece, and the land here is (mostly) this stretch's. */
-  mine(leg: Leg, u: number, salt: number): boolean;
-  /** Clear of the other lines at the junctions, by r meters? */
-  free(u: number, z: number, r: number): boolean;
-  /** How much of what's far off to put in: 1, or less on a slower computer. */
-  detail: number;
-}
-
-const C = (hex: string) => new THREE.Color(hex);
-const LIT = {
-  warm: C('#ffc27a').multiplyScalar(2.2),
-  amber: C('#ffb050').multiplyScalar(2.4),
-  sodium: C('#ff9f45'),
-  white: C('#ffe3b8'),
-  tv: C('#9fc0ff').multiplyScalar(1.6),
-  red: C('#ff2a1a'),
-  green: C('#3dff7a'),
-};
-const DARK = {
-  wall: C('#7d7365'),
-  pale: C('#a59a88'),
-  roof: C('#3a2f2a'),
-  slate: C('#34363c'),
-  wood: C('#4a3424'),
-  iron: C('#2a2c30'),
-  trunk: C('#2b2119'),
-  fir: C('#1a2a1e'),
-  firLight: C('#24382a'),
-  leaf: C('#22301c'),
-  bush: C('#1b2717'),
-  hay: C('#8a7346'),
-  snow: C('#e6edf7'),
-  car: C('#4a1d1d'),
-  glass: C('#1a2230'),
-  boat: C('#5a3e2a'),
-  cream: C('#d8cfbc'),
-  steel: C('#5a5f66'),
-};
-
-const x = (b: Build, u: number) => u - b.u0;
+export type { Build, Fixture, PointSpec, Sweep } from './parts';
 
 // --- the things themselves -----------------------------------------------------------
 
@@ -175,6 +92,9 @@ function masts(b: Build, from: number, to: number, opts: { z?: number; base?: (u
   }
 }
 
+/** The rails shine: a glow below zero marks something glossy for the night material. */
+const RAIL_GLOSS = new THREE.Color(-1, 0, 0);
+
 /** The rails and sleepers along a piece of straight track at z, or along a curve. */
 function track(b: Build, from: number, to: number, zAt: (u: number) => number = () => 0, y = BALLAST) {
   const sleeper = DARK.wood.clone().multiplyScalar(0.8);
@@ -190,41 +110,9 @@ function track(b: Build, from: number, to: number, zAt: (u: number) => number = 
       const a = new THREE.Vector3(x(b, u), y + 0.16, zAt(u) + side);
       const c = new THREE.Vector3(x(b, u1), y + 0.16, zAt(u1) + side);
       const mid = a.clone().add(c).multiplyScalar(0.5);
-      b.decor.add(SHAPES.box, place(mid.x, mid.y + 0.04, mid.z, a.distanceTo(c), 0.15, 0.07, -Math.atan2(c.z - a.z, c.x - a.x)), DARK.steel);
+      b.decor.add(SHAPES.box, place(mid.x, mid.y + 0.04, mid.z, a.distanceTo(c), 0.15, 0.07, -Math.atan2(c.z - a.z, c.x - a.x)), DARK.steel, RAIL_GLOSS);
     }
   }
-}
-
-/** A glowing pool of light on the ground under a lamp: a fan, bright in the middle and fading to nothing at the rim. */
-function pool(b: Build, u: number, z: number, radius: number, color: THREE.Color, on?: number) {
-  // On the ground, or on a floor at `on` (a platform).
-  const floor = (pu: number, pz: number) => (on ?? b.ground(pu, pz)) + 0.06;
-  const center = new THREE.Vector3(x(b, u), floor(u, z), z);
-  const n = 10;
-  const pts = Array.from({ length: n + 1 }, (_, i) => {
-    const a = (i / n) * Math.PI * 2;
-    const pu = u + Math.cos(a) * radius;
-    const pz = z + Math.sin(a) * radius;
-    return new THREE.Vector3(x(b, pu), floor(pu, pz), pz);
-  });
-  const none = new THREE.Color(0, 0, 0);
-  for (let i = 0; i < n; i++) {
-    const base = b.pools.glow.length;
-    b.pools.tri(center, pts[i + 1], pts[i], none, color);
-    // The rim's corners: no light.
-    for (let k = 3; k < 9; k++) b.pools.glow[base + k] = 0;
-  }
-}
-
-/** A lamp post: a post, a lantern, its glow from afar, and a pool of light under it. */
-function lamp(b: Build, u: number, z: number, y0: number, opts: { height?: number; color?: THREE.Color; sweep?: number; pool?: number; poolOn?: number } = {}) {
-  const h = opts.height ?? 4.2;
-  const color = opts.color ?? LIT.sodium;
-  b.decor.add(SHAPES.cylinder, place(x(b, u), y0, z, 0.12, h, 0.12), DARK.iron);
-  b.decor.add(SHAPES.box, place(x(b, u), y0 + h + 0.12, z, 0.32, 0.3, 0.32), DARK.iron, color.clone().multiplyScalar(1.8));
-  b.lights.push({ pos: new THREE.Vector3(x(b, u), y0 + h + 0.1, z), color: color.clone().multiplyScalar(0.9), size: 2.2 });
-  if (opts.pool) pool(b, u, z, opts.pool, color.clone().multiplyScalar(0.18), opts.poolOn);
-  if (opts.sweep) b.sweeps.push({ u, y: y0 + h, z, color: color.clone(), power: opts.sweep });
 }
 
 /** A tapered stone pier from the ground up to y1: w along the line, d across it. */
@@ -237,17 +125,6 @@ function pier(m: Mesher, cx: number, y0: number, y1: number, w0: number, d0: num
   m.quad(a0[2], a0[1], a1[1], a1[2], color, undefined, [0, y0, d0, y1]);
   m.quad(a0[3], a0[2], a1[2], a1[3], color, undefined, [0, y0, w0, y1]);
   m.quad(a0[0], a0[3], a1[3], a1[0], color, undefined, [0, y0, d0, y1]);
-}
-
-/** A slab of stone from (x0,y0) to (x1,y1) across z0..z1, its faces outward, uvs in meters. */
-function slab(m: Mesher, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: THREE.Color, faces = 'nsewt') {
-  const v = (px: number, py: number, pz: number) => new THREE.Vector3(px, py, pz);
-  if (faces.includes('t')) m.quad(v(x0, y1, z1), v(x1, y1, z1), v(x1, y1, z0), v(x0, y1, z0), color, undefined, [x0, z0, x1, z1]);
-  if (faces.includes('s')) m.quad(v(x0, y0, z1), v(x1, y0, z1), v(x1, y1, z1), v(x0, y1, z1), color, undefined, [x0, y0, x1, y1]);
-  if (faces.includes('n')) m.quad(v(x1, y0, z0), v(x0, y0, z0), v(x0, y1, z0), v(x1, y1, z0), color, undefined, [x0, y0, x1, y1]);
-  if (faces.includes('e')) m.quad(v(x1, y0, z1), v(x1, y0, z0), v(x1, y1, z0), v(x1, y1, z1), color, undefined, [z0, y0, z1, y1]);
-  if (faces.includes('w')) m.quad(v(x0, y0, z0), v(x0, y0, z1), v(x0, y1, z1), v(x0, y1, z0), color, undefined, [z0, y0, z1, y1]);
-  if (faces.includes('b')) m.quad(v(x0, y0, z0), v(x1, y0, z0), v(x1, y0, z1), v(x0, y0, z1), color, undefined, [x0, z0, x1, z1]);
 }
 
 // --- the landscapes ------------------------------------------------------------------
@@ -528,24 +405,6 @@ function viaduct(b: Build, a: number, end: number) {
   }
 }
 
-/** Copies a geometry into a mesher (its uvs as they come: meters, for extrusions). */
-function addGeometry(m: Mesher, geo: THREE.BufferGeometry, color: THREE.Color) {
-  const g = geo.index ? geo.toNonIndexed() : geo;
-  g.computeVertexNormals();
-  const p = g.attributes.position;
-  const n = g.attributes.normal;
-  const uv = g.attributes.uv;
-  for (let i = 0; i < p.count; i++) {
-    m.pos.push(p.getX(i), p.getY(i), p.getZ(i));
-    m.nrm.push(n.getX(i), n.getY(i), n.getZ(i));
-    m.col.push(color.r, color.g, color.b);
-    m.glow.push(0, 0, 0);
-    m.uv.push(uv ? uv.getX(i) : 0, uv ? uv.getY(i) : 0);
-  }
-  geo.dispose();
-  if (g !== geo) g.dispose();
-}
-
 function dressPass(b: Build, leg: Leg) {
   const s = leg.seed % 997;
   const L = LAYOUT.pass;
@@ -797,15 +656,6 @@ function dressCity(b: Build, leg: Leg) {
   if (L.station) station(b, leg, leg.start + L.station.at, L.station.name, 'city');
 }
 
-/** Is (u, z) inside the station house's footprint, on a stretch with a station (the city's goes down to the street)? */
-function underStation(leg: Leg, u: number, z: number) {
-  const st = LAYOUT[leg.land].station;
-  if (!st || leg.land !== 'city') return false;
-  const H = HOUSE.city;
-  const hu = leg.start + st.at + WINDOW_X + H.at;
-  return Math.abs(u - hu) < H.len / 2 + 2 && z < PLATFORM.back + 1 && z > PLATFORM.back - H.depth - 2;
-}
-
 /** A city building: four walls and a roof, the windows drawn by its shader from where they are on it (see the city material). */
 function building(b: Build, u: number, z: number, w: number, d: number, h: number, base: number, seed: number, lit: number) {
   const v = (px: number, py: number, pz: number) => new THREE.Vector3(px, py, pz);
@@ -837,6 +687,8 @@ function dressLake(b: Build, leg: Leg) {
   scatter(b, leg, 10, -22, 1100, 31, (u, z, r) => {
     if (Math.abs(z) < 12) return;
     if (z < 0 && r > 0.25) return;
+    // (Not out in the water, off the shingle.)
+    if (z < 0 && b.ground(u, z) < WATER.lake + 0.5) return;
     const dense = noise((u - leg.start) / 120, z / 120, s + 2) > -0.2;
     if (r > (dense ? 0.8 : 0.2)) return;
     if (z > 600 && r > 0.35) return;
@@ -868,247 +720,6 @@ function dressLake(b: Build, leg: Leg) {
   });
   masts(b, Math.max(b.u0, leg.start), Math.min(b.u1, leg.end));
   if (L.station) station(b, leg, leg.start + L.station.at, L.station.name, 'lake');
-}
-
-// --- stations ------------------------------------------------------------------------
-
-/** How each station's house looks: how long, deep and tall, where it stands against our window, and in what. */
-const HOUSE = {
-  city: { len: 44, depth: 12, height: 10.6, at: -6, wall: C('#9b8b74'), trim: C('#cfc3aa'), roof: C('#3b3e46'), frame: C('#d9cfba'), shutters: null, floors: [1.75, 5.2, 8.3], win: [1.25, 2.1] },
-  pass: { len: 16, depth: 8, height: 6.2, at: -2, wall: C('#6e4c31'), trim: C('#e6dcc6'), roof: DARK.snow, frame: C('#efe6d2'), shutters: C('#2f5a3a'), floors: [1.55, 4.55], win: [1.0, 1.35] },
-  lake: { len: 13, depth: 7, height: 5.0, at: -1, wall: C('#cdbf9f'), trim: C('#f0e8d6'), roof: C('#713428'), frame: C('#f3ecdc'), shutters: C('#2e5468'), floors: [1.55], win: [1.05, 1.45] },
-} satisfies Record<string, { len: number; depth: number; height: number; at: number; wall: THREE.Color; trim: THREE.Color; roof: THREE.Color; frame: THREE.Color; shutters: THREE.Color | null; floors: number[]; win: [number, number] }>;
-/** A lit room through a window: warm, brighter toward the top where its lamp is; and the same through a curtain. */
-const ROOM_GLOW = C('#ffb066').multiplyScalar(0.62);
-const ROOM_LOW = ROOM_GLOW.clone().multiplyScalar(0.7);
-const CURTAIN_GLOW = C('#ff9050').multiplyScalar(0.2);
-const CURTAIN = C('#6a2a1e');
-/** The posters along the stations' walls. */
-const POSTERS = ['lake', 'gorge', 'city', 'fields', 'pass'];
-
-/** A window in a wall that faces the line (its face at z): glass, perhaps a lit room behind it, curtains, a frame and glazing bars, a sill, shutters. */
-function litWindow(m: Mesher, cx: number, cy: number, z: number, w: number, h: number, lit: boolean, o: { frame: THREE.Color; sill: THREE.Color; shutters?: THREE.Color | null }) {
-  const v = (px: number, py: number, pz: number) => new THREE.Vector3(px, py, pz);
-  const x0 = cx - w / 2;
-  const x1 = cx + w / 2;
-  const y0 = cy - h / 2;
-  const y1 = cy + h / 2;
-  const zg = z + 0.015;
-  const mid = y0 + h * 0.45;
-  m.quad(v(x0, y0, zg), v(x1, y0, zg), v(x1, mid, zg), v(x0, mid, zg), DARK.glass, lit ? ROOM_LOW : undefined);
-  m.quad(v(x0, mid, zg), v(x1, mid, zg), v(x1, y1, zg), v(x0, y1, zg), DARK.glass, lit ? ROOM_GLOW : undefined);
-  if (lit) {
-    // Curtains, drawn back to either side.
-    const cw = w * 0.24;
-    const zc = zg + 0.008;
-    m.quad(v(x0, y0, zc), v(x0 + cw, y0, zc), v(x0 + cw * 0.7, y1, zc), v(x0, y1, zc), CURTAIN, CURTAIN_GLOW);
-    m.quad(v(x1 - cw, y0, zc), v(x1, y0, zc), v(x1, y1, zc), v(x1 - cw * 0.7, y1, zc), CURTAIN, CURTAIN_GLOW);
-  }
-  // The frame, the glazing bars, the sill.
-  const t = 0.065;
-  const zf = z + 0.04;
-  m.add(SHAPES.box, place(cx, y1 + t / 2, zf, w + 2 * t, t, 0.07), o.frame);
-  m.add(SHAPES.box, place(x0 - t / 2, cy, zf, t, h, 0.07), o.frame);
-  m.add(SHAPES.box, place(x1 + t / 2, cy, zf, t, h, 0.07), o.frame);
-  m.add(SHAPES.box, place(cx, cy, zg + 0.02, 0.035, h, 0.025), o.frame);
-  m.add(SHAPES.box, place(cx, y0 + h * 0.64, zg + 0.02, w, 0.035, 0.025), o.frame);
-  m.add(SHAPES.box, place(cx, y0 - 0.045, z + 0.07, w + 0.24, 0.08, 0.16), o.sill);
-  if (o.shutters) for (const s of [-1, 1]) m.add(SHAPES.box, place(cx + s * (w / 2 + t + w * 0.27), cy, z + 0.035, w * 0.52, h + 0.06, 0.05), o.shutters);
-}
-
-/** The station: a platform along the window side under a canopy on iron columns, lamps, benches, posters, the sign with its flaps and clock, and the station house behind, lit. */
-function station(b: Build, leg: Leg, stop: number, name: string, kind: 'pass' | 'city' | 'lake') {
-  // Where our window will be when the train stops here, and the platform's ends.
-  const w = stop + WINDOW_X;
-  const p0 = stop - 104;
-  const p1 = stop + 54;
-  if (p1 + 60 < b.u0 || p0 - 60 > b.u1) return;
-  const own = (u: number) => u >= b.u0 && u < b.u1;
-  const from = Math.max(p0, b.u0);
-  const to = Math.min(p1, b.u1);
-  const snowy = kind === 'pass';
-  const P = PLATFORM;
-  const SL = STATION_LAMPS;
-  const H = HOUSE[kind];
-  const v = (uu: number, yy: number, zz: number) => new THREE.Vector3(x(b, uu), yy, zz);
-  const paving = C(snowy ? '#b8c0cb' : kind === 'city' ? '#8e877c' : '#878076');
-  const coping = C(snowy ? '#e4e9f0' : '#d6cdb9');
-  const iron = C(kind === 'city' ? '#2c3a34' : kind === 'pass' ? '#3a2a20' : '#24323c');
-  const lampColor = kind === 'city' ? LIT.white : LIT.warm.clone().multiplyScalar(0.55);
-
-  // --- the platform ------------------------------------------------------------------------
-  if (to > from) {
-    // The top in strips meeting edge to edge (nothing laid over anything, so nothing flickers from afar):
-    // the coping, the paving, the line you stand behind, the paving.
-    const strips: [number, number, THREE.Color][] = [
-      [P.edge, P.edge - 0.45, coping],
-      [P.edge - 0.45, P.edge - 0.95, paving],
-      [P.edge - 0.95, P.edge - 1.05, C('#c9a83a')],
-      [P.edge - 1.05, P.back, paving],
-    ];
-    for (const [za, zb, c] of strips) b.stone.quad(v(from, P.y, za), v(to, P.y, za), v(to, P.y, zb), v(from, P.y, zb), c, undefined, [from, za, to, zb]);
-    // The edge down to the ballast, and the back down to the ground, following it.
-    b.stone.quad(v(to, BALLAST - 0.1, P.edge), v(from, BALLAST - 0.1, P.edge), v(from, P.y, P.edge), v(to, P.y, P.edge), paving.clone().multiplyScalar(0.7), undefined, [from, BALLAST, to, P.y]);
-    for (let u = from; u < to; u += 8) {
-      const u1 = Math.min(to, u + 8);
-      const g = Math.min(b.ground(u, P.back - 0.5), b.ground(u1, P.back - 0.5), P.y - 1) - 0.6;
-      b.stone.quad(v(u, g, P.back), v(u1, g, P.back), v(u1, P.y, P.back), v(u, P.y, P.back), paving.clone().multiplyScalar(0.6), undefined, [u, g, u1, P.y]);
-    }
-    for (const end of [p0, p1])
-      if (own(end)) {
-        const g = Math.min(b.ground(end, P.back), b.ground(end, P.edge), BALLAST) - 0.6;
-        slab(b.stone, x(b, end) - 0.2, g, P.back, x(b, end) + 0.2, P.y, P.edge, paving, 'ew');
-      }
-  }
-
-  // --- the canopy: iron columns, brackets with a ring in each, a roof, a fretted valance -----
-  const c0 = w + (kind === 'city' ? -45 : kind === 'pass' ? -21 : -15);
-  const c1 = w + (kind === 'city' ? 33 : kind === 'pass' ? 15 : 9);
-  const roofY = P.y + 3.85;
-  const front = -2.15;
-  const ca = Math.max(c0, b.u0);
-  const cb = Math.min(c1, b.u1);
-  const roofColor = kind === 'lake' ? C('#4a3324') : iron.clone().multiplyScalar(1.3);
-  const trim = H.trim;
-  if (cb > ca) {
-    slab(b.decor, x(b, ca), roofY, P.back, x(b, cb), roofY + 0.16, front, roofColor, 'nstb');
-    if (snowy) b.decor.add(SHAPES.box, place(x(b, (ca + cb) / 2), roofY + 0.28, (P.back + front) / 2, cb - ca, 0.24, front - P.back - 0.2), DARK.snow);
-    // The fascia board along the front and the valance under it: pointed boards, the old way.
-    b.decor.add(SHAPES.box, place(x(b, (ca + cb) / 2), roofY + 0.04, front - 0.03, cb - ca, 0.28, 0.05), trim);
-    for (let u = Math.ceil(ca / 0.22) * 0.22; u + 0.22 <= cb; u += 0.22) b.decor.tri(v(u, roofY - 0.1, front - 0.06), v(u + 0.22, roofY - 0.1, front - 0.06), v(u + 0.11, roofY - 0.42, front - 0.06), trim);
-  }
-  for (let u = Math.ceil((c0 - w - 3) / 6) * 6 + w + 3; u <= c1; u += 6) {
-    if (!own(u)) continue;
-    const cz = -3.55;
-    b.decor.add(SHAPES.block, place(x(b, u), P.y, cz, 0.3, 0.32, 0.3), iron);
-    b.decor.add(SHAPES.cylinder, place(x(b, u), P.y + 0.3, cz, 0.15, roofY - P.y - 0.5, 0.15), iron);
-    b.decor.add(SHAPES.box, place(x(b, u), roofY - 0.13, cz, 0.3, 0.14, 0.3), iron);
-    // A bracket each way under the roof, a ring in the corner of each.
-    for (const toZ of [front + 0.15, P.back + 0.1]) {
-      const dz = toZ - cz;
-      const dy = 0.85;
-      const l = Math.hypot(dz, dy);
-      b.decor.add(SHAPES.box, place(x(b, u), roofY - 0.05 - dy / 2, cz + dz / 2, 0.05, 0.06, l, 0, Math.atan2(-dy, dz)), iron);
-      b.decor.add(SHAPES.box, place(x(b, u), roofY - 0.06, cz + dz / 2, 0.05, 0.06, Math.abs(dz)), iron);
-      b.decor.add(SHAPES.ring, place(x(b, u), roofY - 0.33, cz + dz * 0.32, 0.42, 0.42, 0.42, Math.PI / 2), iron);
-    }
-  }
-
-  // --- the lamps: lanterns hung from the canopy, on posts beyond it; light pooled under each ---
-  for (let u = Math.ceil((p0 + 6 - w - SL.offset) / SL.step) * SL.step + w + SL.offset; u < p1 - 4; u += SL.step) {
-    if (!own(u)) continue;
-    if (u > c0 + 1 && u < c1 - 1) {
-      b.decor.add(SHAPES.box, place(x(b, u), (roofY + SL.y + 0.2) / 2, SL.z, 0.03, roofY - SL.y - 0.2, 0.03), iron);
-      b.decor.add(SHAPES.box, place(x(b, u), SL.y + 0.24, SL.z, 0.34, 0.08, 0.34), iron);
-      b.decor.add(SHAPES.box, place(x(b, u), SL.y, SL.z, 0.24, 0.36, 0.24), iron, lampColor.clone().multiplyScalar(1.6));
-      b.lights.push({ pos: new THREE.Vector3(x(b, u), SL.y, SL.z), color: lampColor.clone().multiplyScalar(0.7), size: 1.8 });
-      pool(b, u, SL.z + 0.6, 2.8, lampColor.clone().multiplyScalar(0.1), P.y);
-      b.sweeps.push({ u, y: SL.y, z: SL.z, color: lampColor.clone(), power: 3.2 });
-    } else lamp(b, u, SL.z, P.y, { height: SL.y - P.y - 0.12, color: lampColor, sweep: 3.2, pool: 2.8, poolOn: P.y });
-  }
-
-  // --- the sign by our window: the name, the flaps under it in their case, the clock on top ---
-  if (own(w)) {
-    const sz = -3.05;
-    for (const dx of [-1.24, 1.24]) b.decor.add(SHAPES.block, place(x(b, w) + dx, P.y, sz - 0.1, 0.09, 3.05, 0.09), iron);
-    // The flaps' case: black enamel, a hood over it, a brass line top and bottom.
-    b.decor.add(SHAPES.box, place(x(b, w), 1.53, sz - 0.075, 2.5, 0.36, 0.13), C('#121314'));
-    b.decor.add(SHAPES.box, place(x(b, w), 1.735, sz - 0.03, 2.56, 0.04, 0.24), iron);
-    for (const dy of [0.155, -0.155]) b.decor.add(SHAPES.box, place(x(b, w), 1.53 + dy, sz + 0.005, 2.42, 0.012, 0.012), C('#b48a46'));
-    // The name board's back, and the clock on a bracket over it.
-    b.decor.add(SHAPES.box, place(x(b, w), 1.9, sz - 0.04, 2.44, 0.38, 0.05), iron);
-    b.fixtures.push({ kind: 'name', name, u: w, y: 1.9, z: sz, w: 2.34, h: 0.3 });
-    b.fixtures.push({ kind: 'flap', u: w, y: 1.53, z: sz, w: 2.34, h: 0.256 });
-    b.decor.add(SHAPES.box, place(x(b, w), 2.18, sz - 0.08, 0.08, 0.22, 0.06), iron);
-    b.decor.add(SHAPES.drum, place(x(b, w), 2.45, sz - 0.07, 0.6, 0.08, 0.6, 0, Math.PI / 2), iron);
-    b.fixtures.push({ kind: 'clock', u: w, y: 2.45, z: sz - 0.02, w: 0.5, h: 0.5 });
-  }
-
-  // --- benches against the house, facing the line ------------------------------------------
-  const benches = kind === 'city' ? [w + 4.6, w - 7.4, w - 19.4, w + 16.6] : [w + 4.6, w - 7.4];
-  for (const bu of benches) {
-    if (!own(bu)) continue;
-    const bz = P.back + 0.55;
-    for (let k = 0; k < 3; k++) b.decor.add(SHAPES.box, place(x(b, bu), P.y + 0.45, bz + 0.12 - k * 0.12, 1.8, 0.04, 0.1), DARK.wood.clone().multiplyScalar(1.4));
-    for (let k = 0; k < 2; k++) b.decor.add(SHAPES.box, place(x(b, bu), P.y + 0.66 + k * 0.17, bz - 0.21, 1.8, 0.1, 0.035, 0, 0.12), DARK.wood.clone().multiplyScalar(1.4));
-    for (const dx of [-0.78, 0.78]) {
-      b.decor.add(SHAPES.box, place(x(b, bu) + dx, P.y + 0.22, bz, 0.06, 0.44, 0.42), iron);
-      b.decor.add(SHAPES.box, place(x(b, bu) + dx, P.y + 0.7, bz - 0.21, 0.06, 0.5, 0.05), iron);
-    }
-  }
-
-  // --- the station house ----------------------------------------------------------------------
-  const hu = w + H.at;
-  const h0 = hu - H.len / 2;
-  const h1 = hu + H.len / 2;
-  if (h1 > b.u0 && h0 < b.u1) {
-    // (Whole houses belong to the piece their middle is in.)
-    if (!own(hu)) return fence();
-    const zf = P.back;
-    const zb = P.back - H.depth;
-    const top = P.y + H.height;
-    const base = Math.min(b.ground(h0, zb), b.ground(h1, zb), b.ground(h0, zf - 0.5), b.ground(h1, zf - 0.5), P.y) - 0.6;
-    const wall = H.wall;
-    // The front from the platform up; the ends and back from the ground.
-    b.decor.quad(v(h0, P.y, zf), v(h1, P.y, zf), v(h1, top, zf), v(h0, top, zf), wall);
-    b.decor.quad(v(h1, base, zb), v(h0, base, zb), v(h0, top, zb), v(h1, top, zb), wall.clone().multiplyScalar(0.9));
-    b.decor.quad(v(h0, base, zb), v(h0, base, zf), v(h0, top, zf), v(h0, top, zb), wall.clone().multiplyScalar(0.95));
-    b.decor.quad(v(h1, base, zf), v(h1, base, zb), v(h1, top, zb), v(h1, top, zf), wall.clone().multiplyScalar(0.95));
-    // A stone plinth along the front, the eaves board, the roof and a chimney or two.
-    b.decor.add(SHAPES.box, place(x(b, hu), P.y + 0.2, zf + 0.04, H.len + 0.1, 0.4, 0.09), paving.clone().multiplyScalar(0.8));
-    b.decor.add(SHAPES.box, place(x(b, hu), top - 0.12, zf + 0.06, H.len + 0.2, 0.24, 0.14), H.trim);
-    if (kind === 'city') {
-      // A heavier cornice, a flat roof behind a parapet, pilasters between the bays.
-      b.decor.add(SHAPES.box, place(x(b, hu), top + 0.35, (zf + zb) / 2, H.len + 0.4, 0.7, H.depth + 0.3), H.trim.clone().multiplyScalar(0.85));
-      b.decor.add(SHAPES.box, place(x(b, hu), top + 0.72, (zf + zb) / 2, H.len - 0.6, 0.06, H.depth - 0.8), H.roof);
-    } else {
-      b.decor.add(SHAPES.roof, place(x(b, hu), top, (zf + zb) / 2, H.len + 1.2, H.depth * 0.5, H.depth + 1.4), H.roof);
-      b.decor.add(SHAPES.block, place(x(b, hu) + H.len * 0.3, top + H.depth * 0.2, (zf + zb) / 2 - 1, 0.7, H.depth * 0.45, 0.7), kind === 'pass' ? C('#5a5350') : C('#8a5a48'));
-    }
-    // The bays along the front: windows, the door in the middle, posters between.
-    const bay = kind === 'city' ? 3.4 : 2.6;
-    const n = Math.floor((H.len - 1.2) / bay);
-    const first = hu - ((n - 1) * bay) / 2;
-    const door = Math.floor(n / 2);
-    let poster = Math.floor(hash(n, 3, leg.seed) * POSTERS.length);
-    H.floors.forEach((fy, floor) => {
-      for (let i = 0; i < n; i++) {
-        const bx = x(b, first + i * bay);
-        const cy = P.y + fy;
-        if (floor === 0 && (i === door || (kind === 'city' && Math.abs(i - door) === 3))) {
-          // A door, its fanlight lit, and the name over it.
-          b.decor.quad(v(first + i * bay - 0.65, P.y, zf + 0.02), v(first + i * bay + 0.65, P.y, zf + 0.02), v(first + i * bay + 0.65, P.y + 2.3, zf + 0.02), v(first + i * bay - 0.65, P.y + 2.3, zf + 0.02), C('#3a2416'));
-          b.decor.quad(v(first + i * bay - 0.55, P.y + 2.38, zf + 0.02), v(first + i * bay + 0.55, P.y + 2.38, zf + 0.02), v(first + i * bay + 0.55, P.y + 2.72, zf + 0.02), v(first + i * bay - 0.55, P.y + 2.72, zf + 0.02), DARK.glass, ROOM_GLOW);
-          b.decor.add(SHAPES.box, place(bx, P.y + 2.34, zf + 0.05, 1.5, 0.08, 0.1), H.frame);
-          if (i === door) b.fixtures.push({ kind: 'name', name, u: first + i * bay, y: Math.min(roofY - 0.45, P.y + 3.05), z: zf + 0.06, w: 2.2, h: 0.32 });
-          continue;
-        }
-        // Every other bay on the ground floor, a poster where there's no window.
-        if (floor === 0 && (i + door) % 3 === 1 && kind !== 'pass') {
-          b.decor.add(SHAPES.box, place(bx, P.y + 1.55, zf + 0.03, 0.7, 0.98, 0.04), C('#2a2018'));
-          b.fixtures.push({ kind: 'poster', name: POSTERS[poster++ % POSTERS.length], u: first + i * bay, y: P.y + 1.55, z: zf + 0.06, w: 0.6, h: 0.86 });
-          continue;
-        }
-        const lit = hash(i, floor, leg.seed + 7) < (floor === 0 ? 0.85 : 0.45);
-        const [ww, wh] = floor === 0 ? H.win : [H.win[0] * 0.85, H.win[1] * 0.8];
-        litWindow(b.decor, bx, cy, zf, ww, wh, lit, { frame: H.frame, sill: H.trim, shutters: H.shutters });
-      }
-    });
-    // The city's grand front: pilasters between the bays, up to the cornice.
-    if (kind === 'city') for (let i = 0; i <= n; i++) b.decor.add(SHAPES.box, place(x(b, first + (i - 0.5) * bay), (P.y + top) / 2, zf + 0.06, 0.34, H.height, 0.12), H.trim.clone().multiplyScalar(0.92));
-  }
-  fence();
-
-  /** Along the back of the platform beyond the house: a railing (the lake's halt has the lake behind it). */
-  function fence() {
-    if (kind === 'city' || to <= from) return;
-    for (let u = Math.ceil(from / 2.5) * 2.5; u < to; u += 2.5) if (u < h0 - 0.5 || u > h1 + 0.5) b.decor.add(SHAPES.box, place(x(b, u), P.y + 0.5, P.back + 0.1, 0.06, 1.0, 0.06), iron);
-    for (const [a, e] of [
-      [from, Math.min(to, h0 - 0.5)],
-      [Math.max(from, h1 + 0.5), to],
-    ])
-      if (e > a) b.decor.add(SHAPES.box, place(x(b, (a + e) / 2), P.y + 0.95, P.back + 0.1, e - a, 0.05, 0.05), iron);
-  }
 }
 
 // --- the points, and the line not taken ----------------------------------------------

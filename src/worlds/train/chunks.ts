@@ -3,17 +3,19 @@
 // and each piece slides by underneath it: its own coordinates are meters along
 // the line from where it starts, so nothing far out ever loses precision. A
 // piece is a few meshes: the ground, what stands on it, the stone and brick of
-// bridges and stations, the city's buildings, water, and its lights.
+// bridges, the city's buildings, a station, water, and its lights.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { DaylightUniforms } from '../outdoor';
 import { pointLights } from '../outdoor';
 import type { Journey, Leg } from './journey';
 import { LAYOUT } from './journey';
 import { BALLAST, CESS, groundOf, paint, WATER } from './ground';
 import { hash, Mesher } from './mesher';
-import { cityMaterial, nightMaterial, poolMaterial, waterMaterial } from './night';
+import { stationAtlas } from './atlas';
+import { cityMaterial, nightMaterial, poolMaterial, stationMaterial, waterMaterial } from './night';
 import { branchZ, dress, points, track, type Build, type Fixture, type PointSpec, type Sweep } from './scenery';
-import { buildClock, nameBoard, posterArt, stone } from './signs';
+import { buildClock, stone } from './signs';
 
 export const CHUNK = 200;
 const BEHIND = 1050;
@@ -92,7 +94,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
   const group = new THREE.Group();
   group.name = 'land';
   const mats = {
-    terrain: nightMaterial(uniforms, { vertexColors: true, sheen: 0.18 }),
+    terrain: nightMaterial(uniforms, { vertexColors: true, sheen: 0.18, detail: true }),
     decor: nightMaterial(uniforms, { vertexColors: true, glows: true }),
     stone: nightMaterial(uniforms, { vertexColors: true, map: stone('ashlar'), mapScale: 0.3, side: THREE.DoubleSide }),
     brick: nightMaterial(uniforms, { vertexColors: true, map: stone('brick'), mapScale: 0.36, side: THREE.DoubleSide }),
@@ -100,21 +102,12 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     city: cityMaterial(uniforms),
     pools: poolMaterial(uniforms),
     water: waterMaterial(uniforms),
+    station: stationMaterial(uniforms, stationAtlas(Object.values(LAYOUT).flatMap((l) => (l.station ? [l.station.name] : [])))),
   };
   const clock = buildClock();
-  const flapMat = new THREE.MeshBasicMaterial({ map: opts.flapTexture, color: new THREE.Color(0.72, 0.7, 0.66) });
-  const clockMat = new THREE.MeshBasicMaterial({ map: clock.texture, transparent: true, color: new THREE.Color(0.8, 0.78, 0.72) });
-  const nameMats = new Map<string, THREE.MeshBasicMaterial>();
-  const nameMat = (name: string) => {
-    let m = nameMats.get(name);
-    if (!m) nameMats.set(name, (m = new THREE.MeshBasicMaterial({ map: nameBoard(name), color: new THREE.Color(0.62, 0.62, 0.66) })));
-    return m;
-  };
-  const posterMat = (name: string) => {
-    let m = nameMats.get(`poster:${name}`);
-    if (!m) nameMats.set(`poster:${name}`, (m = new THREE.MeshBasicMaterial({ map: posterArt(name), color: new THREE.Color(0.5, 0.48, 0.45) })));
-    return m;
-  };
+  // (Drawn a little nearer than the case and the drum they're set in, so they never flicker into them from far off.)
+  const flapMat = new THREE.MeshBasicMaterial({ map: opts.flapTexture, color: new THREE.Color(0.72, 0.7, 0.66), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const clockMat = new THREE.MeshBasicMaterial({ map: clock.texture, transparent: true, color: new THREE.Color(0.8, 0.78, 0.72), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
 
   const same = (a: Leg, b: Leg) => a.start === b.start && a.land === b.land;
   // How much a stretch shapes the land at u.
@@ -187,6 +180,8 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       for (let j = 0; j < rows; j++) H[i * rows + j] = ground(u, ZS[j]);
     }
     const nCols = cols - 2;
+    // (uvs: where it is along the land, starting again every 1200 m, at a piece's start, and out from the line.)
+    const wrap = Math.floor(u0 / 1200) * 1200;
     const pos = new Float32Array(nCols * rows * 3);
     const nrm = new Float32Array(nCols * rows * 3);
     const col = new Float32Array(nCols * rows * 3);
@@ -228,6 +223,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     ].map(([j0, j1]) => {
       const n = j1 - j0 + 1;
       const p2 = new Float32Array(nCols * n * 3);
+      const uv2 = new Float32Array(nCols * n * 2);
       const n2 = new Float32Array(nCols * n * 3);
       const c2 = new Float32Array(nCols * n * 3);
       for (let i = 0; i < nCols; i++)
@@ -239,6 +235,8 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
             n2[to + q] = nrm[from + q];
             c2[to + q] = col[from + q];
           }
+          uv2[(to / 3) * 2] = u0 - wrap + pos[from];
+          uv2[(to / 3) * 2 + 1] = pos[from + 2];
         }
       const index: number[] = [];
       for (let i = 0; i < nCols - 1; i++)
@@ -251,6 +249,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       geo.setAttribute('position', new THREE.BufferAttribute(p2, 3));
       geo.setAttribute('normal', new THREE.BufferAttribute(n2, 3));
       geo.setAttribute('color', new THREE.BufferAttribute(c2, 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(uv2, 2));
       geo.setIndex(index);
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, mats.terrain);
@@ -293,6 +292,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       brick: new Mesher(),
       rock: new Mesher(),
       city: new Mesher(),
+      station: new Mesher(),
       pools: new Mesher(),
       lights,
       sweeps,
@@ -320,6 +320,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       [b.brick, mats.brick],
       [b.rock, mats.rock],
       [b.city, mats.city],
+      [b.station, mats.station],
       [b.pools, mats.pools],
     ] as const)
       for (const geo of halves(m)) {
@@ -336,15 +337,17 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       if (leg.land === 'gorge') out.add(water(u0, WATER.gorge, -1400, 0), water(u0, WATER.gorge, 0, 1400));
       if (leg.land === 'lake') out.add(water(u0, WATER.lake, -1400, -4));
     }
-    // The stations' signs and clocks.
+    // The stations' flap signs, and their clocks.
     const signs: THREE.Object3D[] = [];
     for (const f of fixtures) {
-      const geo = f.kind === 'clock' ? new THREE.CircleGeometry(f.w / 2, 32) : new THREE.PlaneGeometry(f.w, f.h);
-      const mesh = new THREE.Mesh(geo, f.kind === 'flap' ? flapMat : f.kind === 'clock' ? clockMat : f.kind === 'poster' ? posterMat(f.name ?? '') : nameMat(f.name ?? ''));
+      if (f.kind !== 'flap') continue;
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(f.w, f.h), flapMat);
       mesh.position.set(f.u - u0, f.y, f.z);
       out.add(mesh);
-      if (f.kind === 'flap') signs.push(mesh);
+      signs.push(mesh);
     }
+    const clocks = fixtures.filter((f) => f.kind === 'clock');
+    if (clocks.length) out.add(new THREE.Mesh(mergeGeometries(clocks.map((f) => new THREE.CircleGeometry(f.w / 2, 32).translate(f.u - u0, f.y, f.z)))!, clockMat));
     const pts = lights.length ? pointLights(lights, uniforms) : null;
     if (pts) out.add(pts);
     // Swap the new for the old.

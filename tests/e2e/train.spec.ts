@@ -310,6 +310,63 @@ test('the night train: into a station, its sign spelling out a word, and away', 
   expect(problems).toEqual([]);
 });
 
+test('the night train: each kind of station built and lit, its sign by our window, nothing in the way of the train', async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 960, height: 600 });
+  const problems = watch(page);
+  await page.goto('/?shot=window&full&world=train');
+  await page.waitForFunction(() => 'jump' in ((window as unknown as { __ew?: object }).__ew ?? {}), null, { timeout: 90_000 });
+  await settled(page);
+  for (const [land, at] of [
+    ['city', 1050],
+    ['lake', 1100],
+    ['pass', 2000],
+  ] as const) {
+    // Standing at the platform, the clock held.
+    await page.evaluate(({ land, at }) => {
+      const w = (window as unknown as Win).__ew;
+      w.jump(land, at, 0);
+      w.fast(0);
+    }, { land, at });
+    // (The land's built again all at once on the next frame: a slow one, here.)
+    await page.waitForFunction(() => (window as unknown as Win).__ew.land.signs().length > 0, null, { timeout: 90_000 });
+    await page.waitForTimeout(500);
+    const seen = await page.evaluate(() => {
+      const w = (window as unknown as Win).__ew;
+      const v = w.camera.position.clone();
+      // The sign's flaps, right outside our window.
+      const signs = w.land.signs().map((m: Ew) => m.getWorldPosition(v.clone()).toArray().map((n: number) => Math.round(n * 10) / 10));
+      // The station's own geometry: how much of it, and whether any of it reaches into the train's way (over the platform's edge, above its top).
+      let tris = 0;
+      let inTheWay = 0;
+      let uniforms: Ew | null = null;
+      w.land.group.traverse((o: Ew) => {
+        if (!o.isMesh || !o.visible || !o.material?.uniforms?.uAtlas) return;
+        uniforms = o.material.uniforms;
+        o.updateWorldMatrix(true, false);
+        const pos = o.geometry.attributes.position;
+        tris += pos.count / 3;
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+          if (v.z > -1.66 && v.y > -0.43 && Math.abs(v.x) < 200) inTheWay++;
+        }
+      });
+      const u = uniforms as Ew | null;
+      return { signs, tris, inTheWay, lit: !!u && u.uStation.value.w > 0 && u.uStationLights.value[0].w > 0 };
+    });
+    expect(seen.signs.length, land).toBeGreaterThan(0);
+    expect(seen.signs.some(([x, , z]: number[]) => Math.abs(x - 0.1) < 0.6 && Math.abs(z + 3.05) < 0.2), `${land} sign ${JSON.stringify(seen.signs)}`).toBe(true);
+    expect(seen.tris, land).toBeGreaterThan(4000);
+    expect(seen.inTheWay, land).toBe(0);
+    expect(seen.lit, land).toBe(true);
+    expect(await page.evaluate(() => (window as unknown as Win).__ew.badGeometry()), land).toEqual([]);
+  }
+  // Not too many draws looking out at a station either.
+  await page.waitForFunction(() => (window as unknown as Win).__ew.calls() > 50, null, { timeout: 60_000 });
+  expect(await page.evaluate(() => (window as unknown as Win).__ew.calls())).toBeLessThan(320);
+  expect(problems).toEqual([]);
+});
+
 test('the night train: every shirt in the corridor from open floor, however you go back and forth', async ({ page }) => {
   test.setTimeout(300_000);
   await page.setViewportSize({ width: 960, height: 600 });
