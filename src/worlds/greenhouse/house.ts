@@ -148,32 +148,32 @@ const plain = (g: THREE.BufferGeometry) => {
   return out;
 };
 
-/** The cresting along the ridge: a cast-iron frieze of quatrefoils and spear tips, cut out of a strip. */
-function crestingTexture() {
-  const [c, g] = canvas(256, 64);
-  g.fillStyle = '#fff';
-  g.fillRect(0, 54, 256, 10);
-  for (let i = 0; i < 4; i++) {
-    const x = 32 + i * 64;
-    g.beginPath();
-    g.arc(x, 34, 14, 0, Math.PI * 2);
-    g.arc(x, 34, 8, 0, Math.PI * 2, true);
-    g.fill();
-    // A spear tip above each ring, and a little fleur between.
-    g.beginPath();
-    g.moveTo(x - 4, 20);
-    g.lineTo(x, 2);
-    g.lineTo(x + 4, 20);
-    g.fill();
-    g.fillRect(x - 2, 46, 4, 10);
-    g.beginPath();
-    g.moveTo(x + 32 - 6, 56);
-    g.quadraticCurveTo(x + 32, 30, x + 32 + 6, 56);
-    g.fill();
+/**
+ * The cresting along the ridge: a cast-iron frieze of rings and spear tips on a
+ * strip, as solid shapes (cut out of a strip by a texture it would need a shader
+ * of its own; as shapes it's iron like the rest). Its foot at y = 0, `len` long.
+ */
+function crestingGeometry(len: number) {
+  const parts: THREE.BufferGeometry[] = [];
+  const H = 0.22;
+  const px = H / 64;
+  // The strip along the foot.
+  parts.push(new THREE.BoxGeometry(len, 10 * px, 0.01).translate(0, 5 * px, 0));
+  const tile = 64 * px;
+  for (let x = -len / 2 + tile / 2; x < len / 2; x += tile) {
+    // A ring on a short post, a spear tip above it, and a little fleur between.
+    const ring = new THREE.Shape().absarc(0, 0, 14 * px, 0, Math.PI * 2, false);
+    ring.holes.push(new THREE.Path().absarc(0, 0, 8 * px, 0, Math.PI * 2, true));
+    parts.push(new THREE.ExtrudeGeometry(ring, { depth: 0.008, bevelEnabled: false, curveSegments: 10 }).translate(x, 30 * px, -0.004));
+    const spear = new THREE.Shape([new THREE.Vector2(-4 * px, 0), new THREE.Vector2(0, 18 * px), new THREE.Vector2(4 * px, 0)]);
+    parts.push(new THREE.ExtrudeGeometry(spear, { depth: 0.008, bevelEnabled: false }).translate(x, 44 * px, -0.004));
+    parts.push(new THREE.BoxGeometry(4 * px, 10 * px, 0.008).translate(x, 13 * px, 0));
+    const fleur = new THREE.Shape();
+    fleur.moveTo(-6 * px, 0);
+    fleur.quadraticCurveTo(0, 26 * px, 6 * px, 0);
+    parts.push(new THREE.ExtrudeGeometry(fleur, { depth: 0.008, bevelEnabled: false, curveSegments: 6 }).translate(x + tile / 2, 8 * px, -0.004));
   }
-  const t = texture(c);
-  t.wrapS = THREE.RepeatWrapping;
-  return t;
+  return mergeGeometries(parts.map(plain));
 }
 
 export function buildHouse(quality: 'high' | 'low'): House {
@@ -453,12 +453,8 @@ export function buildHouse(quality: 'high' | 'low'): House {
   group.add(doorGroup);
 
   // The cresting along the ridge, outside, and a finial at each end.
-  const crest = new THREE.Mesh(
-    new THREE.PlaneGeometry(x1 - x0, 0.22),
-    new THREE.MeshStandardMaterial({ color: '#e2dbc8', alphaMap: crestingTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.5 }),
-  );
-  (crest.material as THREE.MeshStandardMaterial).alphaMap!.repeat.set((x1 - x0) / 0.5, 1);
-  crest.position.set(0, HOUSE.ridge.y + 0.16, HOUSE.ridge.z - 0.02);
+  const crest = new THREE.Mesh(crestingGeometry(x1 - x0), iron);
+  crest.position.set(0, HOUSE.ridge.y + 0.05, HOUSE.ridge.z - 0.02);
   group.add(crest);
   const finialProfile = [
     [0, 0],

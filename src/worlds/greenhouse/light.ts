@@ -257,6 +257,7 @@ export function buildLight(quality: 'high' | 'low'): Light {
   rain.visible = false;
   group.add(rain);
 
+  let warmed = false;
   return {
     group,
     sun,
@@ -268,7 +269,9 @@ export function buildLight(quality: 'high' | 'low'): Light {
       level.value = 1 - wet * 0.85;
       sky.intensity = 0.26 + wet * 0.14;
       rainLevel.value = wet;
-      rain.visible = wet > 0.01;
+      // Drawn (at nothing) on the very first frame, so its program is ready before the first shower, not a stall in the middle of one.
+      rain.visible = wet > 0.01 || !warmed;
+      warmed = true;
     },
   };
 }

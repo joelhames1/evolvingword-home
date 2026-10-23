@@ -392,23 +392,46 @@ export function arrangeStudio(s: Studio, mats: { wood: THREE.MeshStandardMateria
     const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
     if ((o as THREE.Mesh).isMesh && m instanceof THREE.MeshStandardMaterial && m.color.getHexString() === '141414') m.color.set('#4a3020');
   });
+  // The cartouche: a scroll-ended label, cut to its shape (so it needs no see-through paper).
+  const scroll = new THREE.Shape();
+  scroll.moveTo(40, 20);
+  scroll.lineTo(984, 20);
+  scroll.quadraticCurveTo(1014, 70, 984, 120);
+  scroll.lineTo(40, 120);
+  scroll.quadraticCurveTo(10, 70, 40, 20);
+  const scrollGeo = new THREE.ShapeGeometry(scroll, 8);
+  const sp = scrollGeo.attributes.position;
+  const su = scrollGeo.attributes.uv;
+  for (let i = 0; i < sp.count; i++) {
+    const x = sp.getX(i);
+    const y = sp.getY(i);
+    su.setXY(i, x / 1024, 1 - y / 140);
+    sp.setXYZ(i, (x / 1024 - 0.5) * 0.78, (0.5 - y / 140) * 0.14, 0);
+  }
+  // (Flipping y turned the faces round: wind them back to face the room.)
+  const si = scrollGeo.index!;
+  for (let i = 0; i < si.count; i += 3) {
+    const a = si.getX(i + 1);
+    si.setX(i + 1, si.getX(i + 2));
+    si.setX(i + 2, a);
+  }
+  scrollGeo.computeVertexNormals();
   const cartouche = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.78, 0.14),
+    scrollGeo,
     new THREE.MeshStandardMaterial({
       map: sign([{ text: 'THE PLANT HUNTER’S MAP', font: '600 50px "EB Garamond", serif', color: '#3a2a18', y: 70 }], 1024, 140, (g) => {
         g.fillStyle = '#ead9b0';
+        g.fillRect(0, 0, 1024, 140);
+        g.strokeStyle = '#8a6a3a';
+        g.lineWidth = 3;
         g.beginPath();
         g.moveTo(40, 20);
         g.lineTo(984, 20);
         g.quadraticCurveTo(1014, 70, 984, 120);
         g.lineTo(40, 120);
         g.quadraticCurveTo(10, 70, 40, 20);
-        g.fill();
-        g.strokeStyle = '#8a6a3a';
-        g.lineWidth = 3;
         g.stroke();
       }),
-      transparent: true,
       roughness: 0.85,
     }),
   );

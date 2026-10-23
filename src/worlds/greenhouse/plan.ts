@@ -97,6 +97,8 @@ export const POT = { h: 0.17, r: 0.098 };
 /** The bench across the aisle from the staging, for ferns, and the tree fern by the door. */
 export const FERNS = { x0: 2.3, x1: 5.85, z0: -2.1, z1: -1.2, y: 0.78 };
 export const TREE_FERN = v(5.25, 0, 1.85);
+/** Ferns in pots on the fern bench's gravel (their feet). */
+export const FERN_POTS = [v(2.78, FERNS.y, -1.62), v(3.62, FERNS.y, -1.72), v(4.48, FERNS.y, -1.6), v(5.35, FERNS.y, -1.7)];
 /** The compost bin, tucked under the end of the staging: its middle on the floor, and its size. */
 export const COMPOST = { at: v(-2.47, 0, -1.2), w: 0.62, d: 0.5, h: 0.58 };
 /** The tools: the watering can on the floor by the bench, and the rack at the end of the staging for the shears and the lens. */
@@ -128,7 +130,7 @@ export const BLOCKS: [number, number, number, number, number, number][] = [
   [CAN.x - 0.25, 0, CAN.z - 0.18, CAN.x + 0.25, 0.45, CAN.z + 0.18],
   // The fern bench, and the tree fern by the door.
   [FERNS.x0, 0, -2.2, FERNS.x1, 1.6, FERNS.z1],
-  [TREE_FERN.x - 0.6, 0, TREE_FERN.z - 0.6, TREE_FERN.x + 0.7, 3.3, TREE_FERN.z + 0.6],
+  [TREE_FERN.x - 0.85, 0, TREE_FERN.z - 0.85, TREE_FERN.x + 0.75, 3.3, TREE_FERN.z + 0.95],
   // Along the back wall: the line with the shirts and herbs, the map, the shelf, the drawers and the catalog, the honors and the show plant.
   [WALL.line - 1.05, 1.45, 2.3, WALL.line + 1.05, 2.95, 2.8],
   [WALL.map - 0.85, 1.15, 2.6, WALL.map + 0.85, 2.15, 2.8],

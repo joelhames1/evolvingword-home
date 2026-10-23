@@ -7,13 +7,17 @@
 // and lets it droop when it's dry. Petals are thin, so with the low sun behind
 // them they glow.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash, rgb, seeded, type Genome, type Tint } from './genome';
-import { POT, POT_AT } from './plan';
+import { BASKETS, FERN_POTS, POT, POT_AT, TREE_FERN } from './plan';
 import { terracotta, soil as soilTexture } from './surfaces';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 const SLOTS = POT_AT.length;
 const UP = v(0, 1, 0);
+/** The ferns (on the bench, in the baskets, the tree fern) bend and sway as plants too, each with a slot of its own after the pots'. */
+const FERN_SLOTS = FERN_POTS.length + BASKETS.length + 1;
+const ALL = SLOTS + FERN_SLOTS;
 
 /** A color for the shader: a tint, in linear light. */
 const linear = (t: Tint) => {
@@ -147,15 +151,15 @@ export function grow(g: Genome, seed: number): Plan {
 /** Every plant's age and lean, and where it stands: (growth, droop, phase, height) and (base x, y, z, glow). */
 const shared = {
   uTime: { value: 0 },
-  uPlantA: { value: Array.from({ length: SLOTS }, () => new THREE.Vector4(0, 0, 0, 0.3)) },
-  uPlantB: { value: Array.from({ length: SLOTS }, () => new THREE.Vector4()) },
+  uPlantA: { value: Array.from({ length: ALL }, () => new THREE.Vector4(0, 0, 0, 0.3)) },
+  uPlantB: { value: Array.from({ length: ALL }, () => new THREE.Vector4()) },
 };
 
 /** The sway and the droop, shared by every part of a plant: a bend about its foot that grows toward the top. */
 const BEND = /* glsl */ `
   uniform float uTime;
-  uniform vec4 uPlantA[${SLOTS}];
-  uniform vec4 uPlantB[${SLOTS}];
+  uniform vec4 uPlantA[${ALL}];
+  uniform vec4 uPlantB[${ALL}];
   attribute vec4 aMisc;
   mat3 rotX(float a) { float c = cos(a), s = sin(a); return mat3(1.0, 0.0, 0.0, 0.0, c, s, 0.0, -s, c); }
   mat3 rotZ(float a) { float c = cos(a), s = sin(a); return mat3(c, s, 0.0, -s, c, 0.0, 0.0, 0.0, 1.0); }
@@ -201,6 +205,7 @@ const SHAPE = /* glsl */ `
   varying float vPattern;
   varying float vSeed;
   varying float vGlow;
+  varying float vLeafShape;
 
   // A petal: u across (-1..1), t along (0..1). Width by shape, cupped, opened on its hinge.
   float petalWidth(float t, float shape) {
@@ -267,6 +272,8 @@ const SHAPE = /* glsl */ `
     if (shape < 2.5) return pow(max(sin(3.14159 * t), 0.0), 0.7) * (0.72 + 0.28 * abs(sin(t * 3.14159 * 3.0)));
     if (shape < 3.5) return pow(max(sin(3.14159 * (0.2 + 0.8 * t)), 0.0), 0.6);
     if (shape < 4.5) return pow(max(sin(3.14159 * pow(t, 0.7)), 0.0), 1.2);
+    // A fern's frond: a bare stalk at the foot, then broad, tapering to a long point.
+    if (shape > 5.5) return pow(max(sin(3.14159 * pow(t, 0.75)), 0.0), 0.7) * smoothstep(0.04, 0.16, t);
     return pow(max(sin(3.14159 * t), 0.0), 0.6);
   }
   vec3 leafAt(float u, float t, float unfurl, float arch) {
@@ -306,6 +313,7 @@ const SHAPE = /* glsl */ `
     vPattern = aMisc.y;
     vSeed = aMisc.z;
     vGlow = uPlantB[gSlot()].w;
+    vLeafShape = aLeaf.z;
     if (uKind < 0.5) petalShape(p, n);
     else if (uKind < 1.5) leafShape(p, n);
     else if (uKind < 2.5) {
@@ -332,6 +340,18 @@ const PAINT = /* glsl */ `
   varying float vPattern;
   varying float vSeed;
   varying float vGlow;
+  varying float vLeafShape;
+  /** A fern frond's leaflets, alternate along the stalk and pointing toward the tip: false between them. */
+  bool frondThere(vec2 part) {
+    float u = abs(part.x);
+    float t = part.y;
+    if (u < 0.07) return true;
+    if (t < 0.12) return false;
+    float f = fract(t * 17.0 + u * 1.6 + step(0.0, part.x) * 0.5);
+    // Each leaflet narrows toward its own tip, at the frond's edge.
+    float reach = 0.36 * (1.0 - u * 0.75);
+    return abs(f - 0.5) < reach;
+  }
   float h21(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
   vec3 petalColor() {
     float u = vPart.x;
@@ -436,7 +456,13 @@ function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
     vertex(s, false);
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>\n${PAINT}`)
-      .replace('#include <color_fragment>', 'diffuseColor.rgb = uKind < 0.5 ? petalColor() : uKind < 1.5 ? leafColor() : uKind < 2.5 ? vColor : eyeColor();')
+      .replace(
+        '#include <color_fragment>',
+        /* glsl */ `
+        if (uKind > 0.5 && uKind < 1.5 && vLeafShape > 5.5 && !frondThere(vPart)) discard;
+        diffuseColor.rgb = uKind < 0.5 ? petalColor() : uKind < 1.5 ? leafColor() : uKind < 2.5 ? vColor : eyeColor();
+      `,
+      )
       .replace(
         '#include <lights_fragment_end>',
         /* glsl */ `
@@ -467,6 +493,10 @@ function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
   depth.onBeforeCompile = (s) => {
     Object.assign(s.uniforms, shared, { uKind });
     vertex(s, true);
+    // A fern's lacy shadow, not a solid one.
+    s.fragmentShader = s.fragmentShader
+      .replace('#include <common>', `#include <common>\n${PAINT}`)
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n if (uKind > 0.5 && uKind < 1.5 && vLeafShape > 5.5 && !frondThere(vPart)) discard;');
   };
   depth.customProgramCacheKey = () => 'greenhouse-plant-depth';
   return { mat, depth };
@@ -571,6 +601,111 @@ function scentMotes() {
   return { points, uniforms };
 }
 
+// --- the ferns ---------------------------------------------------------------------------------------
+
+interface Frond {
+  slot: number;
+  at: THREE.Vector3;
+  dir: THREE.Vector3;
+  len: number;
+  width: number;
+  arch: number;
+  color: THREE.Color;
+}
+
+/**
+ * The house's ferns: a clump in a pot on each stretch of the fern bench, a
+ * Boston fern spilling out of each hanging basket, and a tree fern in the far
+ * corner with its crown of great fronds. Each frond is a leaf, arching over;
+ * where it rises from and how it sways is its slot's.
+ */
+function fernLayout(): { fronds: Frond[]; bases: { at: THREE.Vector3; height: number }[] } {
+  const r = seeded(4711);
+  const fronds: Frond[] = [];
+  const bases: { at: THREE.Vector3; height: number }[] = [];
+  const greens = ['#3a6a24', '#467a2a', '#335e20', '#4e7e30'];
+  const clump = (slot: number, at: THREE.Vector3, n: number, len: number, rise: number, arch: number, out = 0.012) => {
+    for (let k = 0; k < n; k++) {
+      const a = (k / n) * Math.PI * 2 + r() * 0.5;
+      const o = v(Math.cos(a), 0, Math.sin(a));
+      const lift = rise + (r() - 0.5) * 0.35;
+      fronds.push({
+        slot,
+        at: at.clone().addScaledVector(o, out),
+        dir: o.clone().multiplyScalar(1 - Math.abs(lift) * 0.5).add(v(0, lift, 0)).normalize(),
+        len: len * (0.75 + r() * 0.4),
+        width: len * (0.36 + r() * 0.08),
+        arch: arch * (0.8 + r() * 0.4),
+        color: new THREE.Color(greens[Math.floor(r() * greens.length)]).multiplyScalar(0.85 + r() * 0.3),
+      });
+    }
+  };
+  // On the bench: upright and arching, from the middle of each pot.
+  FERN_POTS.forEach((p, i) => {
+    const soil = p.clone().add(v(0, POT.h * 0.82, 0));
+    bases.push({ at: soil, height: 0.4 });
+    clump(SLOTS + i, soil, 16, 0.52, 0.7, 1.35);
+  });
+  // In the baskets: spilling over the rim and hanging down.
+  BASKETS.forEach((b, i) => {
+    const rim = b.at.clone().add(v(0, 0.02, 0));
+    bases.push({ at: rim, height: 0.35 });
+    clump(SLOTS + FERN_POTS.length + i, rim, 15, 0.42, 0.25, 2.1, 0.12);
+  });
+  // The tree fern: a crown of great fronds at the top of its trunk, and a few old ones gone brown, hanging.
+  const crown = TREE_FERN.clone().add(v(0, 2.35, 0));
+  const slot = SLOTS + FERN_POTS.length + BASKETS.length;
+  bases.push({ at: crown, height: 0.9 });
+  clump(slot, crown, 16, 1.05, 0.5, 1.5, 0.06);
+  for (let k = 0; k < 4; k++) {
+    const a = r() * Math.PI * 2;
+    const o = v(Math.cos(a), 0, Math.sin(a));
+    fronds.push({ slot, at: crown.clone().addScaledVector(o, 0.08).add(v(0, -0.05, 0)), dir: o.clone().add(v(0, -1.6, 0)).normalize(), len: 0.75, width: 0.26, arch: 0.4, color: new THREE.Color('#6a4a24').multiplyScalar(0.8 + r() * 0.3) });
+  }
+  return { fronds, bases };
+}
+
+/** The baskets (wire, lined with moss), their chains, and the tree fern's trunk: one mesh, in vertex colors. */
+function fernFurniture(high: boolean) {
+  const parts: THREE.BufferGeometry[] = [];
+  const shade = (g: THREE.BufferGeometry, hex: string) => {
+    const out = g.index ? g.toNonIndexed() : g;
+    out.deleteAttribute('uv');
+    const c = new THREE.Color(hex);
+    out.setAttribute('color', new THREE.Float32BufferAttribute(new Array(out.attributes.position.count).fill(0).flatMap(() => [c.r, c.g, c.b]), 3));
+    return out;
+  };
+  for (const b of BASKETS) {
+    const bowl = new THREE.LatheGeometry([v(0, -0.15, 0), v(0.09, -0.14, 0), v(0.16, -0.08, 0), v(0.19, 0.0, 0), v(0.2, 0.02, 0)].map((p) => new THREE.Vector2(p.x, p.y)), high ? 18 : 12);
+    bowl.translate(b.at.x, b.at.y, b.at.z);
+    parts.push(shade(bowl, '#4a4a2a'));
+    // Three chains up to a hook on the iron above.
+    const hook = b.at.clone().add(v(0, 0.55, 0));
+    for (let k = 0; k < 3; k++) {
+      const a = (k / 3) * Math.PI * 2;
+      const from = b.at.clone().add(v(Math.cos(a) * 0.19, 0.02, Math.sin(a) * 0.19));
+      const len = from.distanceTo(hook);
+      const chain = new THREE.CylinderGeometry(0.003, 0.003, len, 4, 1);
+      chain.applyMatrix4(new THREE.Matrix4().compose(from.clone().lerp(hook, 0.5), new THREE.Quaternion().setFromUnitVectors(UP, hook.clone().sub(from).normalize()), v(1, 1, 1)));
+      parts.push(shade(chain, '#2a2622'));
+    }
+    const rod = new THREE.CylinderGeometry(0.005, 0.005, 0.6, 5, 1).translate(hook.x, hook.y + 0.3, hook.z);
+    parts.push(shade(rod, '#2a2622'));
+  }
+  // The tree fern's trunk: rough and fibrous, a little crooked.
+  const trunk = new THREE.CylinderGeometry(0.1, 0.15, 2.4, high ? 12 : 8, 8);
+  const tp = trunk.attributes.position;
+  for (let i = 0; i < tp.count; i++) {
+    const y = tp.getY(i);
+    const k = 1 + Math.sin(y * 23 + Math.atan2(tp.getZ(i), tp.getX(i)) * 3) * 0.06;
+    tp.setXYZ(i, tp.getX(i) * k + Math.sin(y * 1.3) * 0.04, y, tp.getZ(i) * k);
+  }
+  trunk.computeVertexNormals();
+  trunk.translate(TREE_FERN.x, 1.2, TREE_FERN.z);
+  parts.push(shade(trunk, '#3e2c1e'));
+  return mergeGeometries(parts);
+}
+
 // --- the flowers in the house ----------------------------------------------------------------------
 
 export interface Flowers {
@@ -596,7 +731,13 @@ const potMatrix = (slot: number) => new THREE.Matrix4().makeTranslation(POT_AT[s
 export function buildFlowers(quality: 'high' | 'low'): Flowers {
   const group = new THREE.Group();
   const high = quality === 'high';
-  const MAX = { petal: SLOTS * 4 * 28, leaf: SLOTS * 40, stem: SLOTS * 26, eye: SLOTS * 4 };
+  const ferns = fernLayout();
+  const MAX = { petal: SLOTS * 4 * 28, leaf: SLOTS * 40 + ferns.fronds.length, stem: SLOTS * 26, eye: SLOTS * 4 };
+  // The ferns: always grown, each swaying about where its fronds rise from.
+  ferns.bases.forEach((b, i) => {
+    shared.uPlantA.value[SLOTS + i].set(1, 0, i * 1.7, b.height);
+    shared.uPlantB.value[SLOTS + i].set(b.at.x, b.at.y, b.at.z, 0);
+  });
   const petals = parts('petal', strip(high ? 10 : 6, high ? 16 : 8), MAX.petal, { aPetal: 4, aWin: 4, aBase: 3, aTip: 3, aMark: 3 }, { roughness: 0.55 });
   const leafMesh = parts('leaf', strip(high ? 6 : 4, high ? 10 : 6), MAX.leaf, { aLeaf: 4, aWin: 4, aColor: 3 }, { roughness: 0.6 });
   const stemGeo = new THREE.CylinderGeometry(0.8, 1, 1, 6, 1, true);
@@ -623,16 +764,20 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
     [POT.r * 0.72, POT.h * 0.1],
     [0, POT.h * 0.1],
   ].map(([a, b]) => new THREE.Vector2(a, b));
-  const pots = new THREE.InstancedMesh(new THREE.LatheGeometry(potProfile, high ? 24 : 16), new THREE.MeshStandardMaterial({ map: terracotta(3), roughness: 0.88 }), SLOTS);
-  const soils = new THREE.InstancedMesh(new THREE.CircleGeometry(POT.r * 0.86, 16).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: soilTexture(9), roughness: 1 }), SLOTS);
-  for (let i = 0; i < SLOTS; i++) {
-    pots.setMatrixAt(i, potMatrix(i));
-    soils.setMatrixAt(i, potMatrix(i).multiply(new THREE.Matrix4().makeTranslation(0, POT.h * 0.82, 0)));
-  }
+  // (Merged, not instanced: they never move, and a plain textured mesh shares its program with the house's.)
+  const potGeo = new THREE.LatheGeometry(potProfile, high ? 24 : 16);
+  const soilGeo = new THREE.CircleGeometry(POT.r * 0.86, 16).rotateX(-Math.PI / 2).translate(0, POT.h * 0.82, 0);
+  const feet = [...POT_AT.map((_, i) => potMatrix(i)), ...FERN_POTS.map((p) => new THREE.Matrix4().makeTranslation(p.x, p.y, p.z))];
+  const pots = new THREE.Mesh(mergeGeometries(feet.map((m) => potGeo.clone().applyMatrix4(m))), new THREE.MeshStandardMaterial({ map: terracotta(3), roughness: 0.88 }));
+  const soils = new THREE.Mesh(mergeGeometries(feet.map((m) => soilGeo.clone().applyMatrix4(m))), new THREE.MeshStandardMaterial({ map: soilTexture(9), roughness: 1 }));
   pots.castShadow = true;
   pots.receiveShadow = true;
   soils.receiveShadow = true;
   group.add(pots, soils);
+  const furniture = new THREE.Mesh(fernFurniture(high), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
+  furniture.castShadow = true;
+  furniture.receiveShadow = true;
+  group.add(furniture);
 
   // Something to click for each pot.
   const pickMat = new THREE.MeshBasicMaterial({ visible: false });
@@ -731,6 +876,12 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
         const s = b.size * 0.26;
         put(eyeMesh, 'eye', frame(at.clone().addScaledVector(axis, 0.002), axis, ref, s), slot, { aWin: [0, b.win[1], b.win[2], 0], aColor: eyeCol });
       });
+    }
+    for (const f of ferns.fronds) {
+      const side = new THREE.Vector3().crossVectors(UP, f.dir);
+      if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+      const face = new THREE.Vector3().crossVectors(f.dir, side.normalize()).normalize();
+      put(leafMesh, 'leaf', frame(f.at, f.dir, face), f.slot, { aLeaf: [f.len, f.width, 6, f.arch], aWin: [0, 0.001, 0, 0], aColor: f.color.toArray() });
     }
     for (const [mesh, kind] of [
       [petals, 'petal'],

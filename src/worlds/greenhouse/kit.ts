@@ -286,7 +286,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       card('Under the lens', 'A seedling', ['Too young to say. The lens tells you everything once it flowers.', { note: parentage(p) }], [{ label: 'Back to the staging', quiet: true, run: () => wiring?.goTo('staging') }]);
       return;
     }
-    card(`Under the lens · “${gardenName(g)}”`, latinName(g), [{ list: traits(g) }, { note: parentage(p) }], [
+    card('Under the lens', gardenName(g), [{ list: traits(g) }, { note: `${latinName(g)}. ${parentage(p)}` }], [
       ...(i < POTS ? [{ label: 'Share it', run: () => void share(i) }, { label: 'Water it', run: () => void waterPot(i) }] : []),
       { label: 'Back', quiet: true, run: () => wiring?.goTo('staging') },
     ]);

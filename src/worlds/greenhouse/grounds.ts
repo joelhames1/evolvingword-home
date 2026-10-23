@@ -373,7 +373,8 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     new THREE.IcosahedronGeometry(1, 1),
     blobs.map((b) => ({ m: m4.clone().compose(b.at, turned(), b.s), color: b.color, crown: b.crown })),
   );
-  group.add(leafCards(sprays, daylight));
+  // The sprays: cards, told apart from the clumps by a reach given negative.
+  leafy(sprayCard(), sprays.map((b) => ({ ...b, crown: b.crown.clone().setW(-b.crown.w) })));
 
   // Spires rising out of the borders, planted in drifts of one color as a border is: delphiniums,
   // lupins and foxgloves, each a tapering spike of florets, open at the foot and in bud at the tip.
@@ -495,7 +496,9 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
  * the sun catching it, and a glow through them with the sun behind. A clump
  * that belongs to a crown (aCrown: its middle and reach; a reach of 0 for the
  * rest) is lit as part of the whole crown, darker toward its heart, and its
- * outline is ragged with leaves rather than round.
+ * outline is ragged with leaves rather than round. A spray of leaves (a card
+ * painted with them; aCrown's reach given negative) is cut out where there's
+ * no leaf and lit only as its crown. All of it one program.
  */
 function foliageMaterial(u: DaylightUniforms) {
   return new THREE.ShaderMaterial({
@@ -505,6 +508,7 @@ function foliageMaterial(u: DaylightUniforms) {
       varying vec3 vNrm;
       varying vec3 vColor;
       varying vec4 vCrown;
+      varying vec2 vUv;
       void main() {
         vec4 local = vec4(position, 1.0);
         vec3 nrm = normal;
@@ -526,15 +530,18 @@ function foliageMaterial(u: DaylightUniforms) {
         vec3 nw = mat3(modelMatrix) * nrm;
         vNrm = nw / max(length(nw), 1e-6);
         vCrown = aCrown;
+        vUv = uv;
         gl_Position = projectionMatrix * viewMatrix * w;
       }
     `,
     fragmentShader: /* glsl */ `
       ${DAYLIGHT}
+      uniform sampler2D uLeaves;
       varying vec3 vWorld;
       varying vec3 vNrm;
       varying vec3 vColor;
       varying vec4 vCrown;
+      varying vec2 vUv;
       float h13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
       float vn(vec3 p) {
         vec3 i = floor(p);
@@ -544,12 +551,16 @@ function foliageMaterial(u: DaylightUniforms) {
                    mix(mix(h13(i + vec3(0, 0, 1)), h13(i + vec3(1, 0, 1)), f.x), mix(h13(i + vec3(0, 1, 1)), h13(i + vec3(1, 1, 1)), f.x), f.y), f.z);
       }
       void main() {
+        // A spray of leaves: cut out where the painting has none.
+        float spray = step(vCrown.w, -1e-3);
+        vec4 painted = texture2D(uLeaves, vUv);
+        if (spray > 0.5 && painted.a < 0.45) discard;
+        float reachOf = abs(vCrown.w);
         vec3 toEye = cameraPosition - vWorld;
         float dist = length(toEye);
         vec3 v = toEye / max(dist, 1e-4);
         float nl = length(vNrm);
         vec3 nb = nl > 1e-5 ? vNrm / nl : vec3(0.0, 1.0, 0.0);
-        if (!gl_FrontFacing) nb = -nb;
         float far = smoothstep(15.0, 60.0, dist);
         float leaves = vn(vWorld * 9.0) * 0.55 + vn(vWorld * 23.0) * 0.45;
         // Up close, single leaves: small crisp flecks, lit or in shade, gone to an average further off.
@@ -557,35 +568,34 @@ function foliageMaterial(u: DaylightUniforms) {
         float fleck = smoothstep(0.38, 0.62, vn(vWorld * 47.0 + leaves * 2.0));
         leaves = mix(leaves, leaves * (0.7 + 0.6 * fleck), near);
         leaves = mix(leaves, 0.5, far * 0.7);
-        float inCrown = step(1e-3, vCrown.w);
-        // A ragged edge: where a clump turns away from the eye, sprays of leaves with sky between
+        float inCrown = step(1e-3, reachOf);
+        // A ragged edge on a clump: where it turns away from the eye, sprays of leaves with sky between
         // (only near enough for a leaf to be a few pixels; further off it would shimmer).
         float edge = 1.0 - abs(dot(nb, v));
         float sprays = vn(vWorld * 6.5 + 3.1) * 0.65 + vn(vWorld * 17.0) * 0.35;
-        if (inCrown * edge * (1.0 - smoothstep(22.0, 40.0, dist)) > 0.42 + 0.75 * sprays) discard;
+        if ((1.0 - spray) * inCrown * edge * (1.0 - smoothstep(22.0, 40.0, dist)) > 0.42 + 0.75 * sprays) discard;
         vec3 bump = vec3(vn(vWorld * 4.0 + 1.7), vn(vWorld * 4.0 + 4.1), vn(vWorld * 4.0 + 8.3)) - 0.5;
-        // Lit as part of its crown: the clump's own roundness, leaning out from the crown's middle.
+        // Lit as part of its crown: the clump's own roundness leaning out from the crown's middle (a spray, the crown's alone).
         vec3 fromMid = vWorld - vCrown.xyz;
         float reach = length(fromMid);
         vec3 outward = reach > 1e-4 ? fromMid / reach : nb;
-        vec3 n = normalize(mix(nb, outward, 0.62 * inCrown) + bump * mix(1.1, 0.75, inCrown));
-        float heart = mix(1.0, mix(0.32, 1.0, smoothstep(0.25, 0.95, reach / max(vCrown.w, 1e-3))), inCrown);
-        vec3 albedo = vColor * (0.5 + 0.8 * leaves);
+        vec3 n = normalize(mix(nb, outward, mix(0.62 * inCrown, 1.0, spray)) + bump * mix(mix(1.1, 0.75, inCrown), 0.0, spray));
+        float heart = mix(1.0, mix(0.32, 1.0, smoothstep(0.25, 0.95, reach / max(reachOf, 1e-3))), inCrown);
+        vec3 albedo = vColor * mix(vec3(0.5 + 0.8 * leaves), painted.rgb, spray);
         float lit = max(dot(n, uSunDir), 0.0);
         // The shade side stays green and deep: less of the sky's blue in it than on open ground.
         vec3 amb = mix(uGround, uSky, n.y * 0.5 + 0.5) * vec3(0.8, 0.88, 0.8);
         vec3 col = albedo * (amb * heart + uSunColor * lit * mix(1.0, heart, 0.5));
-        // Gold on the edges toward the sun, and a glow through the leaves with the sun behind.
-        col += uSunColor * albedo * pow(1.0 - max(dot(n, v), 0.0), 2.0) * lit * 0.9;
-        // With the sun behind it, a glow through the leaves, brightest round the crown's edge.
+        // Gold on the edges toward the sun, and with the sun behind, a glow through the leaves, brightest round the crown's edge.
+        col += uSunColor * albedo * pow(1.0 - max(dot(n, v), 0.0), 2.0) * lit * 0.85;
         float back = max(dot(-v, uSunDir), 0.0);
-        col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * (pow(back, 4.0) * 0.5 * heart + pow(1.0 - abs(dot(n, v)), 2.0) * back * back * 0.8 * inCrown);
+        col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * (pow(back, 4.0) * 0.55 * heart + pow(1.0 - abs(dot(n, v)), 2.0) * back * back * mix(0.8 * inCrown, 1.1, spray));
         // The hollows between clumps of leaves stay dark.
-        col *= 0.55 + 0.45 * smoothstep(0.2, 0.6, leaves);
+        col *= mix(0.55 + 0.45 * smoothstep(0.2, 0.6, leaves), 1.0, spray);
         gl_FragColor = vec4(fade(col, vWorld), 1.0);
       }
     `,
-    uniforms: { ...u },
+    uniforms: { ...u, uLeaves: { value: sprayTexture() } },
     vertexColors: true,
   });
 }
@@ -708,69 +718,21 @@ function sprayTexture() {
   return t;
 }
 
-/**
- * The trees' sprays of leaves: cards with a painted cluster on them, cut out
- * where there's no leaf, lit as part of their crown (the middle and reach in
- * aCrown) so the whole tree has a sunny side, a shaded side and a dark heart.
- */
-function leafCards(list: { m: THREE.Matrix4; color: THREE.Color; crown: THREE.Vector4 }[], u: DaylightUniforms) {
-  const geo = new THREE.PlaneGeometry(1, 1);
-  const mat = new THREE.ShaderMaterial({
-    vertexShader: /* glsl */ `
-      attribute vec4 aCrown;
-      varying vec2 vUv;
-      varying vec3 vWorld;
-      varying vec3 vColor;
-      varying vec4 vCrown;
-      void main() {
-        vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
-        vUv = uv;
-        vWorld = w.xyz;
-        vColor = instanceColor;
-        vCrown = aCrown;
-        gl_Position = projectionMatrix * viewMatrix * w;
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      ${DAYLIGHT}
-      uniform sampler2D uLeaves;
-      varying vec2 vUv;
-      varying vec3 vWorld;
-      varying vec3 vColor;
-      varying vec4 vCrown;
-      void main() {
-        vec4 leaf = texture2D(uLeaves, vUv);
-        if (leaf.a < 0.45) discard;
-        vec3 toEye = cameraPosition - vWorld;
-        float dist = length(toEye);
-        vec3 v = toEye / max(dist, 1e-4);
-        vec3 fromMid = vWorld - vCrown.xyz;
-        float reach = length(fromMid);
-        vec3 n = reach > 1e-4 ? fromMid / reach : vec3(0.0, 1.0, 0.0);
-        // Deeper in, darker: the leaves round the outside shade the ones inside.
-        float heart = mix(0.3, 1.0, smoothstep(0.3, 1.0, reach / max(vCrown.w, 1e-3)));
-        vec3 albedo = vColor * leaf.rgb;
-        float lit = max(dot(n, uSunDir), 0.0);
-        vec3 amb = mix(uGround, uSky, n.y * 0.5 + 0.5) * vec3(0.8, 0.88, 0.8);
-        vec3 col = albedo * (amb * heart + uSunColor * lit * mix(1.0, heart, 0.6));
-        col += uSunColor * albedo * pow(1.0 - max(dot(n, v), 0.0), 2.0) * lit * 0.8;
-        // The sun through the leaves from behind, brightest round the crown's edge.
-        float back = max(dot(-v, uSunDir), 0.0);
-        col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * (pow(back, 4.0) * 0.6 * heart + pow(1.0 - abs(dot(n, v)), 2.0) * back * back * 1.1);
-        gl_FragColor = vec4(fade(col, vWorld), 1.0);
-      }
-    `,
-    uniforms: { ...u, uLeaves: { value: sprayTexture() } },
-    side: THREE.DoubleSide,
-  });
-  const mesh = new THREE.InstancedMesh(geo, mat, list.length);
-  const crowns = new Float32Array(list.length * 4);
-  list.forEach((b, i) => {
-    mesh.setMatrixAt(i, b.m);
-    mesh.setColorAt(i, b.color);
-    b.crown.toArray(crowns, i * 4);
-  });
-  geo.setAttribute('aCrown', new THREE.InstancedBufferAttribute(crowns, 4));
-  mesh.frustumCulled = false;
-  return mesh;
+/** A card for a spray of leaves, a meter square, with a back to it (wound the other way) so it's seen from either side. */
+function sprayCard() {
+  const front = new THREE.PlaneGeometry(1, 1).toNonIndexed();
+  const back = front.clone();
+  const p = back.attributes.position;
+  const n = back.attributes.normal;
+  const uv = back.attributes.uv;
+  for (let k = 0; k < p.count; k += 3)
+    for (const a of [p, n, uv]) {
+      const t = [a.getX(k + 1), a.getY(k + 1), a.itemSize > 2 ? a.getZ(k + 1) : 0];
+      a.setXY(k + 1, a.getX(k + 2), a.getY(k + 2));
+      if (a.itemSize > 2) a.setZ(k + 1, a.getZ(k + 2));
+      a.setXY(k + 2, t[0], t[1]);
+      if (a.itemSize > 2) a.setZ(k + 2, t[2]);
+    }
+  for (let k = 0; k < n.count; k++) n.setXYZ(k, -n.getX(k), -n.getY(k), -n.getZ(k));
+  return whiteColors(mergeGeometries([front, back]));
 }

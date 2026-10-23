@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvas, texture } from '../../textures';
 import { CAN, COMPOST, RACK } from './plan';
+import { sparkMaterial } from './sparks';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
@@ -146,6 +147,8 @@ export function buildTools(woodLike: THREE.MeshStandardMaterial): Tools {
   gg.arc(64, 64, 52, Math.PI * 1.08, Math.PI * 1.42);
   gg.stroke();
   const glass = new THREE.Mesh(new THREE.CircleGeometry(0.044, 32), new THREE.MeshBasicMaterial({ map: texture(gc), transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+  // (Drawn after the house's glass, which is always further off.)
+  glass.renderOrder = 4;
   lens.add(glass);
   const handle = new THREE.Mesh(tube(v(0, -0.05, 0), v(0, -0.14, 0), 0.008, 0.01), handleWood.clone());
   lens.add(handle);
@@ -208,32 +211,9 @@ export function buildTools(woodLike: THREE.MeshStandardMaterial): Tools {
   const dropLife = new Float32Array(DROPS).fill(9);
   const dropGeo = new THREE.BufferGeometry();
   dropGeo.setAttribute('position', new THREE.BufferAttribute(dropPos, 3));
-  dropGeo.setAttribute('aLife', new THREE.BufferAttribute(dropLife, 1));
-  const drops = new THREE.Points(
-    dropGeo,
-    new THREE.ShaderMaterial({
-      vertexShader: /* glsl */ `
-        attribute float aLife;
-        varying float vA;
-        void main() {
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vA = step(aLife, 0.9) * smoothstep(0.08, 0.3, -mv.z);
-          gl_PointSize = clamp(3.5 / max(-mv.z, 0.05), 1.0, 9.0);
-          gl_Position = projectionMatrix * mv;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        varying float vA;
-        void main() {
-          float r = length(gl_PointCoord - 0.5) * 2.0;
-          gl_FragColor = vec4(vec3(0.75, 0.85, 0.95) * vA * smoothstep(1.0, 0.2, r), 1.0);
-        }
-      `,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
+  dropGeo.setAttribute('aAge', new THREE.BufferAttribute(dropLife, 1));
+  // Pale water, there for its fall and gone.
+  const drops = new THREE.Points(dropGeo, sparkMaterial({ color: new THREE.Color(0.75, 0.85, 0.95), life: 0.9, fade: false, size: 3.5, max: 9, grow: false, soft: 0.2 }));
   drops.frustumCulled = false;
   group.add(drops);
   let pouring = 0;
@@ -362,7 +342,7 @@ export function buildTools(woodLike: THREE.MeshStandardMaterial): Tools {
       if (t >= pourStop) pouring = 0;
       // (Uploaded only while there's water in the air, and once more as the last drop goes.)
       dropGeo.attributes.position.needsUpdate = true;
-      dropGeo.attributes.aLife.needsUpdate = true;
+      dropGeo.attributes.aAge.needsUpdate = true;
       if (!wet && !pouring) for (let i = 0; i < DROPS; i++) dropLife[i] = 9;
     },
   };

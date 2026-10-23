@@ -4,6 +4,7 @@
 // from there to an empty pot.
 import * as THREE from 'three';
 import { canvas, texture } from '../../textures';
+import { sparkMaterial } from './sparks';
 
 export interface Bee {
   group: THREE.Group;
@@ -103,6 +104,8 @@ export function buildBee(): Bee {
       w.scale.set(s * (k ? 0.8 : 1), 1, 1);
       w.rotation.set(-Math.PI / 2, 0, 0);
       w.userData = { side: s, k };
+      // (After the house's glass, so the wings aren't fogged by panes behind them.)
+      w.renderOrder = 4;
       wings.push(w);
       bee.add(w);
     }
@@ -114,31 +117,8 @@ export function buildBee(): Bee {
   const trailGeo = new THREE.BufferGeometry();
   trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
   trailGeo.setAttribute('aAge', new THREE.BufferAttribute(trailAge, 1));
-  const trail = new THREE.Points(
-    trailGeo,
-    new THREE.ShaderMaterial({
-      vertexShader: /* glsl */ `
-        attribute float aAge;
-        varying float vA;
-        void main() {
-          vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          vA = clamp(1.0 - aAge / 1.4, 0.0, 1.0) * smoothstep(0.05, 0.3, -mv.z);
-          gl_PointSize = clamp(5.0 / max(-mv.z, 0.05), 1.0, 14.0) * (0.4 + vA);
-          gl_Position = projectionMatrix * mv;
-        }
-      `,
-      fragmentShader: /* glsl */ `
-        varying float vA;
-        void main() {
-          float r = length(gl_PointCoord - 0.5) * 2.0;
-          gl_FragColor = vec4(vec3(1.0, 0.78, 0.3) * vA * smoothstep(1.0, 0.0, r) * 1.6, 1.0);
-        }
-      `,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  );
+  // Gold, fading over a second and a half, a little bigger while fresh.
+  const trail = new THREE.Points(trailGeo, sparkMaterial({ color: new THREE.Color(1, 0.78, 0.3).multiplyScalar(1.6), life: 1.4, fade: true, size: 5, max: 14, grow: true, soft: 0 }));
   trail.frustumCulled = false;
   group.add(trail);
   const seed = new THREE.Mesh(new THREE.SphereGeometry(0.006, 8, 6), new THREE.MeshStandardMaterial({ color: '#5a3a1c', roughness: 0.6 }));
