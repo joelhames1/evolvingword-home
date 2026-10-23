@@ -47,7 +47,7 @@ const SPILL = /* glsl */ `
     // Along the train they're thrown back from the wheels, so the light runs out behind the bogie.
     vec3 d = world - uSpark.xyz;
     d.x = d.x > 0.0 ? d.x * 1.6 : d.x * 0.35;
-    return vec3(1.0, 0.5, 0.16) * uSpark.w * exp(-dot(d, d) * 0.5);
+    return vec3(1.0, 0.5, 0.16) * uSpark.w * exp(-dot(d, d) * 0.22);
   }
   float spillAt(vec3 world, vec3 n) {
     float side = world.z;

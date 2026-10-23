@@ -73,7 +73,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   skyHolder.add(sky.group);
 
   // --- the brakes' sparks ------------------------------------------------------------------
-  const SPARKS = quality === 'high' ? 420 : 220;
+  const SPARKS = quality === 'high' ? 480 : 320;
   const sparkPos = new Float32Array(SPARKS * 3);
   const sparkVel = new Float32Array(SPARKS * 3);
   const sparkLife = new Float32Array(SPARKS).fill(-1);
@@ -81,10 +81,33 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const sparkGeo = new THREE.BufferGeometry();
   sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
   sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkCol, 3));
-  const sparks = new THREE.Points(
-    sparkGeo,
-    new THREE.PointsMaterial({ size: 0.06, map: glow('rgba(255,200,120,1)', 32), vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
-  );
+  // (A shader of its own, like the stars': each spark a few pixels of glow, sized by distance.)
+  const sparkMat = new THREE.ShaderMaterial({
+    vertexShader: /* glsl */ `
+      attribute vec3 color;
+      uniform float uScale;
+      varying vec3 vColor;
+      void main() {
+        vColor = color;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = clamp(0.15 * uScale / max(-mv.z, 0.1), 2.0, 40.0) * step(0.001, color.r);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec3 vColor;
+      void main() {
+        float r = length(gl_PointCoord - 0.5) * 2.0;
+        float a = 1.0 - smoothstep(0.0, 1.0, r);
+        gl_FragColor = vec4(vColor * (a * a * 3.0 + smoothstep(0.35, 0.0, r) * 4.0), 1.0);
+      }
+    `,
+    uniforms: { uScale: { value: 500 } },
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const sparks = new THREE.Points(sparkGeo, sparkMat);
   sparks.frustumCulled = false;
   // Where they fly from: the wheels on the window side, ours and the cars either side.
   const SPARK_FROM = [-0.95, 1.55, 6.45, 8.95, -16.05, -18.55, -22.4, -24.9];
@@ -475,7 +498,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         lever: { pos: v(0.82, 1.64, -0.5), target: LEVER_AT.clone().add(v(0, 0.26, 0.05)), fov: 40, lean: 0.015, shift: CARD },
         brake: { pos: v(-0.66, 1.58, -0.9), target: BRAKE_AT.clone().add(v(0, 0, 0.05)), fov: 32, lean: 0.015, shift: CARD },
         // Nose to the glass, looking down and back along the train at the wheels.
-        sparks: { pos: v(0.42, 1.48, -1.3), target: v(-2.6, -1.0, -3.0), fov: 64, lean: 0.01 },
+        sparks: { pos: v(0.22, 1.56, -1.42), target: v(-1.2, -0.6, -4.6), fov: 64, lean: 0.01 },
         honors: { pos: v(-0.45, 1.52, -0.24), target: v(ROOM.x1, 1.32, -0.26), fov: 52, lean: 0.04 },
         medals: { pos: v(0.55, 1.62, -0.27), target: v(ROOM.x1 - 0.05, 1.6, -0.27), fov: 40, lean: 0.015, shift: CARD },
         library: { pos: v(0.22, 1.12, -0.25), target: v(ROOM.x1, 0.66, -0.25), fov: 50, lean: 0.03, shift: 0.1 },
@@ -639,7 +662,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       // The brakes: their sound follows the speed; sparks from the wheels while they bite.
       if (braking) band.brakeLevel(vNow);
       const sparkRate = braking ? Math.min(1, vNow / 6) : 0;
-      (uniforms.uSpark.value as THREE.Vector4).set(0.3, -1.1, -0.95, sparkRate * (1.2 + Math.random() * 0.8));
+      (uniforms.uSpark.value as THREE.Vector4).set(0.6, -1.25, -1.8, sparkRate * (2.4 + Math.random() * 1.6));
       const ddt = Math.min(0.05, Math.max(0, dt));
       if (sparkRate > 0) {
         sparkNext += ddt * 900 * sparkRate;
@@ -647,9 +670,10 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
           if (sparkLife[i] > 0) continue;
           sparkNext -= 1;
           const from = SPARK_FROM[Math.floor(Math.random() * SPARK_FROM.length)];
-          sparkLife[i] = 0.25 + Math.random() * 0.55;
+          // Thrown off the wheel backward and out from under the car, some high enough to see from the window.
+          sparkLife[i] = 0.35 + Math.random() * 0.7;
           sparkPos.set([from + (Math.random() - 0.5) * 0.2, -1.12, -0.74 - Math.random() * 0.05], i * 3);
-          sparkVel.set([-(2 + Math.random() * (vNow * 0.6 + 2)), 0.4 + Math.random() * 2.2, -(1.2 + Math.random() * 3.5)], i * 3);
+          sparkVel.set([-(2 + Math.random() * (vNow * 0.6 + 2)), 0.6 + Math.random() * 3.2, -(2.5 + Math.random() * 5)], i * 3);
         }
       }
       sparkNext = Math.min(sparkNext, 50);
@@ -668,6 +692,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         sparkCol[i * 3 + 1] = 1.3 * k * k;
         sparkCol[i * 3 + 2] = 0.35 * k * k * k;
       }
+      sparkMat.uniforms.uScale.value = renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
       sparkGeo.attributes.position.needsUpdate = true;
       sparkGeo.attributes.color.needsUpdate = true;
 
@@ -758,6 +783,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       band,
       routeMap,
       consist,
+      sparks,
       shots: SHOTS,
       /** Runs the line's clock faster (the tests use this to get to junctions and stations). */
       fast: (k: number) => (fast = k),
@@ -765,6 +791,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       jump: (l: Land, at: number, speed?: number) => {
         journey.reset(l, at, speed);
         landNow = l;
+        ticket.stamp(l);
         land.invalidate(-Infinity, true);
       },
       pull: () => pull(),
