@@ -66,6 +66,9 @@ export class Rig {
   /** Pixels a card covers on the left (or the notepad on the right); shifted shots clear at least this. */
   inset = 0;
   insetRight = 0;
+  /** True while the visitor has tucked the card away: the picture slides back to the middle. */
+  clear = false;
+  private tucked = 0;
 
   constructor(
     private camera: THREE.PerspectiveCamera,
@@ -166,17 +169,20 @@ export class Rig {
     // Shots are framed on a 1440x900 screen. Where the room left beside a card
     // (or the whole screen, for a shot without one) is narrower than that, widen
     // the lens so the subject still fits beside the card instead of under it.
-    const m = Math.min(1, Math.abs(this.shift) / 0.08);
-    const covers = (this.shift >= 0 ? this.inset : this.insetRight) * m;
-    const designed = (1440 - (this.shift >= 0 ? DESIGN_INSET : DESIGN_PAD) * m) / 900;
+    const aim = this.clear ? 1 : 0;
+    this.tucked += (aim - this.tucked) * Math.min(1, dt * 6);
+    if (Math.abs(aim - this.tucked) < 0.002) this.tucked = aim;
+    const shift = this.shift * (1 - this.tucked);
+    const m = Math.min(1, Math.abs(shift) / 0.08);
+    const covers = (shift >= 0 ? this.inset : this.insetRight) * m;
+    const designed = (1440 - (shift >= 0 ? DESIGN_INSET : DESIGN_PAD) * m) / 900;
     const room = Math.max(1, w - covers) / h;
     const squeeze = Math.min(2.4, Math.max(1, (designed * (1 - 0.18 * (1 - m))) / room));
     const tall = Math.tan(THREE.MathUtils.degToRad(this.fov) / 2) * squeeze / (this.visible < 1 ? this.visible : 1);
     const fov = Math.min(78, THREE.MathUtils.radToDeg(2 * Math.atan(tall)));
     // Slide the picture sideways (a lens shift, not a turn) to make room for a card.
-
     const sideways = (inset: number, k: number) => Math.round(Math.max(k * w, (inset / 2) * Math.min(1, k / 0.08)));
-    const offset = this.shift > 0 ? sideways(this.inset, this.shift) : this.shift < 0 ? -sideways(this.insetRight, -this.shift) : 0;
+    const offset = shift > 0 ? sideways(this.inset, shift) : shift < 0 ? -sideways(this.insetRight, -shift) : 0;
     const view = cam.view;
     const shifted = view?.enabled ? view.offsetX : 0;
     if (Math.abs(cam.fov - fov) > 1e-4 || cam.near !== this.near || -offset !== shifted || (view?.enabled && view.fullWidth !== w)) {

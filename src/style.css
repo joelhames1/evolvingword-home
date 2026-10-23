@@ -1434,6 +1434,67 @@ html.lite body {
   border: 1px solid rgba(0, 0, 0, 0.3);
 }
 
+/* Tucking a card, ticket or note away to see what's behind it, and the tab that brings it back. */
+.tuck {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  padding: 3px 8px;
+  border: 1px solid rgba(29, 26, 22, 0.25);
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(29, 26, 22, 0.65);
+  font-family: var(--type);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.tuck:hover,
+.tuck:focus-visible {
+  color: #1d1a16;
+  border-color: rgba(29, 26, 22, 0.6);
+}
+.notepad .tuck {
+  top: 14px;
+  right: 18px;
+}
+.tucked .card,
+.tucked .ticket,
+.tucked .notepad {
+  display: none;
+}
+.untuck {
+  position: fixed;
+  left: max(4vw, 72px);
+  bottom: calc(var(--bar, 0px) + 5vh);
+  z-index: 12;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: #f4eedf;
+  color: #1d1a16;
+  font-family: var(--type);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  animation: lift 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.untuck.right {
+  left: auto;
+  right: max(4vw, 72px);
+}
+.untuck[hidden] {
+  display: none;
+}
+/* Room for the Hide button beside the first line. */
+.card-kicker,
+.ticket-no {
+  padding-right: 64px;
+}
+
 /* The book reader: an open book over a dimmed room. */
 .reader {
   position: fixed;
