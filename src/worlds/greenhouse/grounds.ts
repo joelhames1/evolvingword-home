@@ -885,6 +885,20 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     trunkShade(x, gy, z, h * 0.7, 0.18, gy > 1.5);
     crown(x, gy + h * 0.85, z, 1.9 + r() * 1.3, 2.6 + r() * 1.2, ['#4a6a28', '#3e5c24', '#56722e', '#44622a'][i % 4], high ? 48 : 32, gy > 1.5);
   }
+  // And further back on that ground, bigger trees filling the gaps: a wood behind the balustrade
+  // rather than a row of single trees against the sky. (Their own dice again.)
+  {
+    const R = rng(2207);
+    for (let i = 0; i < 8; i++) {
+      const x = -22 + i * 6.2 + (R() - 0.5) * 2.5;
+      const z = bankTop() - 17 - R() * 9;
+      const h = 4.5 + R() * 3;
+      const gy = ground(x, z);
+      put(wood, trunk(h * 0.55, 0.26), x, gy, z, '#3a2f26');
+      trunkShade(x, gy, z, h * 0.6, 0.26, gy > 1.5);
+      crown(x, gy + h * 0.9, z, 3.0 + R() * 1.2, 3.8 + R() * 1.5, ['#40602a', '#4a6a2c', '#3a5824', '#52702e'][i % 4], high ? 56 : 36, gy > 1.5, R);
+    }
+  }
   // The borders along the front of the house: mounds of green, flowering.
   const mounds: Blob[] = [];
   for (let x = -9; x <= 9; x += 0.26) {

@@ -225,10 +225,18 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     const foot = POT_AT[i];
     const soil = POT.h * 0.82;
     const top = soil + (plan ? plan.top : 0.45);
-    const dir = (i >= 8 ? v(0.12, 1.05, 0.75) : v(0.12, 0.72, 1)).normalize();
     const mid = foot.clone().add(v(0, top * 0.5, 0));
-    const pos = mid.clone().addScaledVector(dir, 0.75 + top * 1.25);
-    for (let k = 0; k < 14 && !roomy(pos); k++) pos.addScaledVector(dir, 0.08);
+    // From in front and above; turned a little either way, or lower, if a hanging basket's in the way
+    // there or on the walk in from the staging.
+    const from = SHOTS.staging?.pos ?? v(-3.3, 2.35, 1.6);
+    const ways = i >= 8 ? [v(0.12, 1.05, 0.75), v(0.6, 1.0, 0.7), v(-0.5, 1.0, 0.7), v(0.12, 0.8, 1)] : [v(0.12, 0.72, 1), v(0.55, 0.7, 0.9), v(-0.45, 0.7, 0.9), v(0.12, 0.5, 1)];
+    let pos = mid.clone();
+    for (const way of ways) {
+      const dir = way.normalize();
+      pos = mid.clone().addScaledVector(dir, 0.75 + top * 1.25);
+      for (let k = 0; k < 14 && !roomy(pos); k++) pos.addScaledVector(dir, 0.08);
+      if (roomy(pos) && clear(from, pos, route(from, pos) ?? [], 0.03)) break;
+    }
     const fit = [foot.clone().add(v(-POT.r, 0, POT.r)), foot.clone().add(v(POT.r, 0, POT.r)), foot.clone().add(v(0, top, 0))];
     for (const b of plan?.blooms ?? []) {
       const at = b.at.clone().add(foot).add(v(0, soil, 0));
