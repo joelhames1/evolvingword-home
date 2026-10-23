@@ -313,36 +313,36 @@ function rect(m: Mesher, p: THREE.Vector3, e: THREE.Vector3, f: THREE.Vector3, c
   n.normalize();
   const eu = e.length();
   const fv = f.length();
-  const g = Array.isArray(s) ? s : [s, s, s, s];
-  const corners: [number, number, number, number][] = [
-    [0, 0, 0, 0],
-    [1, 0, 1, 0],
-    [1, 1, 2, 0],
-    [0, 0, 0, 0],
-    [1, 1, 2, 0],
-    [0, 1, 3, 0],
-  ];
-  for (const [a, b, gi] of corners) {
+  for (let k = 0; k < 6; k++) {
+    const a = CORNERS[k * 3];
+    const b = CORNERS[k * 3 + 1];
+    const g = Array.isArray(s) ? s[CORNERS[k * 3 + 2]] : s;
     tmpF.copy(p).addScaledVector(e, a).addScaledVector(f, b);
     m.pos.push(tmpF.x, tmpF.y, tmpF.z);
     m.nrm.push(n.x, n.y, n.z);
     m.col.push(color.r, color.g, color.b);
-    m.glow.push(g[gi].r, g[gi].g, g[gi].b);
+    m.glow.push(g.r, g.g, g.b);
     m.uv.push(u0 + a * eu, v0 + b * fv);
   }
 }
+/** A rectangle's two triangles: each corner's place along its two edges, and which corner it is. */
+const CORNERS = [0, 0, 0, 1, 0, 1, 1, 1, 2, 0, 0, 0, 1, 1, 2, 0, 1, 3];
+const bp = new THREE.Vector3();
+const be = new THREE.Vector3();
+const bf = new THREE.Vector3();
 
 /** A box from (x0, y0, z0) to (x1, y1, z1), the faces named (s +z, n −z, e +x, w −x, t up, b down), uvs in meters. */
 function box(m: Mesher, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, color: THREE.Color, s: THREE.Color, faces = 'snewtb') {
   const dx = x1 - x0;
   const dy = y1 - y0;
   const dz = z1 - z0;
-  if (faces.includes('s')) rect(m, V(x0, y0, z1), V(dx, 0, 0), V(0, dy, 0), color, s, x0, y0);
-  if (faces.includes('n')) rect(m, V(x1, y0, z0), V(-dx, 0, 0), V(0, dy, 0), color, s, -x1, y0);
-  if (faces.includes('e')) rect(m, V(x1, y0, z1), V(0, 0, -dz), V(0, dy, 0), color, s, -z1, y0);
-  if (faces.includes('w')) rect(m, V(x0, y0, z0), V(0, 0, dz), V(0, dy, 0), color, s, z0, y0);
-  if (faces.includes('t')) rect(m, V(x0, y1, z1), V(dx, 0, 0), V(0, 0, -dz), color, s, x0, -z1);
-  if (faces.includes('b')) rect(m, V(x0, y0, z0), V(dx, 0, 0), V(0, 0, dz), color, s, x0, z0);
+  // (Into vectors kept for the purpose: a station is a lot of boxes.)
+  if (faces.includes('s')) rect(m, bp.set(x0, y0, z1), be.set(dx, 0, 0), bf.set(0, dy, 0), color, s, x0, y0);
+  if (faces.includes('n')) rect(m, bp.set(x1, y0, z0), be.set(-dx, 0, 0), bf.set(0, dy, 0), color, s, -x1, y0);
+  if (faces.includes('e')) rect(m, bp.set(x1, y0, z1), be.set(0, 0, -dz), bf.set(0, dy, 0), color, s, -z1, y0);
+  if (faces.includes('w')) rect(m, bp.set(x0, y0, z0), be.set(0, 0, dz), bf.set(0, dy, 0), color, s, z0, y0);
+  if (faces.includes('t')) rect(m, bp.set(x0, y1, z1), be.set(dx, 0, 0), bf.set(0, 0, -dz), color, s, x0, -z1);
+  if (faces.includes('b')) rect(m, bp.set(x0, y0, z0), be.set(dx, 0, 0), bf.set(0, 0, dz), color, s, x0, z0);
 }
 
 /** A convex polygon facing out of the page from its winding, with its own uvs and glows (for gradients across lit glass, sloping roofs). */
@@ -752,7 +752,8 @@ function sign(b: Build, P: StationPlan, L: Look, name: string) {
   b.fixtures.push({ kind: 'flap', u: P.w, y: 1.53, z: sz, w: 2.34, h: 0.256 });
   // The clock on a bracket over it.
   box(m, wx - 0.04, 2.09, sz - 0.11, wx + 0.04, 2.2, sz - 0.05, L.iron, iron, 'snewt');
-  m.add(SHAPES.drum, place(wx, 2.45, sz - 0.07, 0.6, 0.08, 0.6, 0, Math.PI / 2), L.iron, iron);
+  // (The drum runs back from just behind the face; the other way it hid it.)
+  m.add(SHAPES.drum, place(wx, 2.45, sz - 0.035, 0.6, 0.12, 0.6, 0, -Math.PI / 2), L.iron, iron);
   b.fixtures.push({ kind: 'clock', u: P.w, y: 2.45, z: sz - 0.025, w: 0.5, h: 0.5 });
   // The lamps on their arms, over the board.
   for (const s of [-1, 1]) {
@@ -833,7 +834,7 @@ function furniture(b: Build, P: StationPlan, L: Look, seed: number) {
       const tz = PLATFORM.back + 0.45;
       m.add(SHAPES.drum, place(tx, y0, tz, 0.62, 0.42, 0.62), C('#5a4030'), wood);
       b.decor.add(SHAPES.blob, place(tx, y0 + 0.62, tz, 0.72, 0.5, 0.72, du), DARK.leaf.clone().multiplyScalar(1.3));
-      for (let k = 0; k < 18; k++) {
+      for (let k = 0; k < (b.detail >= 1 ? 12 : 6); k++) {
         const a = k * 2.39996 + du;
         const e = 0.25 + 1.1 * hash(k, 3, Math.round(du * 10));
         const col = FLOWERS[Math.floor(hash(k, 5, Math.round(du * 10)) * FLOWERS.length)];
@@ -872,8 +873,8 @@ function fence(b: Build, P: StationPlan, L: Look) {
       box(m, X0, y0, z, X1, y0 + 0.5, z + 0.32, L.face, S(SURF.brick, 0.2), 'snt');
       box(m, X0, y0 + 0.5, z - 0.03, X1, y0 + 0.6, z + 0.35, C('#b5ab98'), S(SURF.ashlar, 0.6), 'snt');
       const iron = S(SURF.iron);
-      const step = b.detail >= 1 ? 0.18 : 0.36;
-      for (let u = Math.ceil(a / step) * step; u < e; u += step) box(m, x(b, u) - 0.012, y0 + 0.6, z + 0.15, x(b, u) + 0.012, y0 + 1.62, z + 0.175, L.iron, iron, 'snew');
+      const step = b.detail >= 1 ? 0.22 : 0.44;
+      for (let u = Math.ceil(a / step) * step; u < e; u += step) box(m, x(b, u) - 0.012, y0 + 0.6, z + 0.15, x(b, u) + 0.012, y0 + 1.62, z + 0.175, L.iron, iron, 'se');
       for (const yy of [y0 + 0.72, y0 + 1.48]) box(m, X0, yy, z + 0.14, X1, yy + 0.04, z + 0.185, L.iron, iron, 'snt');
     } else if (P.kind === 'lake') {
       const white = C('#e2ddd0');
