@@ -527,7 +527,7 @@ const SURFACES = /* glsl */ `
     return mix(mix(c, MORTAR * 1.6, j), mix(base, MORTAR * 1.6, 0.18), farOff(fw));
   }
   vec3 ashlar(vec2 uv, vec3 base, float seed) {
-    vec2 size = vec2(0.76, 0.38);
+    vec2 size = vec2(0.64, 0.32);
     vec2 g = uv / size;
     vec2 fw = fwidth(g);
     g.x += 0.5 * mod(floor(g.y), 2.0) + 0.17 * h21(vec2(floor(g.y), seed));
@@ -538,7 +538,9 @@ const SURFACES = /* glsl */ `
     vec2 m = min(f, 1.0 - f) * size;
     float bevel = mix(0.5, 1.0, smoothstep(0.0, 0.04, min(m.x, m.y))) * (1.0 + 0.18 * (1.0 - smoothstep(0.0, 0.03, (1.0 - f.y) * size.y)));
     vec3 c = base * (0.78 + 0.36 * h21(id + seed)) * bevel * (0.88 + 0.16 * vn(uv * vec2(7.0, 19.0))) * (0.85 + 0.15 * vn(uv * 1.3 + seed));
-    return mix(mix(c, MORTAR, j), base * 0.92, farOff(fw));
+    // Streaks where rain has run down it.
+    c *= 1.0 - 0.18 * smoothstep(0.55, 0.85, vn(uv * vec2(5.0, 0.35) + seed));
+    return mix(mix(c, MORTAR, j), base * 0.88, farOff(fw));
   }
   vec3 rubble(vec2 uv, vec3 base, float seed) {
     vec2 p = uv * vec2(2.7, 3.7);

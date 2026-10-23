@@ -687,6 +687,8 @@ function dressLake(b: Build, leg: Leg) {
   scatter(b, leg, 10, -22, 1100, 31, (u, z, r) => {
     if (Math.abs(z) < 12) return;
     if (z < 0 && r > 0.25) return;
+    // (Not out in the water, off the shingle.)
+    if (z < 0 && b.ground(u, z) < WATER.lake + 0.5) return;
     const dense = noise((u - leg.start) / 120, z / 120, s + 2) > -0.2;
     if (r > (dense ? 0.8 : 0.2)) return;
     if (z > 600 && r > 0.35) return;

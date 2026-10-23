@@ -203,6 +203,8 @@ const CURTAIN_GLOW = C('#ff9050').multiplyScalar(0.22);
 const CURTAIN = C('#6a2a1e');
 const HATCH_GLOW = C('#ffc890').multiplyScalar(0.95);
 const BRASS = C('#b48a46');
+/** Geraniums, white daisies, marigolds and something purple, in the lake's tubs. */
+const FLOWERS = [C('#b8384c'), C('#ddd2b8'), C('#d0a040'), C('#8a4a88')];
 /** The sides of a lit window's opening, in the room's light. */
 const REVEAL = C('#7a6a58');
 const NONE = new THREE.Color(0, 0, 0);
@@ -271,6 +273,8 @@ export function stationPlan(kind: StationKind, stop: number, seed: number): Stat
       if (lights.length < 4) lights.push({ ...doorLamp(kind, bay.role, bay.u), power: bay.role === 'main' ? 0.6 : 0.45 });
     }
   }
+  // (The lake's halt has a lamp on its end toward our window, by the departures.)
+  if (kind === 'lake') lights.push({ u: hu + L.len / 2 + 0.38, y: PLATFORM.y + 2.62, z: PLATFORM.back - 2.4, power: 0.5 });
   const plan: StationPlan = { kind, stop, w, p0, p1, c0: w + L.canopy[0], c1: w + L.canopy[1], lamps, hu, h0: hu - L.len / 2, h1: hu + L.len / 2, bays, lights, glows };
   if (plans.size > 24) plans.clear();
   plans.set(key, plan);
@@ -372,12 +376,40 @@ function rod(m: Mesher, a: THREE.Vector3, b: THREE.Vector3, t: number, color: TH
   m.add(SHAPES.box, rodM, color, s);
 }
 
-/** A thing from the atlas (a poster, a plate, a name board) facing +z with its middle at (cx, cy, z). */
-function sheet(m: Mesher, key: string, cx: number, cy: number, z: number, w: number, h: number) {
+/**
+ * A wall's own frame: its origin, the way along it (ex) and the way out of it
+ * (ez), level both. Things on a wall are placed by how far along it they are,
+ * how high, and how far out (d: in front of it, or set back into it below zero).
+ */
+interface Frame {
+  o: THREE.Vector3;
+  ex: THREE.Vector3;
+  ez: THREE.Vector3;
+}
+const at3 = (F: Frame, a: number, y: number, d: number) => V(F.o.x + F.ex.x * a + F.ez.x * d, y, F.o.z + F.ex.z * a + F.ez.z * d);
+/** The frame of anything facing the line: along is x, out is z. */
+const FACING: Frame = { o: V(0, 0, 0), ex: V(1, 0, 0), ez: V(0, 0, 1) };
+const face = (v: THREE.Vector3) => (v.z > 0.5 ? 's' : v.z < -0.5 ? 'n' : v.x > 0.5 ? 'e' : 'w');
+const OPPOSITE: Record<string, string> = { s: 'n', n: 's', e: 'w', w: 'e' };
+
+/** A box on a wall: along it a0..a1, up y0..y1, out d0..d1; its faces o(ut), i(n), r (on along), l (back along), t, b. */
+function fbox(m: Mesher, F: Frame, a0: number, y0: number, d0: number, a1: number, y1: number, d1: number, color: THREE.Color, s: THREE.Color, faces = 'oirltb') {
+  const p = at3(F, a0, y0, d0);
+  const q = at3(F, a1, y1, d1);
+  const map: Record<string, string> = { o: face(F.ez), i: OPPOSITE[face(F.ez)], r: face(F.ex), l: OPPOSITE[face(F.ex)], t: 't', b: 'b' };
+  box(m, Math.min(p.x, q.x), y0, Math.min(p.z, q.z), Math.max(p.x, q.x), y1, Math.max(p.z, q.z), color, s, [...faces].map((c) => map[c]).join(''));
+}
+
+/** A rectangle flat on a wall, d out from it. */
+function frect(m: Mesher, F: Frame, a0: number, y0: number, a1: number, y1: number, d: number, color: THREE.Color, s: THREE.Color | THREE.Color[]) {
+  rect(m, at3(F, a0, y0, d), F.ex.clone().multiplyScalar(a1 - a0), V(0, y1 - y0, 0), color, s, a0, y0);
+}
+
+/** A thing from the atlas (a poster, a plate, a name board) on a wall, its middle at (a, cy), d out from it. */
+function sheet(m: Mesher, F: Frame, key: string, a: number, cy: number, d: number, w: number, h: number) {
   const [u0, v0, u1, v1] = atlasRect(key);
-  const s = S(SURF.atlas);
-  const p = [V(cx - w / 2, cy - h / 2, z), V(cx + w / 2, cy - h / 2, z), V(cx + w / 2, cy + h / 2, z), V(cx - w / 2, cy + h / 2, z)];
-  poly(m, p, new THREE.Color(1, 1, 1), [s], [
+  const p = [at3(F, a - w / 2, cy - h / 2, d), at3(F, a + w / 2, cy - h / 2, d), at3(F, a + w / 2, cy + h / 2, d), at3(F, a - w / 2, cy + h / 2, d)];
+  poly(m, p, new THREE.Color(1, 1, 1), [S(SURF.atlas)], [
     [u0, v0],
     [u1, v0],
     [u1, v1],
@@ -385,74 +417,82 @@ function sheet(m: Mesher, key: string, cx: number, cy: number, z: number, w: num
   ]);
 }
 
-/** A wall facing +z at z, x0..x1 by y0..y1, with holes in it; uvs in meters from its bottom left. Its facing can change with height. */
-function holed(m: Mesher, x0: number, x1: number, y0: number, y1: number, z: number, holes: { x0: number; x1: number; y0: number; y1: number }[], at: (y: number) => [THREE.Color, number], splits: number[] = []) {
-  const xs = [...new Set([x0, x1, ...holes.flatMap((h) => [h.x0, h.x1])].filter((v) => v >= x0 && v <= x1))].sort((a, b) => a - b);
-  const ys = [...new Set([y0, y1, ...splits, ...holes.flatMap((h) => [h.y0, h.y1])].filter((v) => v >= y0 && v <= y1))].sort((a, b) => a - b);
-  const grime = y0 + 0.6;
+type Hole = { x0: number; x1: number; y0: number; y1: number };
+
+/** A wall from a0 to a1 along its frame and y0 to y1, with holes in it; uvs in meters. Its facing can change with height; darker low down. */
+function holed(m: Mesher, F: Frame, a0: number, a1: number, y0: number, y1: number, holes: Hole[], at: (y: number) => [THREE.Color, number], splits: number[] = [], grimeFrom = y0) {
+  const xs = [...new Set([a0, a1, ...holes.flatMap((h) => [h.x0, h.x1])].filter((v) => v >= a0 && v <= a1))].sort((p, q) => p - q);
+  const ys = [...new Set([y0, y1, grimeFrom + 0.6, ...splits, ...holes.flatMap((h) => [h.y0, h.y1])].filter((v) => v >= y0 && v <= y1))].sort((p, q) => p - q);
+  const grime = grimeFrom + 0.6;
   for (let j = 0; j < ys.length - 1; j++) {
     const ya = ys[j];
     const yb = ys[j + 1];
     const cy = (ya + yb) / 2;
     const [color, surf] = at(cy);
-    // Darker low down, where the platform's dirt and shadow gather.
-    const ao = (y: number) => S(surf, 0, y < grime ? 0.4 * (1 - (y - y0) / (grime - y0)) : 0);
+    // Darker low down, where the dirt and the shadow gather.
+    const ao = (y: number) => S(surf, 0, y < grime ? 0.4 * Math.min(1, 1 - (y - grimeFrom) / 0.6) : 0);
     let run = -1;
     for (let i = 0; i <= xs.length - 1; i++) {
-      const solid = i < xs.length - 1 && !holes.some((h) => (xs[i] + xs[i + 1]) / 2 > h.x0 && (xs[i] + xs[i + 1]) / 2 < h.x1 && cy > h.y0 && cy < h.y1);
+      const mid = i < xs.length - 1 ? (xs[i] + xs[i + 1]) / 2 : 0;
+      const solid = i < xs.length - 1 && !holes.some((h) => mid > h.x0 && mid < h.x1 && cy > h.y0 && cy < h.y1);
       if (solid && run < 0) run = i;
       if (!solid && run >= 0) {
-        const xa = xs[run];
-        const xb = xs[i];
-        rect(m, V(xa, ya, z), V(xb - xa, 0, 0), V(0, yb - ya, 0), color, [ao(ya), ao(ya), ao(yb), ao(yb)], xa - x0, ya - y0);
+        frect(m, F, xs[run], ya, xs[i], yb, 0, color, [ao(ya), ao(ya), ao(yb), ao(yb)]);
         run = -1;
       }
     }
   }
 }
 
-/** Lit glass at z, from x0 to x1 and y0 to y1: warm, brighter up where the room's lamp is; curtains drawn back either side (in the same plane, so nothing flickers). */
-function litGlass(d: Mesher, x0: number, x1: number, y0: number, y1: number, z: number, glow: THREE.Color, curtains: boolean) {
+/** Lit glass set into a wall at d: warm, brighter up where the room's lamp is; curtains drawn back either side (in the same plane, so nothing flickers). */
+function litGlass(dm: Mesher, F: Frame, h: Hole, d: number, glow: THREE.Color, curtains: boolean) {
   const low = glow.clone().multiplyScalar(0.45);
-  const w = x1 - x0;
-  const cw = curtains ? w * 0.24 : 0;
+  const g8 = glow.clone().multiplyScalar(0.8);
+  const { x0, x1, y0, y1 } = h;
+  const cw = curtains ? (x1 - x0) * 0.24 : 0;
+  const P = (a: number, y: number) => at3(F, a, y, d);
   if (curtains) {
-    poly(d, [V(x0, y0, z), V(x0 + cw, y0, z), V(x0 + cw * 0.7, y1, z), V(x0, y1, z)], CURTAIN, [CURTAIN_GLOW.clone().multiplyScalar(0.6), CURTAIN_GLOW, CURTAIN_GLOW, CURTAIN_GLOW]);
-    poly(d, [V(x1 - cw, y0, z), V(x1, y0, z), V(x1, y1, z), V(x1 - cw * 0.7, y1, z)], CURTAIN, [CURTAIN_GLOW, CURTAIN_GLOW.clone().multiplyScalar(0.6), CURTAIN_GLOW, CURTAIN_GLOW]);
+    const c6 = CURTAIN_GLOW.clone().multiplyScalar(0.6);
+    poly(dm, [P(x0, y0), P(x0 + cw, y0), P(x0 + cw * 0.7, y1), P(x0, y1)], CURTAIN, [c6, CURTAIN_GLOW, CURTAIN_GLOW, CURTAIN_GLOW]);
+    poly(dm, [P(x1 - cw, y0), P(x1, y0), P(x1, y1), P(x1 - cw * 0.7, y1)], CURTAIN, [CURTAIN_GLOW, c6, CURTAIN_GLOW, CURTAIN_GLOW]);
   }
   const mid = y0 + (y1 - y0) * 0.42;
   const k = (y: number) => cw * (1 - 0.3 * ((y - y0) / (y1 - y0)));
-  poly(d, [V(x0 + k(y0), y0, z), V(x1 - k(y0), y0, z), V(x1 - k(mid), mid, z), V(x0 + k(mid), mid, z)], DARK.glass, [low, low, glow.clone().multiplyScalar(0.8), glow.clone().multiplyScalar(0.8)]);
-  poly(d, [V(x0 + k(mid), mid, z), V(x1 - k(mid), mid, z), V(x1 - k(y1), y1, z), V(x0 + k(y1), y1, z)], DARK.glass, [glow.clone().multiplyScalar(0.8), glow.clone().multiplyScalar(0.8), glow, glow]);
+  poly(dm, [P(x0 + k(y0), y0), P(x1 - k(y0), y0), P(x1 - k(mid), mid), P(x0 + k(mid), mid)], DARK.glass, [low, low, g8, g8]);
+  poly(dm, [P(x0 + k(mid), mid), P(x1 - k(mid), mid), P(x1 - k(y1), y1), P(x0 + k(y1), y1)], DARK.glass, [g8, g8, glow, glow]);
 }
 
-/** A frame round a pane at z (its face), with glazing bars across it, in the station material. */
-function sash(m: Mesher, x0: number, x1: number, y0: number, y1: number, z: number, color: THREE.Color, panes: [number, number]) {
+/** A frame round a pane at d, with glazing bars across it. */
+function sash(m: Mesher, F: Frame, h: Hole, d: number, color: THREE.Color, panes: [number, number]) {
+  const { x0, x1, y0, y1 } = h;
   const t = 0.055;
   const trim = S(SURF.trim, 0.3);
-  box(m, x0, y0, z, x1, y0 + t, z + 0.05, color, trim, 'stb');
-  box(m, x0, y1 - t, z, x1, y1, z + 0.05, color, trim, 'stb');
-  box(m, x0, y0, z, x0 + t, y1, z + 0.05, color, trim, 'se');
-  box(m, x1 - t, y0, z, x1, y1, z + 0.05, color, trim, 'sw');
+  fbox(m, F, x0, y0, d, x1, y0 + t, d + 0.05, color, trim, 'otb');
+  fbox(m, F, x0, y1 - t, d, x1, y1, d + 0.05, color, trim, 'otb');
+  fbox(m, F, x0, y0, d, x0 + t, y1, d + 0.05, color, trim, 'or');
+  fbox(m, F, x1 - t, y0, d, x1, y1, d + 0.05, color, trim, 'ol');
   const b = 0.028;
   for (let i = 1; i < panes[0]; i++) {
     const bx = x0 + ((x1 - x0) * i) / panes[0];
-    box(m, bx - b / 2, y0 + t, z, bx + b / 2, y1 - t, z + 0.03, color, trim, 'sew');
+    fbox(m, F, bx - b / 2, y0 + t, d, bx + b / 2, y1 - t, d + 0.03, color, trim, 'orl');
   }
   for (let j = 1; j < panes[1]; j++) {
     const by = y0 + ((y1 - y0) * j) / panes[1];
-    box(m, x0 + t, by - b / 2, z, x1 - t, by + b / 2, z + 0.03, color, trim, 'stb');
+    fbox(m, F, x0 + t, by - b / 2, d, x1 - t, by + b / 2, d + 0.03, color, trim, 'otb');
   }
 }
 
-/** The sides of an opening in a wall at z, `depth` deep (into −z): lit by the room inside when it's lit. */
-function reveals(m: Mesher, h: { x0: number; x1: number; y0: number; y1: number }, z: number, depth: number, color: THREE.Color, s: THREE.Color, sill = true) {
+/** The sides of an opening in a wall, `depth` deep. */
+function reveals(m: Mesher, F: Frame, h: Hole, depth: number, color: THREE.Color, s: THREE.Color, sill = true) {
   const w = h.x1 - h.x0;
   const hh = h.y1 - h.y0;
-  rect(m, V(h.x0, h.y0, z), V(0, 0, -depth), V(0, hh, 0), color, s);
-  rect(m, V(h.x1, h.y0, z - depth), V(0, 0, depth), V(0, hh, 0), color, s);
-  rect(m, V(h.x0, h.y1, z - depth), V(w, 0, 0), V(0, 0, depth), color, s);
-  if (sill) rect(m, V(h.x0, h.y0, z), V(w, 0, 0), V(0, 0, -depth), color, s);
+  const back = F.ez.clone().multiplyScalar(-depth);
+  const out = F.ez.clone().multiplyScalar(depth);
+  const along = F.ex.clone().multiplyScalar(w);
+  rect(m, at3(F, h.x0, h.y0, 0), back, V(0, hh, 0), color, s);
+  rect(m, at3(F, h.x1, h.y0, -depth), out, V(0, hh, 0), color, s);
+  rect(m, at3(F, h.x0, h.y1, -depth), along, out, color, s);
+  if (sill) rect(m, at3(F, h.x0, h.y0, 0), along, back, color, s);
 }
 
 /** A hung lantern or a lamp-post's: a glass box lit from inside, a base, a hood over it, a vent on top. */
@@ -682,7 +722,9 @@ function lamps(b: Build, P: StationPlan, L: Look) {
     } else {
       // A lamp post: a fluted base, a column, the arm a lamplighter's ladder rested on.
       const y0 = PLATFORM.y;
-      box(m, lx - 0.16, y0, SL.z - 0.16, lx + 0.16, y0 + 0.5, SL.z + 0.16, L.iron, iron, 'snewt');
+      m.add(SHAPES.drum, place(lx, y0, SL.z, 0.3, 0.42, 0.3), L.iron, iron);
+      m.add(SHAPES.cone, place(lx, y0 + 0.42, SL.z, 0.3, 0.3, 0.3), L.iron, iron);
+      m.add(SHAPES.drum, place(lx, y0 + 0.4, SL.z, 0.34, 0.05, 0.34), L.iron, iron);
       m.add(SHAPES.cylinder, place(lx, y0 + 0.5, SL.z, 0.11, SL.y - y0 - 0.7, 0.11), L.iron, iron);
       box(m, lx - 0.3, SL.y - 0.42, SL.z - 0.02, lx + 0.3, SL.y - 0.38, SL.z + 0.02, L.iron, iron, 'snewtb');
       lantern(b, lx, SL.y, SL.z, L.iron, L.lamp);
@@ -706,7 +748,7 @@ function sign(b: Build, P: StationPlan, L: Look, name: string) {
   for (const dy of [0.155, -0.155]) box(m, wx - 1.21, 1.53 + dy - 0.006, sz - 0.001, wx + 1.21, 1.53 + dy + 0.006, sz + 0.011, BRASS, S(SURF.trim, 0.8), 'stb');
   // The name board, on a backing plate.
   box(m, wx - 1.22, 1.71, sz - 0.065, wx + 1.22, 2.09, sz - 0.015, L.iron, iron, 'snewt');
-  sheet(m, `name:${name}`, wx, 1.9, sz, 2.34, 0.3);
+  sheet(m, FACING, `name:${name}`, wx, 1.9, sz, 2.34, 0.3);
   b.fixtures.push({ kind: 'flap', u: P.w, y: 1.53, z: sz, w: 2.34, h: 0.256 });
   // The clock on a bracket over it.
   box(m, wx - 0.04, 2.09, sz - 0.11, wx + 0.04, 2.2, sz - 0.05, L.iron, iron, 'snewt');
@@ -791,9 +833,11 @@ function furniture(b: Build, P: StationPlan, L: Look, seed: number) {
       const tz = PLATFORM.back + 0.45;
       m.add(SHAPES.drum, place(tx, y0, tz, 0.62, 0.42, 0.62), C('#5a4030'), wood);
       b.decor.add(SHAPES.blob, place(tx, y0 + 0.62, tz, 0.72, 0.5, 0.72, du), DARK.leaf.clone().multiplyScalar(1.3));
-      for (let k = 0; k < 7; k++) {
-        const a = k * 2.4 + du;
-        b.decor.add(SHAPES.box, place(tx + Math.cos(a) * 0.22, y0 + 0.7 + (k % 3) * 0.05, tz + Math.sin(a) * 0.22, 0.06, 0.06, 0.06), k % 2 ? C('#c84a5a') : C('#e8e0c8'));
+      for (let k = 0; k < 18; k++) {
+        const a = k * 2.39996 + du;
+        const e = 0.25 + 1.1 * hash(k, 3, Math.round(du * 10));
+        const col = FLOWERS[Math.floor(hash(k, 5, Math.round(du * 10)) * FLOWERS.length)];
+        b.decor.add(SHAPES.blob, place(tx + Math.cos(a) * Math.cos(e) * 0.34, y0 + 0.62 + Math.sin(e) * 0.24, tz + Math.sin(a) * Math.cos(e) * 0.34, 0.045, 0.035, 0.045, a), col);
       }
     }
   }
@@ -858,50 +902,59 @@ function house(b: Build, P: StationPlan, L: Look, name: string, seed: number) {
   const base = Math.min(b.ground(P.h0, zb), b.ground(P.h1, zb), b.ground(P.h0, zf - 0.5), b.ground(P.h1, zf - 0.5), y0) - 0.6;
   const at = (y: number): [THREE.Color, number] => (L.base && y < y0 + L.base.to ? [L.base.color, L.base.surf] : [L.wall, L.wallSurf]);
   const dep = L.reveal;
-  const holes: { x0: number; x1: number; y0: number; y1: number }[] = [];
   const trim = S(SURF.trim, 0.3);
   const plain = S(SURF.plain, 0.3);
   const wood = S(SURF.wood, 0.5);
+  const iron = S(SURF.iron);
   let poster = Math.floor(hash(L.roles.length, 3, seed) * POSTERS.length);
+  const front: Frame = { o: V(0, 0, zf), ex: V(1, 0, 0), ez: V(0, 0, 1) };
 
+  /** A window in a wall: set back in it, the reveals (warm where the room's lit), the glass, its sash and bars, the sill, and what each kind of house has round its windows. */
+  const opening = (F: Frame, a: number, cy: number, ww: number, wh: number, lit: boolean, glow: number) => {
+    const h = { x0: a - ww / 2, x1: a + ww / 2, y0: cy - wh / 2, y1: cy + wh / 2 };
+    if (lit) reveals(d, F, h, dep, REVEAL, ROOM_GLOW.clone().multiplyScalar(0.16));
+    else reveals(m, F, h, dep, at(cy)[0], S(at(cy)[1], 0.2, 0.3));
+    if (lit) litGlass(d, F, h, -dep, ROOM_GLOW.clone().multiplyScalar(glow), true);
+    else frect(d, F, h.x0, h.y0, h.x1, h.y1, -dep, DARK.glass, NONE);
+    sash(m, F, h, -dep + 0.002, L.frame, L.panes);
+    fbox(m, F, h.x0 - 0.1, h.y0 - 0.09, -dep + 0.05, h.x1 + 0.1, h.y0, 0.09, L.trim, S(L.quoin ? SURF.ashlar : SURF.plain, 0.7), 'orlt');
+    if (P.kind === 'pass') fbox(m, F, h.x0 - 0.08, h.y0, -0.02, h.x1 + 0.08, h.y0 + 0.07, 0.09, DARK.snow, S(SURF.snow), 'orlt');
+    if (P.kind === 'city') {
+      // Stone surrounds upstairs, a hood over each; a keystone over the ground floor's.
+      const sur = S(SURF.ashlar, 0.5);
+      if (cy > y0 + 3) {
+        fbox(m, F, h.x0 - 0.14, h.y0, 0, h.x0, h.y1 + 0.14, 0.04, L.trim, sur, 'orlt');
+        fbox(m, F, h.x1, h.y0, 0, h.x1 + 0.14, h.y1 + 0.14, 0.04, L.trim, sur, 'orlt');
+        fbox(m, F, h.x0 - 0.14, h.y1, 0, h.x1 + 0.14, h.y1 + 0.14, 0.04, L.trim, sur, 'orlt');
+        fbox(m, F, h.x0 - 0.24, h.y1 + 0.14, 0, h.x1 + 0.24, h.y1 + 0.26, 0.13, L.trim, sur, 'orltb');
+      } else fbox(m, F, a - 0.13, h.y1, 0, a + 0.13, h.y1 + 0.3, 0.05, L.trim, sur, 'orlt');
+    }
+    if (L.shutters)
+      for (const s of [-1, 1]) {
+        const sa = s < 0 ? h.x0 - 0.05 : h.x1 + 0.05;
+        fbox(m, F, Math.min(sa, sa + s * ww * 0.5), h.y0 - 0.02, 0.01, Math.max(sa, sa + s * ww * 0.5), h.y1 + 0.02, 0.05, L.shutters, S(SURF.boards, 0.4), 'orlt');
+      }
+    if (P.kind === 'lake') {
+      fbox(m, F, h.x0 - 0.1, h.y0, 0, h.x0, h.y1 + 0.1, 0.03, L.frame, plain, 'orlt');
+      fbox(m, F, h.x1, h.y0, 0, h.x1 + 0.1, h.y1 + 0.1, 0.03, L.frame, plain, 'orlt');
+      fbox(m, F, h.x0 - 0.1, h.y1, 0, h.x1 + 0.1, h.y1 + 0.12, 0.06, L.frame, plain, 'orltb');
+    }
+    return h;
+  };
+  /** A poster in its frame, on a wall. */
+  const posterOn = (F: Frame, a: number, cy: number, w = 0.62, h = 0.88) => {
+    fbox(m, F, a - w / 2 - 0.06, cy - h / 2 - 0.1, 0, a + w / 2 + 0.06, cy + h / 2 + 0.1, 0.035, C('#2a2018'), wood, 'orlt');
+    sheet(m, F, `poster:${POSTERS[poster++ % POSTERS.length]}`, a, cy, 0.04, w, h);
+  };
+
+  const holes: Hole[] = [];
   P.bays.forEach((bay, i) => {
     const bx = x(b, bay.u);
     L.floors.forEach((fy, f) => {
       const role: Role = f === 0 ? bay.role : 'win';
-      const lit = bay.lit[f];
       if (role === 'win') {
         const [ww, wh] = f === 0 ? L.win : L.upper;
-        const cy = y0 + fy;
-        const h = { x0: bx - ww / 2, x1: bx + ww / 2, y0: cy - wh / 2, y1: cy + wh / 2 };
-        holes.push(h);
-        // Set back in the wall: the reveals (warm where the room's lit), the glass, its sash and bars, the sill.
-        if (lit) reveals(d, h, zf, dep, REVEAL, ROOM_GLOW.clone().multiplyScalar(0.16), true);
-        else reveals(m, h, zf, dep, at(cy)[0], S(at(cy)[1], 0.2, 0.3), true);
-        if (lit) {
-          litGlass(d, h.x0, h.x1, h.y0, h.y1, zf - dep, ROOM_GLOW.clone().multiplyScalar(f === 0 ? 1 : 0.75 + 0.3 * hash(i, f, seed)), true);
-        } else rect(d, V(h.x0, h.y0, zf - dep), V(ww, 0, 0), V(0, wh, 0), DARK.glass, NONE);
-        sash(m, h.x0, h.x1, h.y0, h.y1, zf - dep + 0.002, L.frame, L.panes);
-        box(m, h.x0 - 0.1, h.y0 - 0.09, zf - dep + 0.05, h.x1 + 0.1, h.y0, zf + 0.09, L.trim, S(L.quoin ? SURF.ashlar : SURF.plain, 0.7), 'snewt');
-        if (P.kind === 'pass') box(m, h.x0 - 0.08, h.y0, zf - 0.02, h.x1 + 0.08, h.y0 + 0.07, zf + 0.09, DARK.snow, S(SURF.snow), 'snewt');
-        if (P.kind === 'city') {
-          // Stone surrounds upstairs, a hood over each; a keystone over the ground floor's.
-          if (f > 0) {
-            for (const [ax0, ax1] of [
-              [h.x0 - 0.14, h.x0],
-              [h.x1, h.x1 + 0.14],
-            ])
-              box(m, ax0, h.y0, zf, ax1, h.y1 + 0.14, zf + 0.04, L.trim, S(SURF.ashlar, 0.5), 'snewt');
-            box(m, h.x0 - 0.14, h.y1, zf, h.x1 + 0.14, h.y1 + 0.14, zf + 0.04, L.trim, S(SURF.ashlar, 0.5), 'snewt');
-            box(m, h.x0 - 0.24, h.y1 + 0.14, zf, h.x1 + 0.24, h.y1 + 0.26, zf + 0.13, L.trim, S(SURF.ashlar, 0.5), 'snewtb');
-          } else box(m, bx - 0.13, h.y1, zf, bx + 0.13, h.y1 + 0.3, zf + 0.05, L.trim, S(SURF.ashlar, 0.5), 'snewt');
-        }
-        if (L.shutters)
-          for (const s of [-1, 1]) {
-            const sx = s < 0 ? h.x0 - 0.05 : h.x1 + 0.05;
-            box(m, Math.min(sx, sx + s * ww * 0.5), h.y0 - 0.02, zf + 0.01, Math.max(sx, sx + s * ww * 0.5), h.y1 + 0.02, zf + 0.05, L.shutters, S(SURF.boards, 0.4), 'snewt');
-          }
-        if (P.kind === 'lake') for (const [ax0, ax1] of [[h.x0 - 0.1, h.x0], [h.x1, h.x1 + 0.1]]) box(m, ax0, h.y0, zf, ax1, h.y1 + 0.1, zf + 0.03, L.frame, plain, 'snewt');
-        if (P.kind === 'lake') box(m, h.x0 - 0.1, h.y1, zf, h.x1 + 0.1, h.y1 + 0.12, zf + 0.06, L.frame, plain, 'snewtb');
+        holes.push(opening(front, bx, y0 + fy, ww, wh, bay.lit[f], f === 0 ? 1 : 0.75 + 0.3 * hash(i, f, seed)));
         return;
       }
       if (role === 'door' || role === 'main') {
@@ -909,10 +962,10 @@ function house(b: Build, P: StationPlan, L: Look, name: string, seed: number) {
         const dh = 2.3;
         const h = { x0: bx - dw / 2, x1: bx + dw / 2, y0, y1: y0 + dh + 0.42 };
         holes.push(h);
-        reveals(m, h, zf, dep, at(y0 + 1)[0], S(at(y0 + 1)[1], 0.2, 0.25), false);
+        reveals(m, front, h, dep, at(y0 + 1)[0], S(at(y0 + 1)[1], 0.2, 0.25), false);
         // The door (two leaves for the city's main one), panelled, a brass knob.
-        const dz = zf - dep;
-        box(m, h.x0 + 0.04, y0, dz, h.x1 - 0.04, y0 + dh, dz + 0.05, L.door, S(SURF.wood, 0.2), 's');
+        const dz = -dep;
+        fbox(m, front, h.x0 + 0.04, y0, dz, h.x1 - 0.04, y0 + dh, dz + 0.05, L.door, S(SURF.wood, 0.2), 'o');
         const leaves = dw > 1.5 ? 2 : 1;
         for (let l = 0; l < leaves; l++) {
           const lx0 = h.x0 + 0.04 + (l * (dw - 0.08)) / leaves;
@@ -921,24 +974,25 @@ function house(b: Build, P: StationPlan, L: Look, name: string, seed: number) {
             [0.15, 1.0],
             [1.2, 2.15],
           ])
-            box(m, lx0 + 0.12, y0 + py0, dz + 0.05, lx0 + lw - 0.12, y0 + py1, dz + 0.075, L.door.clone().multiplyScalar(1.25), S(SURF.trim, 0.2), 'snewt');
-          if (leaves === 2) box(m, lx0 + lw - 0.012, y0, dz + 0.05, lx0 + lw + 0.012, y0 + dh, dz + 0.07, L.door.clone().multiplyScalar(0.6), trim, 's');
+            fbox(m, front, lx0 + 0.12, y0 + py0, dz + 0.05, lx0 + lw - 0.12, y0 + py1, dz + 0.075, L.door.clone().multiplyScalar(1.25), S(SURF.trim, 0.2), 'orlt');
+          if (leaves === 2) fbox(m, front, lx0 + lw - 0.012, y0, dz + 0.05, lx0 + lw + 0.012, y0 + dh, dz + 0.07, L.door.clone().multiplyScalar(0.6), trim, 'o');
         }
-        box(m, h.x1 - 0.2, y0 + 1.02, dz + 0.05, h.x1 - 0.13, y0 + 1.08, dz + 0.11, BRASS, S(SURF.iron, 0.9), 'snewt');
+        fbox(m, front, h.x1 - 0.2, y0 + 1.02, dz + 0.05, h.x1 - 0.13, y0 + 1.08, dz + 0.11, BRASS, S(SURF.iron, 0.9), 'orlt');
         // The fanlight over it, lit from the hall.
-        box(m, h.x0, y0 + dh, dz, h.x1, y0 + dh + 0.06, dz + 0.06, L.frame, trim, 'stb');
-        litGlass(d, h.x0, h.x1, y0 + dh + 0.06, h.y1, dz, ROOM_GLOW.clone().multiplyScalar(0.8), false);
-        for (let k = 1; k < 4; k++) box(m, h.x0 + (dw * k) / 4 - 0.014, y0 + dh + 0.06, dz, h.x0 + (dw * k) / 4 + 0.014, h.y1, dz + 0.03, L.frame, trim, 'sew');
-        // The name, or a plate, over it; a lamp on a bracket above.
+        fbox(m, front, h.x0, y0 + dh, dz, h.x1, y0 + dh + 0.06, dz + 0.06, L.frame, trim, 'otb');
+        litGlass(d, front, { x0: h.x0, x1: h.x1, y0: y0 + dh + 0.06, y1: h.y1 }, dz, ROOM_GLOW.clone().multiplyScalar(0.8), false);
+        for (let k = 1; k < 4; k++) fbox(m, front, h.x0 + (dw * k) / 4 - 0.014, y0 + dh + 0.06, dz, h.x0 + (dw * k) / 4 + 0.014, h.y1, dz + 0.03, L.frame, trim, 'orl');
+        // The name, or a plate, over it; a lamp on a bracket beside it.
         const plateY = Math.min(CANOPY.y - 0.55, h.y1 + 0.3);
-        if (role === 'main') sheet(m, `name:${name}`, bx, plateY, zf + 0.035, P.kind === 'lake' ? 1.9 : 2.2, P.kind === 'lake' ? 0.27 : 0.32);
-        else if (L.plates[i]) sheet(m, `plate:${L.plates[i]}`, bx, plateY, zf + 0.035, 1.3, 0.2);
-        box(m, bx - (role === 'main' ? 1.14 : 0.69), plateY - 0.2, zf, bx + (role === 'main' ? 1.14 : 0.69), plateY + 0.2, zf + 0.03, C('#1d1a17'), plain, 'snewt');
+        const pw = role === 'main' ? (P.kind === 'lake' ? 1.98 : 2.28) : 1.38;
+        fbox(m, front, bx - pw / 2, plateY - 0.2, 0, bx + pw / 2, plateY + 0.2, 0.03, C('#1d1a17'), plain, 'orlt');
+        if (role === 'main') sheet(m, front, `name:${name}`, bx, plateY, 0.035, pw - 0.08, P.kind === 'lake' ? 0.27 : 0.32);
+        else if (L.plates[i]) sheet(m, front, `plate:${L.plates[i]}`, bx, plateY, 0.035, 1.3, 0.2);
         const dl = doorLamp(P.kind, role, bay.u);
         const lx = x(b, dl.u);
-        box(m, lx - 0.08, dl.y + 0.2, zf, lx + 0.08, dl.y + 0.46, zf + 0.03, L.iron, S(SURF.iron), 'snewt');
-        rod(m, V(lx, dl.y + 0.36, zf + 0.02), V(lx, dl.y + 0.38, dl.z), 0.035, L.iron, S(SURF.iron));
-        rod(m, V(lx, dl.y + 0.24, zf + 0.02), V(lx, dl.y + 0.36, dl.z - 0.12), 0.025, L.iron, S(SURF.iron));
+        box(m, lx - 0.08, dl.y + 0.2, zf, lx + 0.08, dl.y + 0.46, zf + 0.03, L.iron, iron, 'snewt');
+        rod(m, V(lx, dl.y + 0.36, zf + 0.02), V(lx, dl.y + 0.38, dl.z), 0.035, L.iron, iron);
+        rod(m, V(lx, dl.y + 0.24, zf + 0.02), V(lx, dl.y + 0.36, dl.z - 0.12), 0.025, L.iron, iron);
         lantern(b, lx, dl.y, dl.z, L.iron, L.lamp, 0.72);
         b.lights.push({ pos: new THREE.Vector3(lx, dl.y, dl.z), color: L.lamp.clone().multiplyScalar(0.5), size: 1.2 });
         return;
@@ -946,42 +1000,62 @@ function house(b: Build, P: StationPlan, L: Look, name: string, seed: number) {
       if (role === 'ticket') {
         const h = { x0: bx - 0.6, x1: bx + 0.6, y0: y0 + 1.0, y1: y0 + 2.05 };
         holes.push(h);
-        reveals(d, h, zf, dep, DARK.cream.clone().multiplyScalar(0.8), HATCH_GLOW.clone().multiplyScalar(0.12), false);
-        litGlass(d, h.x0, h.x1, h.y0, h.y1, zf - dep, HATCH_GLOW, false);
+        reveals(d, front, h, dep, DARK.cream.clone().multiplyScalar(0.8), HATCH_GLOW.clone().multiplyScalar(0.12), false);
+        litGlass(d, front, h, -dep, HATCH_GLOW, false);
         // The counter out under it, a brass grille, the plate over it.
-        box(m, h.x0 - 0.12, h.y0 - 0.06, zf - dep, h.x1 + 0.12, h.y0, zf + 0.26, C('#5a3c26'), wood, 'snewtb');
-        for (let k = 1; k < 9; k++) box(m, h.x0 + (1.2 * k) / 9 - 0.007, h.y0 + 0.3, zf - dep + 0.01, h.x0 + (1.2 * k) / 9 + 0.007, h.y1 - 0.05, zf - dep + 0.025, BRASS, S(SURF.trim, 0.9), 's');
-        box(m, h.x0, h.y0 + 0.28, zf - dep + 0.01, h.x1, h.y0 + 0.31, zf - dep + 0.03, BRASS, S(SURF.trim, 0.9), 'st');
-        sash(m, h.x0, h.x1, h.y0, h.y1, zf - dep + 0.002, L.frame, [1, 1]);
+        fbox(m, front, h.x0 - 0.12, h.y0 - 0.06, -dep, h.x1 + 0.12, h.y0, 0.26, C('#5a3c26'), wood);
+        for (let k = 1; k < 9; k++) fbox(m, front, h.x0 + (1.2 * k) / 9 - 0.007, h.y0 + 0.3, -dep + 0.01, h.x0 + (1.2 * k) / 9 + 0.007, h.y1 - 0.05, -dep + 0.025, BRASS, S(SURF.trim, 0.9), 'o');
+        fbox(m, front, h.x0, h.y0 + 0.28, -dep + 0.01, h.x1, h.y0 + 0.31, -dep + 0.03, BRASS, S(SURF.trim, 0.9), 'ot');
+        sash(m, front, h, -dep + 0.002, L.frame, [1, 1]);
         if (L.plates[i]) {
-          box(m, bx - 0.69, h.y1 + 0.12, zf, bx + 0.69, h.y1 + 0.42, zf + 0.03, C('#1d1a17'), plain, 'snewt');
-          sheet(m, `plate:${L.plates[i]}`, bx, h.y1 + 0.27, zf + 0.035, 1.3, 0.2);
+          fbox(m, front, bx - 0.69, h.y1 + 0.12, 0, bx + 0.69, h.y1 + 0.42, 0.03, C('#1d1a17'), plain, 'orlt');
+          sheet(m, front, `plate:${L.plates[i]}`, bx, h.y1 + 0.27, 0.035, 1.3, 0.2);
         }
         return;
       }
       // Something on the wall: a poster in its frame, the departures, an enamel advert.
-      if (role === 'poster') {
-        box(m, bx - 0.37, y0 + 1.0, zf, bx + 0.37, y0 + 2.08, zf + 0.035, C('#2a2018'), wood, 'snewt');
-        sheet(m, `poster:${POSTERS[poster++ % POSTERS.length]}`, bx, y0 + 1.54, zf + 0.04, 0.62, 0.88);
-      } else if (role === 'timetable') {
-        box(m, bx - 0.55, y0 + 1.06, zf, bx + 0.55, y0 + 2.16, zf + 0.04, C('#3a2a1c'), wood, 'snewt');
-        sheet(m, 'timetable', bx, y0 + 1.61, zf + 0.045, 0.98, 0.98);
+      if (role === 'poster') posterOn(front, bx, y0 + 1.54);
+      else if (role === 'timetable') {
+        fbox(m, front, bx - 0.55, y0 + 1.06, 0, bx + 0.55, y0 + 2.16, 0.04, C('#3a2a1c'), wood, 'orlt');
+        sheet(m, front, 'timetable', bx, y0 + 1.61, 0.045, 0.98, 0.98);
       } else if (role === 'advert') {
-        box(m, bx - 0.56, y0 + 1.5, zf, bx + 0.56, y0 + 2.1, zf + 0.02, C('#1d1a17'), plain, 'snewt');
-        sheet(m, `advert:${hash(i, 5, seed) < 0.5 ? 'cocoa' : 'sleepers'}`, bx, y0 + 1.8, zf + 0.025, 1.1, 0.55);
-        box(m, bx - 0.37, y0 + 0.45, zf, bx + 0.37, y0 + 1.35, zf + 0.035, C('#2a2018'), wood, 'snewt');
-        sheet(m, `poster:${POSTERS[poster++ % POSTERS.length]}`, bx, y0 + 0.9, zf + 0.04, 0.6, 0.84);
+        fbox(m, front, bx - 0.56, y0 + 1.5, 0, bx + 0.56, y0 + 2.1, 0.02, C('#1d1a17'), plain, 'orlt');
+        sheet(m, front, `advert:${hash(i, 5, seed) < 0.5 ? 'cocoa' : 'sleepers'}`, bx, y0 + 1.8, 0.025, 1.1, 0.55);
+        posterOn(front, bx, y0 + 0.9, 0.6, 0.84);
       }
     });
   });
+  // The front, with its openings.
+  holed(m, front, X0, X1, y0, top, holes, at, L.base ? [y0 + L.base.to] : []);
 
-  // The front, with its openings; the ends and the back from the ground.
-  holed(m, X0, X1, y0, top, zf, holes, at, [y0 + 0.6, ...(L.base ? [y0 + L.base.to] : [])]);
-  const wallS = S(L.wallSurf, 0.1);
-  const darker = (k: number) => L.wall.clone().multiplyScalar(k);
-  rect(m, V(X1, base, zb), V(X0 - X1, 0, 0), V(0, top - base, 0), darker(0.9), wallS);
-  rect(m, V(X0, base, zb), V(0, 0, L.depth), V(0, top - base, 0), darker(0.95), wallS, zb);
-  rect(m, V(X1, base, zf), V(0, 0, -L.depth), V(0, top - base, 0), darker(0.95), wallS, -zf);
+  // The ends, from the ground: windows in them (the lake's toward our window has the departures and a poster, and a lamp to read them by).
+  const ends: Frame[] = [
+    { o: V(X1, 0, zf), ex: V(0, 0, -1), ez: V(1, 0, 0) },
+    { o: V(X0, 0, zb), ex: V(0, 0, 1), ez: V(-1, 0, 0) },
+  ];
+  ends.forEach((E, e) => {
+    const eh: Hole[] = [];
+    const spots = P.kind === 'city' ? [0.3, 0.7] : [0.5];
+    if (P.kind === 'lake' && e === 0) {
+      fbox(m, E, 1.05, y0 + 1.06, 0, 2.15, y0 + 2.16, 0.04, C('#3a2a1c'), wood, 'orlt');
+      sheet(m, E, 'timetable', 1.6, y0 + 1.61, 0.045, 0.98, 0.98);
+      posterOn(E, 3.2, y0 + 1.5);
+      const la = 2.4;
+      const ly = y0 + 2.62;
+      fbox(m, E, la - 0.08, ly + 0.2, 0, la + 0.08, ly + 0.46, 0.03, L.iron, iron, 'orlt');
+      rod(m, at3(E, la, ly + 0.36, 0.02), at3(E, la, ly + 0.38, 0.38), 0.035, L.iron, iron);
+      const lp = at3(E, la, ly, 0.38);
+      lantern(b, lp.x, lp.y, lp.z, L.iron, L.lamp, 0.72);
+      b.lights.push({ pos: lp, color: L.lamp.clone().multiplyScalar(0.5), size: 1.2 });
+    } else
+      L.floors.forEach((fy, f) => {
+        const [ww, wh] = f === 0 ? L.win : L.upper;
+        spots.forEach((t, k) => eh.push(opening(E, L.depth * t, y0 + fy, ww * 0.9, wh, hash(e * 7 + k, f, seed + 11) < 0.45, 0.8)));
+      });
+    holed(m, E, 0, L.depth, base, top, eh, at, L.base ? [y0 + L.base.to] : [], y0);
+  });
+  // The back, plain.
+  rect(m, V(X1, base, zb), V(X0 - X1, 0, 0), V(0, top - base, 0), L.wall.clone().multiplyScalar(0.9), S(L.wallSurf, 0.1));
   // The plinth along the front, broken for the doors.
   const doors = holes.filter((h) => h.y0 <= y0 + 0.01).sort((p, q) => p.x0 - q.x0);
   let px = X0 - 0.06;
