@@ -363,8 +363,8 @@ const PAINT = /* glsl */ `
   varying float vLeafShape;
   /**
    * A fern frond's leaflets, alternate along the stalk and pointing toward the
-   * tip: false between them. A tree fern's great fronds (shape 7) have twice as
-   * many, each cut again into little lobes along its length, the lobes fading
+   * tip: false between them. A tree fern's great fronds (shape 7) have half as
+   * many again, each cut again into little lobes along its length, the lobes fading
    * out where they'd be smaller than a pixel (so they never shimmer).
    */
   bool frondThere(vec2 part, float shape) {
@@ -710,7 +710,7 @@ function fernLayout(): { fronds: Frond[]; bases: { at: THREE.Vector3; height: nu
 export const TREE_CROWN = TREE_FERN.clone().add(v(0, 2.4, 0));
 
 /**
- * A tree fern's crown: two dozen long fronds in a spiral round the top of the
+ * A tree fern's crown: thirty long fronds in a spiral round the top of the
  * trunk, each rising and arching over in a long curve, finely cut (shape 7).
  * Toward the glass and the brick, where there's no room, they climb steeply
  * and turn over sooner; toward the house they reach out over the aisle. In the
@@ -740,7 +740,7 @@ export function treeFernFronds(slot: number): Frond[] {
     const space = room(o, from);
     // 0 hard against a wall, 1 out over the house (and less so along the back wall, over the prizes).
     const open = THREE.MathUtils.smoothstep(space, 0.6, 2.2) * (1 - 0.55 * THREE.MathUtils.smoothstep(o.z, 0.1, 0.6));
-    // A shuttlecock of great fronds, longer than the trunk is tall where there's room: rising well
+    // A shuttlecock of great fronds, nearly as long as the trunk is tall where there's room: rising well
     // up before they arch over high above the aisle, wider than a palm's and lacier.
     const lift = THREE.MathUtils.lerp(2.0, 1.0, open) + (r() - 0.5) * 0.3;
     const arch = THREE.MathUtils.lerp(1.2, 1.9, open) * (0.9 + r() * 0.2);

@@ -487,6 +487,15 @@ test('the greenhouse: every pot clear of the card at any window shape, and after
   await settled(page);
   // Slow enough to watch: about five seconds from seed to flower.
   await ew(page, (w) => w.speed(4));
+  // And on the way there and back, the camera never inside anything.
+  await ew(page, (w) => {
+    w.inside = [] as string[];
+    const look = () => {
+      if (w.solid(w.camera.position)) w.inside.push(`${w.rig.current} ${w.camera.position.toArray().map((x: number) => x.toFixed(2))}`);
+      requestAnimationFrame(look);
+    };
+    look();
+  });
   const [a, b] = await ew(page, (w) => w.garden().pots.map((p: Ew | null, i: number) => (p ? i : -1)).filter((i: number) => i >= 0));
   const next = await ew(page, (w) => w.nextPot() as number);
   // The first pot a seed goes into is in the near row, at the end by the potting bench.
@@ -506,6 +515,7 @@ test('the greenhouse: every pot clear of the card at any window shape, and after
   await page.keyboard.press('Escape');
   await settled(page);
   expect(await current(page)).toBe('staging');
+  expect(await ew(page, (w) => w.inside)).toEqual([]);
 
   // Leaving while it grows: nothing about it turns up anywhere else.
   const [c, d] = await ew(page, (w) => w.garden().pots.map((p: Ew | null, i: number) => (p && i !== w.growing() ? i : -1)).filter((i: number) => i >= 0));

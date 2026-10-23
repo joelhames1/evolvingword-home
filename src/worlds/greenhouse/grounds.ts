@@ -1,8 +1,10 @@
 // Outside the glass: a walled garden at golden hour. A striped lawn running out
 // from a gravel walk, borders along the front of the house, clipped yew,
 // fruit trees and the tall trees beyond the wall, all going gold in the low sun,
-// and across the lawn a grass bank where the bedding spells out the word. The
-// sky is warm at the horizon and the sun sits low over the garden's far corner.
+// and across the lawn a grass bank where the bedding spells out the word, a
+// balustrade along its top. Everything throws a long shadow across the grass
+// (worked out once, into a map of the ground). The sky is warm at the horizon
+// and the sun sits low over the garden's far corner.
 // Everything out here lights itself (see outdoor.ts), so the lamps in the house
 // don't shine through the glass onto the lawn.
 import * as THREE from 'three';
