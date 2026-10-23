@@ -262,12 +262,13 @@ function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
           const r = (0.8 + b.s * 1.6) * (w / 380);
           const x = b.x * w;
           const y = b.y * h;
-          const halo = g.createRadialGradient(x, y, 0, x, y, r * 3);
-          halo.addColorStop(0, `rgba(255,214,120,${0.35 * tw})`);
-          halo.addColorStop(1, 'rgba(255,200,100,0)');
-          g.fillStyle = halo;
+          // A soft halo (two faint rings of light, cheaper than a gradient), then the grain.
+          g.fillStyle = `rgba(255,210,115,${0.07 * tw})`;
           g.beginPath();
           g.arc(x, y, r * 3, 0, Math.PI * 2);
+          g.fill();
+          g.beginPath();
+          g.arc(x, y, r * 1.8, 0, Math.PI * 2);
           g.fill();
           g.fillStyle = `rgba(255,${222 + Math.round(b.s * 25)},${140 + Math.round(b.s * 50)},${0.45 + 0.5 * tw})`;
           g.beginPath();
