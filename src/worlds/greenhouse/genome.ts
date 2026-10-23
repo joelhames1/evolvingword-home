@@ -425,14 +425,12 @@ export function describe(g: Genome) {
 export function traits(g: Genome): { head: string; text: string }[] {
   const tall = ['Tiny', 'Short', 'Short', 'Middling', 'Middling', 'Tall', 'Tall', 'Very tall'][g.height];
   const blooms = ['one bloom', 'two blooms', 'three blooms', 'four blooms'][g.branches];
+  const color = colorName(g.base) === colorName(g.tip) ? colorName(g.base) : `${colorName(g.base)} at the heart, ${colorName(g.tip)} at the tips`;
   return [
-    { head: 'Petals', text: `${COUNT[g.petals]}, ${SHAPES[g.shape]}${g.double ? ', with a second whorl inside' : ''}${['', ', a little cupped', ', cupped', ', a deep bowl'][g.cup]}` },
-    { head: 'Color', text: `${colorName(g.base)} at the heart, ${colorName(g.tip)} at the tips` },
-    { head: 'Markings', text: ['None', `Stripes, ${colorName(g.mark)}`, `An edge of ${colorName(g.mark)}`, `Speckles, ${colorName(g.mark)}`][g.pattern] },
-    { head: 'Habit', text: `${tall}, ${blooms}, ${['small', 'small', 'neat', 'neat', 'generous', 'generous', 'big', 'huge'][g.size]} flowers` },
-    { head: 'Leaves', text: `${['Oval', 'Narrow', 'Lobed', 'Heart-shaped'][g.leaf]}, ${['deep green', 'bright green', 'blue-grey', 'bronze'][g.foliage]}` },
-    { head: 'Scent', text: ['None to speak of', 'Faint', 'Sweet', 'Heady'][g.scent] },
-    { head: 'Its note', text: NOTE_NAMES[g.note % 5] },
+    { head: 'Petals', text: `${COUNT[g.petals]}, ${SHAPES[g.shape]}${g.double ? ', a second whorl inside' : ''}${['', ', a little cupped', ', cupped', ', a deep bowl'][g.cup]}` },
+    { head: 'Color', text: `${color[0].toUpperCase()}${color.slice(1)}${['', `, striped ${colorName(g.mark)}`, `, edged in ${colorName(g.mark)}`, `, freckled ${colorName(g.mark)}`][g.pattern]}` },
+    { head: 'Habit', text: `${tall}, ${blooms}, ${['small', 'small', 'neat', 'neat', 'generous', 'generous', 'big', 'huge'][g.size]} flowers; ${['oval', 'narrow', 'lobed', 'heart-shaped'][g.leaf]} ${['deep green', 'bright green', 'blue-grey', 'bronze'][g.foliage]} leaves` },
+    { head: 'Scent and note', text: `${['None to speak of', 'Faint', 'Sweet', 'Heady'][g.scent]}; it sings ${NOTE_NAMES[g.note % 5]}` },
   ];
 }
 

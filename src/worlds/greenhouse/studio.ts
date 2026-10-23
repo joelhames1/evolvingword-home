@@ -254,9 +254,9 @@ export function arrangeStudio(s: Studio, mats: { wood: THREE.MeshStandardMateria
   const { honors } = s;
   honors.group.position.set(WALL.honors, 0, BACK - 0.03);
   honors.group.rotation.y = Math.PI;
-  const boardW = 2.55;
+  const boardW = 2.8;
   const board = new THREE.Mesh(
-    new THREE.BoxGeometry(boardW, 1.12, 0.02),
+    new THREE.BoxGeometry(boardW, 0.96, 0.02),
     new THREE.MeshStandardMaterial({
       map: sign([], 64, 64, (g) => {
         g.fillStyle = '#24402e';
@@ -265,7 +265,7 @@ export function arrangeStudio(s: Studio, mats: { wood: THREE.MeshStandardMateria
       roughness: 0.75,
     }),
   );
-  board.position.set(WALL.honors - 0.06, 1.72, BACK - 0.012);
+  board.position.set(WALL.honors - 0.06, 1.83, BACK - 0.012);
   board.castShadow = true;
   board.receiveShadow = true;
   group.add(board);
@@ -418,7 +418,8 @@ export function arrangeStudio(s: Studio, mats: { wood: THREE.MeshStandardMateria
   s.shelf.group.rotation.y = Math.PI;
   const cab = new THREE.Group();
   const cabWood = new THREE.MeshStandardMaterial({ color: '#6a4428', roughness: 0.6 });
-  const carcass = new THREE.Mesh(new THREE.BoxGeometry(DRAWERS.w, DRAWERS.h, DRAWERS.d), [cabWood, cabWood, cabWood, cabWood, new THREE.MeshStandardMaterial({ map: drawerFront(), roughness: 0.6 }), cabWood]);
+  // Its drawers face the room (the box's −z side).
+  const carcass = new THREE.Mesh(new THREE.BoxGeometry(DRAWERS.w, DRAWERS.h, DRAWERS.d), [cabWood, cabWood, cabWood, cabWood, cabWood, new THREE.MeshStandardMaterial({ map: drawerFront(), roughness: 0.6 })]);
   carcass.position.y = DRAWERS.h / 2;
   carcass.castShadow = true;
   carcass.receiveShadow = true;
@@ -428,7 +429,6 @@ export function arrangeStudio(s: Studio, mats: { wood: THREE.MeshStandardMateria
   cabTop.castShadow = true;
   cab.add(cabTop);
   cab.position.set(DRAWERS.x, 0, BACK - DRAWERS.d / 2);
-  // Its front faces the room: the box's +z face.
   group.add(cab);
 
   // --- the line: shirts and herbs drying, hung from the wall on two brackets --------------------------

@@ -223,7 +223,8 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     new THREE.ShaderMaterial({ vertexShader: LAWN_VERT, fragmentShader: LAWN_FRAG, uniforms: { ...daylight, uWalk: { value: new THREE.Vector4(HOUSE.kneeOut - 1.2, HOUSE.kneeOut + 0.02, 9.5, HOUSE.x0 - 1.6) } } }),
   );
   lawn.rotation.x = -Math.PI / 2;
-  lawn.position.y = -0.002;
+  // Well under the house's floor: a depth buffer can't tell two surfaces a few millimeters apart.
+  lawn.position.y = -0.04;
   group.add(lawn);
 
   // --- the garden wall, on from the house's back wall either way --------------------------------------
@@ -324,46 +325,29 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     group.add(crowns);
   }
 
-  // Spires in the borders: delphiniums, lupins and foxgloves, a stem of buds going up to a point.
-  const spires: { at: THREE.Vector3; h: number; color: THREE.Color }[] = [];
-  const drift = ['#5a6ad8', '#8a5ac8', '#e8a0c0', '#f2e8d8', '#c84a6a', '#f0c050', '#6a7ae0'];
-  for (let x = -9; x <= 9; x += 0.09) {
-    if (Math.abs(x) < 0.6 || r() < 0.4) continue;
-    // A drift of one color every meter or so, as a border is planted.
-    const c = new THREE.Color(drift[Math.floor((x + 9) / 1.1) % drift.length]).offsetHSL(0, -0.05, (r() - 0.5) * 0.08);
-    spires.push({ at: v(x, 0.28 + r() * 0.15, HOUSE.kneeOut - 1.4 - r() * 0.75), h: 0.35 + r() * 0.5, color: c });
-  }
-  const spireGeo = new THREE.CylinderGeometry(0.0, 0.028, 1, 6, 8);
-  spireGeo.translate(0, 0.5, 0);
-  // Knobbly with buds, greener toward the foot.
-  const sp = spireGeo.attributes.position;
-  const shade: number[] = [];
-  for (let i = 0; i < sp.count; i++) {
-    const y = sp.getY(i);
-    const bump = 1 + 0.35 * Math.sin(y * 55 + Math.atan2(sp.getZ(i), sp.getX(i)) * 3);
-    sp.setXYZ(i, sp.getX(i) * bump, y, sp.getZ(i) * bump);
-    const k = THREE.MathUtils.smoothstep(y, 0.0, 0.35);
-    shade.push(0.35 + 0.65 * k, 0.5 + 0.5 * k, 0.3 + 0.7 * k);
-  }
-  spireGeo.setAttribute('color', new THREE.Float32BufferAttribute(shade, 3));
-  spireGeo.computeVertexNormals();
-  const spireMesh = new THREE.InstancedMesh(spireGeo, outdoor(daylight, { vertexColors: true }), spires.length);
-  spires.forEach((s, i) => {
-    spireMesh.setMatrixAt(i, m4.compose(s.at, new THREE.Quaternion().setFromEuler(new THREE.Euler((r() - 0.5) * 0.15, r() * 6, (r() - 0.5) * 0.15)), v(1, s.h, 1)));
-    spireMesh.setColorAt(i, s.color);
-  });
-  spireMesh.frustumCulled = false;
-  group.add(spireMesh);
-
   // Flowers in the borders and on the lawn's edge: points of color that stay a few pixels across.
   const blooms: { pos: THREE.Vector3; color: THREE.Color; size: number }[] = [];
   const palette = ['#f2c14e', '#e8743b', '#d94f70', '#f4efe2', '#9b6fd0', '#f7a8c4', '#ffd98a'];
-  for (let i = 0; i < (high ? 900 : 500); i++) {
+  for (let i = 0; i < (high ? 700 : 400); i++) {
     const x = -9 + r() * 18;
     if (Math.abs(x) < 0.6) continue;
     const z = HOUSE.kneeOut - 1.3 - r() * 0.95;
     const c = new THREE.Color(palette[Math.floor(r() * palette.length)]);
-    blooms.push({ pos: v(x, 0.35 + r() * 0.75, z), color: c.multiplyScalar(0.8), size: 0.035 + r() * 0.025 });
+    blooms.push({ pos: v(x, 0.35 + r() * 0.5, z), color: c.multiplyScalar(0.8), size: 0.035 + r() * 0.025 });
+  }
+  // Spires rising out of the borders: delphiniums, lupins and foxgloves, each a column of florets
+  // getting smaller to the tip, planted in drifts of one color as a border is.
+  const drift = ['#5a6ad8', '#8a5ac8', '#e8a0c0', '#f2e8d8', '#c84a6a', '#6a7ae0', '#f0c050'];
+  for (let x = -9; x <= 9; x += 0.13) {
+    if (Math.abs(x) < 0.6 || r() < 0.35) continue;
+    const c = new THREE.Color(drift[Math.floor((x + 9) / 1.2) % drift.length]).offsetHSL(0, -0.05, (r() - 0.5) * 0.08);
+    const foot = v(x + (r() - 0.5) * 0.08, 0.45 + r() * 0.15, HOUSE.kneeOut - 1.4 - r() * 0.7);
+    const h = 0.3 + r() * 0.45;
+    const lean = v((r() - 0.5) * 0.08, 0, (r() - 0.5) * 0.08);
+    for (let k = 0; k < 8; k++) {
+      const f = k / 7;
+      blooms.push({ pos: foot.clone().addScaledVector(v(0, 1, 0), h * f).addScaledVector(lean, f * f), color: c.clone().multiplyScalar(0.62 + 0.15 * f), size: 0.075 * (1 - f * 0.65) });
+    }
   }
   const flowerPts = flowerPoints(blooms, daylight);
   group.add(flowerPts);

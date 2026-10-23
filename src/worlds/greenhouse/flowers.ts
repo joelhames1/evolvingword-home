@@ -198,10 +198,10 @@ const SHAPES: Record<'petal' | 'leaf' | 'stem' | 'eye', string> = {
     float halfWidth(float t, float shape) {
       t = clamp(t, 0.0, 1.0);
       float w;
-      if (shape < 0.5) w = pow(sin(3.14159 * t), 0.5) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
-      else if (shape < 1.5) w = pow(sin(3.14159 * pow(t, 0.68)), 0.9);
-      else if (shape < 2.5) w = pow(sin(3.14159 * t), 0.45) * (1.0 + 0.1 * sin(t * 30.0 + aMisc.z * 6.0)) * mix(0.45, 1.0, smoothstep(0.0, 0.4, t));
-      else w = pow(sin(3.14159 * min(t * 1.04, 1.0)), 0.42) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
+      if (shape < 0.5) w = pow(max(sin(3.14159 * t), 0.0), 0.5) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
+      else if (shape < 1.5) w = pow(max(sin(3.14159 * pow(t, 0.68)), 0.0), 0.9);
+      else if (shape < 2.5) w = pow(max(sin(3.14159 * t), 0.0), 0.45) * (1.0 + 0.1 * sin(t * 30.0 + aMisc.z * 6.0)) * mix(0.45, 1.0, smoothstep(0.0, 0.4, t));
+      else w = pow(max(sin(3.14159 * min(t * 1.04, 1.0)), 0.0), 0.42) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
       return w;
     }
     vec3 petalAt(float u, float t, float open, float cup) {
@@ -256,12 +256,12 @@ const SHAPES: Record<'petal' | 'leaf' | 'stem' | 'eye', string> = {
     varying float vGlow;
     float halfWidth(float t, float shape) {
       t = clamp(t, 0.0, 1.0);
-      if (shape < 0.5) return pow(sin(3.14159 * t), 0.75);
-      if (shape < 1.5) return pow(sin(3.14159 * pow(t, 0.55)), 1.1);
-      if (shape < 2.5) return pow(sin(3.14159 * t), 0.7) * (0.72 + 0.28 * abs(sin(t * 3.14159 * 3.0)));
-      if (shape < 3.5) return pow(sin(3.14159 * (0.2 + 0.8 * t)), 0.6);
-      if (shape < 4.5) return pow(sin(3.14159 * pow(t, 0.7)), 1.2);
-      return pow(sin(3.14159 * t), 0.6);
+      if (shape < 0.5) return pow(max(sin(3.14159 * t), 0.0), 0.75);
+      if (shape < 1.5) return pow(max(sin(3.14159 * pow(t, 0.55)), 0.0), 1.1);
+      if (shape < 2.5) return pow(max(sin(3.14159 * t), 0.0), 0.7) * (0.72 + 0.28 * abs(sin(t * 3.14159 * 3.0)));
+      if (shape < 3.5) return pow(max(sin(3.14159 * (0.2 + 0.8 * t)), 0.0), 0.6);
+      if (shape < 4.5) return pow(max(sin(3.14159 * pow(t, 0.7)), 0.0), 1.2);
+      return pow(max(sin(3.14159 * t), 0.0), 0.6);
     }
     vec3 leafAt(float u, float t, float unfurl, float arch) {
       float w = halfWidth(t, aLeaf.z) * aLeaf.y * 0.5;
@@ -505,7 +505,7 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
   const group = new THREE.Group();
   const high = quality === 'high';
   const MAX = { petal: SLOTS * 4 * 28, leaf: SLOTS * 40, stem: SLOTS * 26, eye: SLOTS * 4 };
-  const petals = parts('petal', strip(4, high ? 7 : 5), MAX.petal, { aPetal: 4, aWin: 4, aBase: 3, aTip: 3, aMark: 3 }, { roughness: 0.55 });
+  const petals = parts('petal', strip(high ? 6 : 4, high ? 8 : 5), MAX.petal, { aPetal: 4, aWin: 4, aBase: 3, aTip: 3, aMark: 3 }, { roughness: 0.55 });
   const leafMesh = parts('leaf', strip(4, high ? 7 : 5), MAX.leaf, { aLeaf: 4, aWin: 4, aColor: 3 }, { roughness: 0.6 });
   const stemGeo = new THREE.CylinderGeometry(0.8, 1, 1, 6, 1, true);
   stemGeo.translate(0, 0.5, 0);

@@ -19,8 +19,13 @@ type Ew = Record<string, any>;
 const ew = <T>(page: Page, fn: (w: Ew) => T) => page.evaluate(`(${fn.toString()})(window.__ew)`) as Promise<T>;
 const settled = (page: Page) => page.waitForFunction(() => !(window as unknown as { __ew: Ew }).__ew.rig.moving, null, { timeout: 60_000 });
 const current = (page: Page) => ew(page, (w) => w.rig.current as string);
-/** A fresh garden: nothing kept from an earlier test. */
-const fresh = (page: Page) => page.addInitScript(() => localStorage.removeItem('ew.greenhouse.v1'));
+/** A fresh garden: nothing kept from an earlier test (cleared on the first page only, then kept as usual). */
+const fresh = (page: Page) =>
+  page.addInitScript(() => {
+    if (sessionStorage.getItem('ew.test.fresh')) return;
+    sessionStorage.setItem('ew.test.fresh', '1');
+    localStorage.removeItem('ew.greenhouse.v1');
+  });
 
 test('the greenhouse: picked from the globes, the flowers, the bed of words, and the studio round the house', async ({ page }) => {
   test.setTimeout(420_000);
@@ -106,9 +111,9 @@ test('the greenhouse: picked from the globes, the flowers, the bed of words, and
     expect(framed, shot).toBe(true);
   }
   // The catalog's card turns its pages.
-  await expect(page.locator('#card-kicker')).toContainText('The seed catalog');
   await page.evaluate(() => (window as unknown as { __ew: Ew }).__ew.goTo('catalog'));
   await settled(page);
+  await expect(page.locator('#card-kicker')).toContainText('The seed catalog', { timeout: 20_000 });
   const first = await page.locator('#card-title').textContent();
   await page.locator('#card-actions button', { hasText: 'Next page' }).click();
   await expect(page.locator('#card-title')).not.toHaveText(first ?? '');
@@ -186,7 +191,7 @@ test('the greenhouse: breed a flower by clicking two, watch it grow, and find it
   await page.evaluate((i) => (window as unknown as { __ew: Ew }).__ew.lens(i), empty);
   await page.waitForFunction(() => (window as unknown as { __ew: Ew }).__ew.rig.current === 'bloom', null, { timeout: 30_000 });
   await settled(page);
-  await expect(page.locator('#card-kicker')).toHaveText('Under the lens', { timeout: 30_000 });
+  await expect(page.locator('#card-kicker')).toContainText('Under the lens', { timeout: 30_000 });
   await expect(page.locator('#card-body')).toContainText('Seed of');
   await expect(page.locator('#card-body li').first()).toContainText('Petals');
 

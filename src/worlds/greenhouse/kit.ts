@@ -85,6 +85,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
 
   // --- the garden: this browser's own, and any gift that came with the link ----------------------
   let garden: Garden = load();
+  // A gift left waiting on the bench last time goes into a pot if one's free now.
+  if (settle(garden) >= 0) keep(garden);
   let giftAt: number | null = null;
   const asked = new URLSearchParams(location.search).get('bloom');
   if (asked !== null) {
@@ -272,7 +274,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       card('Under the lens', 'A seedling', ['Too young to say. The lens tells you everything once it flowers.', { note: parentage(p) }], [{ label: 'Back to the staging', quiet: true, run: () => wiring?.goTo('staging') }]);
       return;
     }
-    card('Under the lens', latinName(g), [`“${gardenName(g)}”`, { list: traits(g) }, { note: parentage(p) }], [
+    card(`Under the lens · “${gardenName(g)}”`, latinName(g), [{ list: traits(g) }, { note: parentage(p) }], [
       ...(i < POTS ? [{ label: 'Share this flower', run: () => void share(i) }, { label: 'Water it', run: () => void waterPot(i) }] : []),
       { label: 'Back to the staging', quiet: true, run: () => wiring?.goTo('staging') },
     ]);
@@ -497,7 +499,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       // Out on the lawn, a little above it, looking in through the front glass: the bench, the books, the flowers.
       vista: { pos: v(-1.6, 2.7, -6.9), target: v(0.4, 1.65, 1.0), fov: 50, lean: 0.25 },
       // Nose to the front glass over the bench, looking out toward the sun.
-      window: { pos: v(0.75, 1.55, -1.5), target: v(-4, 1.2, -14), fov: 54, lean: 0.04 },
+      window: { pos: v(1.15, 1.6, -1.55), target: v(-1.2, 1.5, -14), fov: 54, lean: 0.04 },
       // The bedding on the bank across the lawn.
       board: { pos: v(0.95, 1.72, -1.35), target: BANK.center.clone().add(v(0, 0.05, 0)), fov: 26, lean: 0.03 },
     },
@@ -529,7 +531,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     closeups() {
       const first = garden.pots.findIndex((p) => !!p);
       return {
-        staging: { pos: v(-3.6, 1.95, 0.95), target: v(-3.75, 1.08, -1.55), fov: 48, lean: 0.04, shift: CARD },
+        staging: { pos: v(-3.35, 2.0, 1.0), target: v(-3.5, 1.05, -1.55), fov: 52, lean: 0.04, shift: CARD },
         bloom: bloomShot(Math.max(0, first)),
         catalog: { pos: CATALOG.at.clone().add(v(0, 0.55, -0.62)), target: CATALOG.at.clone().add(v(0, 0.02, 0)), fov: 36, near: 0.03, lean: 0.01, shift: CARD },
         honors: { pos: v(3.45, 1.66, 0.45), target: v(3.45, 1.7, HOUSE.back), fov: 44, lean: 0.04 },
@@ -635,7 +637,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         if (!opened[i]) {
           opened[i] = 1;
           band.bloom(genome.note);
-          const fresh = i < POTS ? newStamps(garden, genome) : [];
+          // Only what's bred here earns a rosette: not the first seeds, not a gift.
+          const fresh = i < POTS && p.parents ? newStamps(garden, genome) : [];
           if (fresh.length) {
             garden.stamps.push(...fresh);
             keep(garden);

@@ -1,10 +1,10 @@
 // The word board: carpet bedding on the grass bank across the lawn, the way the
 // Victorians spelled out names and dates on a slope. Sixteen little beds in a
-// row, edged in terracotta, each planted five by seven: silver foliage for the
-// ground of the letter, and where the letter's strokes run, plants that flower.
-// The weasel program breeds the phrase. Where a letter is still wrong its
-// strokes are only green leaves in bud; once it comes right the buds open into
-// scarlet flowers, all at once, and the bed glows in the low sun behind it.
+// row, edged in terracotta, each planted five by seven: low bronze foliage for
+// the ground of the letter, and where the letter's strokes run, silver plants
+// that flower. The weasel program breeds the phrase. Where a letter is still
+// wrong its strokes are only silver leaves in bud; once it comes right they
+// open into scarlet flowers, all at once, glowing in the low sun behind them.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Evolver, MAX_PHRASE } from '../../evolve';
@@ -40,7 +40,7 @@ const VERT = /* glsl */ `
     vec3 p = position;
     vec3 col;
     if (uKind < 0.5) {
-      // The foliage: a silver rosette for the ground, a taller green mound in the strokes.
+      // The foliage: low bronze for the ground, a taller silver mound in the strokes.
       p.y *= mix(0.55, 1.0, on);
       col = mix(uSilver, uLeaf, on);
       vPetal = 0.0;
@@ -177,10 +177,10 @@ export function buildBed(daylight: DaylightUniforms): Bed {
   mounds.geometry.setAttribute('aState', stateAttr);
   flowers.geometry.setAttribute('aState', stateAttr);
   const colors = {
-    uSilver: { value: new THREE.Color('#7f8c86') },
-    uLeaf: { value: new THREE.Color('#2a4a1a') },
+    uSilver: { value: new THREE.Color('#3e3a1e') },
+    uLeaf: { value: new THREE.Color('#b8c4b4') },
     uBud: { value: new THREE.Color('#7a8a3a') },
-    uFlower: { value: new THREE.Color('#d8241e') },
+    uFlower: { value: new THREE.Color('#e01a12') },
   };
   for (const [mesh, kind] of [
     [mounds, 0],
