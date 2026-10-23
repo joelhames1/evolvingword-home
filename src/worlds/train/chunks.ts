@@ -3,7 +3,7 @@
 // and each piece slides by underneath it: its own coordinates are meters along
 // the line from where it starts, so nothing far out ever loses precision. A
 // piece is a few meshes: the ground, what stands on it, the stone and brick of
-// bridges and stations, the city's buildings, water, and its lights.
+// bridges, the city's buildings, a station, water, and its lights.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { DaylightUniforms } from '../outdoor';

@@ -116,7 +116,8 @@ const LOOKS: Record<StationKind, Look> = {
   lake: {
     len: 12,
     depth: 6,
-    height: 3.95,
+    // (Tall enough that its eaves clear the veranda's roof.)
+    height: 4.5,
     at: -10.5,
     floors: [1.55],
     bay: 2.4,
