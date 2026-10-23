@@ -5,7 +5,7 @@ import { WORLDS } from '../../src/worlds';
 import { PHRASES } from '../../src/worlds/greenhouse/bed';
 import { balustradeGeometry, BANK, bankFoot, bankGeometry, bankTop, daisyGeometry, ground, SHADE, shadePixels, spireGeometry, yewGeometry } from '../../src/worlds/greenhouse/grounds';
 import { chalkNumbers, crozier, TREE_CROWN, treeFernFronds, treeFernTrunk } from '../../src/worlds/greenhouse/flowers';
-import { FILL_ORDER, HOUSE, POT_AT, potPlace, POTS as POT_COUNT } from '../../src/worlds/greenhouse/plan';
+import { FILL_ORDER, HOUSE, POT_AT, potPlace, POTS as POT_COUNT, WALL } from '../../src/worlds/greenhouse/plan';
 import { regroup } from '../../src/worlds/greenhouse/studio';
 import { DRONE, SCALE, voicing } from '../../src/worlds/greenhouse/sound';
 import { FONT } from '../../src/worlds/tower/board';
@@ -582,6 +582,8 @@ describe('the tree fern, and the pots', () => {
       const tip = f.at.clone().addScaledVector(o, Math.max(0, reach));
       expect(tip.x).toBeLessThan(HOUSE.x1 - 0.05);
       expect(tip.z).toBeLessThan(HOUSE.back - 0.05);
+      // And none reaches along the back wall over the show board.
+      if (f.dir.y > 0 && o.x < -0.3 && o.z > -0.35) expect(tip.x).toBeGreaterThan(WALL.honors + 0.75);
     }
   });
 

@@ -737,9 +737,10 @@ export function treeFernFronds(slot: number): Frond[] {
     const a = k * 2.39996 + (r() - 0.5) * 0.3;
     const o = v(Math.cos(a), 0, Math.sin(a));
     const from = crown.clone().addScaledVector(o, 0.07 + r() * 0.03).add(v(0, (r() - 0.5) * 0.06, 0));
-    const space = room(o, from);
-    // 0 hard against a wall, 1 out over the house (and less so along the back wall, over the prizes).
-    const open = THREE.MathUtils.smoothstep(space, 0.6, 2.2) * (1 - 0.55 * THREE.MathUtils.smoothstep(o.z, 0.1, 0.6));
+    // Along the back wall toward the prizes, kept short, so no frond hangs over the show board.
+    const space = o.x < -0.3 && o.z > -0.35 ? Math.min(room(o, from), 0.85) : room(o, from);
+    // 0 hard against a wall, 1 out over the house.
+    const open = THREE.MathUtils.smoothstep(space, 0.6, 2.2);
     // A shuttlecock of great fronds, nearly as long as the trunk is tall where there's room: rising well
     // up before they arch over high above the aisle, wider than a palm's and lacier.
     const lift = THREE.MathUtils.lerp(2.0, 1.0, open) + (r() - 0.5) * 0.3;
