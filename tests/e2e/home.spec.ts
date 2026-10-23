@@ -128,7 +128,20 @@ test('the things on the desk and walls', async ({ page }) => {
     return pts;
   });
   expect(egypt.length).toBeGreaterThan(10);
-  const scratchEgypt = () => page.evaluate(`(${((w: Ew, pts: [number, number][]) => pts.forEach(([u, v]) => w.map.scratch(u, v))).toString()})(window.__ew, ${JSON.stringify(egypt)})`);
+  // The coin's edge is ragged at random; hold it steady here so laying foil back
+  // covers exactly what a scratch cleared.
+  const scratchEgypt = () =>
+    page.evaluate(
+      `(${((w: Ew, pts: [number, number][]) => {
+        const random = Math.random;
+        Math.random = () => 0.5;
+        try {
+          pts.forEach(([u, v]) => w.map.scratch(u, v));
+        } finally {
+          Math.random = random;
+        }
+      }).toString()})(window.__ew, ${JSON.stringify(egypt)})`,
+    );
   const start = await ew((w) => w.map.visited());
   await scratchEgypt();
   expect(await ew((w) => w.map.visited())).toBeGreaterThan(start);
