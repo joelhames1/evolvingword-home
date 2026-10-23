@@ -358,17 +358,19 @@ test('the greenhouse: letting go of a pick, the lens from flower to flower, the 
   expect(await ew(page, (w) => w.picked())).toBe(-1);
 
   // Under the lens, one flower and then another: the camera goes to each, and the card names each.
-  const look = async (i: number) => {
+  const look = async (i: number, before?: string | null) => {
     await page.evaluate((i) => (window as unknown as { __ew: Ew }).__ew.lens(i), i);
     await page.waitForFunction(() => (window as unknown as { __ew: Ew }).__ew.rig.current === 'bloom', null, { timeout: 30_000 });
     await settled(page);
+    // The card comes up once the camera is there (the one before it is hidden while it flies).
+    await expect(page.locator('#card')).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('#card-kicker')).toHaveText('Under the lens', { timeout: 30_000 });
+    if (before) await expect(page.locator('#card-title')).not.toHaveText(before, { timeout: 30_000 });
     return { at: await ew(page, (w) => w.camera.position.toArray() as number[]), name: await page.locator('#card-title').textContent() };
   };
   const first = await look(a);
-  const second = await look(b);
+  const second = await look(b, first.name);
   expect(Math.hypot(...first.at.map((x, k) => x - second.at[k]))).toBeGreaterThan(0.2);
-  expect(second.name).not.toBe(first.name);
   await page.keyboard.press('Escape');
   await settled(page);
   expect(await current(page)).toBe('staging');
