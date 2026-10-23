@@ -432,7 +432,7 @@ export function cityMaterial(u: DaylightUniforms) {
         for (int i = 0; i < 2; i++) {
           vec3 d = vec3((base + float(i)) * 24.0 - uLand.x, -2.0, sz) - world;
           float dd = max(dot(d, d), 1e-3);
-          sum += clamp(dot(n, d * inversesqrt(dd)) * 0.9 + 0.1, 0.0, 1.0) * 60.0 / (dd + 1.0);
+          sum += clamp(dot(n, d * inversesqrt(dd)) * 0.9 + 0.1, 0.0, 1.0) * 45.0 / (dd + 1.0);
         }
         return albedo * vec3(1.0, 0.5, 0.17) * sum * uLand.y;
       }

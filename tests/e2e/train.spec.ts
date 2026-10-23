@@ -328,7 +328,9 @@ test('the night train: each kind of station built and lit, its sign by our windo
       w.jump(land, at, 0);
       w.fast(0);
     }, { land, at });
-    await page.waitForTimeout(1500);
+    // (The land's built again all at once on the next frame: a slow one, here.)
+    await page.waitForFunction(() => (window as unknown as Win).__ew.land.signs().length > 0, null, { timeout: 90_000 });
+    await page.waitForTimeout(500);
     const seen = await page.evaluate(() => {
       const w = (window as unknown as Win).__ew;
       const v = w.camera.position.clone();

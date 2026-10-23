@@ -844,12 +844,13 @@ function furniture(b: Build, P: StationPlan, L: Look, seed: number) {
     }
   }
   if (snowy) {
-    // Drifts against the house and the wall at the back, and along the foot of the columns.
+    // Drifts against the house and the wall at the back (but swept from in front of the doors and the hatch).
     for (let k = 0; k < 22; k++) {
       const du = -100 + k * 7.2 + hash(k, 3, seed) * 3;
       const u = P.stop + du;
       if (!own(b, u)) continue;
       const len = 1.6 + hash(k, 5, seed) * 2.2;
+      if (P.bays.some((q) => q.role !== 'win' && q.role !== 'poster' && Math.abs(q.u - u) < len / 2 + 1)) continue;
       m.add(SHAPES.blob, place(x(b, u), y0 - 0.05, PLATFORM.back + 0.18, len, 0.32 + hash(k, 7, seed) * 0.2, 0.6, 0.2), DARK.snow, S(SURF.snow));
     }
   }
