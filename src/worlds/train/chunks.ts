@@ -5,15 +5,17 @@
 // piece is a few meshes: the ground, what stands on it, the stone and brick of
 // bridges and stations, the city's buildings, water, and its lights.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { DaylightUniforms } from '../outdoor';
 import { pointLights } from '../outdoor';
 import type { Journey, Leg } from './journey';
 import { LAYOUT } from './journey';
 import { BALLAST, CESS, groundOf, paint, WATER } from './ground';
 import { hash, Mesher } from './mesher';
-import { cityMaterial, nightMaterial, poolMaterial, waterMaterial } from './night';
+import { stationAtlas } from './atlas';
+import { cityMaterial, nightMaterial, poolMaterial, stationMaterial, waterMaterial } from './night';
 import { branchZ, dress, points, track, type Build, type Fixture, type PointSpec, type Sweep } from './scenery';
-import { buildClock, nameBoard, posterArt, stone } from './signs';
+import { buildClock, stone } from './signs';
 
 export const CHUNK = 200;
 const BEHIND = 1050;
@@ -100,21 +102,12 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     city: cityMaterial(uniforms),
     pools: poolMaterial(uniforms),
     water: waterMaterial(uniforms),
+    station: stationMaterial(uniforms, stationAtlas(Object.values(LAYOUT).flatMap((l) => (l.station ? [l.station.name] : [])))),
   };
   const clock = buildClock();
-  const flapMat = new THREE.MeshBasicMaterial({ map: opts.flapTexture, color: new THREE.Color(0.72, 0.7, 0.66) });
-  const clockMat = new THREE.MeshBasicMaterial({ map: clock.texture, transparent: true, color: new THREE.Color(0.8, 0.78, 0.72) });
-  const nameMats = new Map<string, THREE.MeshBasicMaterial>();
-  const nameMat = (name: string) => {
-    let m = nameMats.get(name);
-    if (!m) nameMats.set(name, (m = new THREE.MeshBasicMaterial({ map: nameBoard(name), color: new THREE.Color(0.62, 0.62, 0.66) })));
-    return m;
-  };
-  const posterMat = (name: string) => {
-    let m = nameMats.get(`poster:${name}`);
-    if (!m) nameMats.set(`poster:${name}`, (m = new THREE.MeshBasicMaterial({ map: posterArt(name), color: new THREE.Color(0.5, 0.48, 0.45) })));
-    return m;
-  };
+  // (Drawn a little nearer than the case and the drum they're set in, so they never flicker into them from far off.)
+  const flapMat = new THREE.MeshBasicMaterial({ map: opts.flapTexture, color: new THREE.Color(0.72, 0.7, 0.66), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const clockMat = new THREE.MeshBasicMaterial({ map: clock.texture, transparent: true, color: new THREE.Color(0.8, 0.78, 0.72), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
 
   const same = (a: Leg, b: Leg) => a.start === b.start && a.land === b.land;
   // How much a stretch shapes the land at u.
@@ -293,6 +286,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       brick: new Mesher(),
       rock: new Mesher(),
       city: new Mesher(),
+      station: new Mesher(),
       pools: new Mesher(),
       lights,
       sweeps,
@@ -320,6 +314,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       [b.brick, mats.brick],
       [b.rock, mats.rock],
       [b.city, mats.city],
+      [b.station, mats.station],
       [b.pools, mats.pools],
     ] as const)
       for (const geo of halves(m)) {
@@ -336,15 +331,17 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       if (leg.land === 'gorge') out.add(water(u0, WATER.gorge, -1400, 0), water(u0, WATER.gorge, 0, 1400));
       if (leg.land === 'lake') out.add(water(u0, WATER.lake, -1400, -4));
     }
-    // The stations' signs and clocks.
+    // The stations' flap signs, and their clocks.
     const signs: THREE.Object3D[] = [];
     for (const f of fixtures) {
-      const geo = f.kind === 'clock' ? new THREE.CircleGeometry(f.w / 2, 32) : new THREE.PlaneGeometry(f.w, f.h);
-      const mesh = new THREE.Mesh(geo, f.kind === 'flap' ? flapMat : f.kind === 'clock' ? clockMat : f.kind === 'poster' ? posterMat(f.name ?? '') : nameMat(f.name ?? ''));
+      if (f.kind !== 'flap') continue;
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(f.w, f.h), flapMat);
       mesh.position.set(f.u - u0, f.y, f.z);
       out.add(mesh);
-      if (f.kind === 'flap') signs.push(mesh);
+      signs.push(mesh);
     }
+    const clocks = fixtures.filter((f) => f.kind === 'clock');
+    if (clocks.length) out.add(new THREE.Mesh(mergeGeometries(clocks.map((f) => new THREE.CircleGeometry(f.w / 2, 32).translate(f.u - u0, f.y, f.z)))!, clockMat));
     const pts = lights.length ? pointLights(lights, uniforms) : null;
     if (pts) out.add(pts);
     // Swap the new for the old.

@@ -7,12 +7,13 @@ import { canvas, rng, texture } from '../../textures';
 
 const cache = new Map<string, THREE.Texture>();
 
-/** An enamel station sign: white letters on deep blue, a white rule round the edge. */
-export function nameBoard(name: string): THREE.Texture {
-  const hit = cache.get(`name:${name}`);
-  if (hit) return hit;
-  const [c, g] = canvas(1024, 160);
-  g.fillStyle = '#16294f';
+/** An enamel station sign: white letters on deep blue, a white rule round the edge, chipped here and there. Drawn 1024 by 160. */
+export function drawName(g: CanvasRenderingContext2D, name: string, r: () => number) {
+  const ground = g.createLinearGradient(0, 0, 0, 160);
+  ground.addColorStop(0, '#1b315c');
+  ground.addColorStop(0.55, '#16294f');
+  ground.addColorStop(1, '#112040');
+  g.fillStyle = ground;
   g.fillRect(0, 0, 1024, 160);
   g.strokeStyle = '#f2efe6';
   g.lineWidth = 8;
@@ -23,9 +24,34 @@ export function nameBoard(name: string): THREE.Texture {
   g.textBaseline = 'middle';
   (g as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = '10px';
   g.fillText(name, 512, 84);
-  const t = texture(c);
-  cache.set(`name:${name}`, t);
-  return t;
+  (g as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = '0px';
+  // Chips in the enamel, mostly round the edge and the screw holes, the iron black under them.
+  for (const [hx, hy] of [
+    [34, 34],
+    [990, 34],
+    [34, 126],
+    [990, 126],
+  ]) {
+    g.fillStyle = '#0d0f12';
+    g.beginPath();
+    g.arc(hx, hy, 7, 0, Math.PI * 2);
+    g.fill();
+  }
+  for (let i = 0; i < 26; i++) {
+    const edge = r() < 0.75;
+    const cx = edge ? (r() < 0.5 ? r() * 30 : 994 + r() * 30) : r() * 1024;
+    const cy = edge ? r() * 160 : r() < 0.5 ? r() * 12 : 148 + r() * 12;
+    g.fillStyle = r() < 0.6 ? '#0d0f12' : '#3a2a1c';
+    g.beginPath();
+    g.ellipse(cx, cy, 2 + r() * 6, 1.5 + r() * 4, r() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  // A sheen across the top, the way enamel catches light.
+  const sheen = g.createLinearGradient(0, 0, 0, 160);
+  sheen.addColorStop(0, 'rgba(255,255,255,0.1)');
+  sheen.addColorStop(0.3, 'rgba(255,255,255,0)');
+  g.fillStyle = sheen;
+  g.fillRect(0, 0, 1024, 160);
 }
 
 /** The station clock's face: drawn again each minute, with your local time. */
@@ -156,12 +182,9 @@ export function stone(kind: 'ashlar' | 'brick' | 'rock' | 'concrete'): THREE.Tex
 }
 
 /** A travel poster for the stations' walls, in flat colors: one of the landscapes by night, its name under it. */
-export function posterArt(kind: string): THREE.Texture {
-  const hit = cache.get(`poster:${kind}`);
-  if (hit) return hit;
+export function drawPoster(g: CanvasRenderingContext2D, kind: string) {
   const W = 384;
   const H = 544;
-  const [c, g] = canvas(W, H);
   const r = rng(kind.length * 131 + kind.charCodeAt(0));
   const look: Record<string, { sky: [string, string]; title: string; line: string; ink: string }> = {
     lake: { sky: ['#0e1838', '#3c5a8a'], title: 'THE LAKE', line: 'MOONRISE BY SLEEPER', ink: '#f3e7c7' },
@@ -259,7 +282,5 @@ export function posterArt(kind: string): THREE.Texture {
   g.strokeStyle = L.ink;
   g.lineWidth = 3;
   g.strokeRect(10, 10, W - 20, H - 20);
-  const t = texture(c);
-  cache.set(`poster:${kind}`, t);
-  return t;
 }
+

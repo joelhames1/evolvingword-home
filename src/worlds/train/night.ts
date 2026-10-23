@@ -5,7 +5,7 @@
 // haze and the far-off lights match the rest of the site's outdoors.
 import * as THREE from 'three';
 import { DAYLIGHT, daylightUniforms, type DaylightUniforms } from '../outdoor';
-import { STATION_LAMPS } from './ground';
+import { CANOPY, PLATFORM, STATION_LAMPS, SURF } from './ground';
 import { CAR, COMPARTMENT_STEP, CORRIDOR_WINDOWS, WINDOW } from './plan';
 
 /** Toward the moon, as seen (low over the land on the window side, a little behind), and the way its light falls. */
@@ -41,6 +41,12 @@ export function nightUniforms(): DaylightUniforms {
     // along (x0, x1), and how bright (0: no station near). The light they give, warm or white.
     uStation: { value: new THREE.Vector4(0, 0, 0, 0) },
     uStationColor: { value: new THREE.Color('#ffc58a') },
+    // Along the station, a strip (see STATION_TEX): where light comes out of the house's windows, and where the canopy is.
+    // Where the strip starts (world x) and one over its length; the lamps of its own (by the sign, by the doors): x, y, z, power.
+    uStationTex: { value: stationTexture() },
+    uStationGeo: { value: new THREE.Vector4(0, 1 / STATION_TEX.length, 0, 0) },
+    uStationLights: { value: [0, 1, 2, 3].map(() => new THREE.Vector4(0, 0, 0, 0)) },
+    uStationWin: { value: new THREE.Color('#ff9a4c').multiplyScalar(0.75) },
     // How brightly the train's windows light the ground beside it (0 in a tunnel's dark, it's the tunnel walls they light).
     uSpill: { value: 1 },
     uSpillColor: { value: new THREE.Color('#ffb46a') },
@@ -49,6 +55,17 @@ export function nightUniforms(): DaylightUniforms {
     // The brakes' sparks, lighting the ballast round the wheels: where, and how brightly.
     uSpark: { value: new THREE.Vector4(0, -1.15, -0.8, 0) },
   };
+}
+
+/** The strip along a station that tells its light where the house's lit windows and the canopy are: texels, and how many meters it covers from where it starts. */
+export const STATION_TEX = { size: 512, length: 192, from: -120 };
+function stationTexture() {
+  const t = new THREE.DataTexture(new Uint8Array(STATION_TEX.size * 4), STATION_TEX.size, 1, THREE.RGBAFormat);
+  t.magFilter = THREE.LinearFilter;
+  t.minFilter = THREE.LinearFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  return t;
 }
 
 /** The squares of light from the train's windows, on whatever is beside the line. */
@@ -127,20 +144,86 @@ const NIGHT = /* glsl */ `
     float rim = edge * behind * behind * clamp(ndl + 0.6, 0.0, 1.0);
     return albedo * (amb * (0.2 + 0.8 * uMoonK) + (uSunColor * key + uFill * (fill * fill) + uRim * rim) * uMoonK);
   }
-  // The station's lamps, one every ${STATION_LAMPS.step} m along the back of the platform: the nearest two.
-  vec3 stationLit(vec3 albedo, vec3 n, vec3 world) {
-    if (uStation.w <= 0.0 || world.x < uStation.y - 8.0 || world.x > uStation.z + 8.0 || world.z < -40.0 || world.z > 4.0) return vec3(0.0);
+  uniform sampler2D uStationTex;
+  uniform vec4 uStationGeo;
+  uniform vec4 uStationLights[4];
+  uniform vec3 uStationWin;
+  uniform float uDebug;
+  // How much of the sky a station's canopy hides here: 0 out in the open, 1 well in under it.
+  float stationCover(vec3 world) {
+    if (uStation.w <= 0.0 || world.y > ${CANOPY.y.toFixed(3)} + 0.05 || world.z < ${PLATFORM.back.toFixed(3)} - 0.6 || world.z > ${CANOPY.front.toFixed(3)} + 0.9) return 0.0;
+    float tx = (world.x - uStationGeo.x) * uStationGeo.y;
+    if (tx <= 0.0 || tx >= 1.0) return 0.0;
+    return texture2D(uStationTex, vec2(tx, 0.5)).g * smoothstep(${CANOPY.front.toFixed(3)} + 0.9, ${CANOPY.front.toFixed(3)} - 0.5, world.z);
+  }
+  // One lamp's light here, falling away with distance; under a hood most of it goes down. Its glint, for what's glossy.
+  float lampAt(vec3 n, vec3 V, vec3 world, vec3 lp, float power, float hood, float gloss, inout float spec) {
+    vec3 d = lp - world;
+    float dd = max(dot(d, d), 1e-4);
+    vec3 L = d * inversesqrt(dd);
+    float down = clamp(L.y, 0.0, 1.0);
+    down *= down;
+    float fall = power * mix(1.0, 0.04 + 0.96 * down * down, hood) / (dd + 0.3);
+    float ndl = dot(n, L);
+    if (gloss > 0.0) {
+      vec3 hv = L + V;
+      vec3 h = hv * inversesqrt(max(dot(hv, hv), 1e-6));
+      float s = clamp(dot(n, h), 0.0, 1.0);
+      s *= s;
+      s *= s;
+      s *= s;
+      s *= s;
+      spec += s * fall * step(0.0, ndl);
+    }
+    return clamp(ndl * 0.9 + 0.1, 0.0, 1.0) * fall;
+  }
+  // A station near us: pools of light under its lamps, one every ${STATION_LAMPS.step} m along the platform (the nearest two),
+  // and under the lamps of its own; and the light of the house's lit windows, out over the platform.
+  vec3 stationLit(vec3 albedo, vec3 n, vec3 world, float gloss) {
+    if (uStation.w <= 0.0 || world.x < uStation.y - 14.0 || world.x > uStation.z + 14.0 || world.z < -40.0 || world.z > 4.0) return vec3(0.0);
+    vec3 toEye = cameraPosition - world;
+    vec3 V = toEye * inversesqrt(max(dot(toEye, toEye), 1e-6));
     float base = floor((world.x - uStation.x) / ${STATION_LAMPS.step.toFixed(1)});
-    vec3 sum = vec3(0.0);
+    float diff = 0.0;
+    float spec = 0.0;
     for (int i = 0; i < 2; i++) {
       float lx = uStation.x + (base + float(i)) * ${STATION_LAMPS.step.toFixed(1)};
-      float there = step(uStation.y - 0.5, lx) * step(lx, uStation.z + 0.5);
-      vec3 d = vec3(lx, ${STATION_LAMPS.y.toFixed(3)}, ${STATION_LAMPS.z.toFixed(3)}) - world;
-      float dd = max(dot(d, d), 1e-3);
-      float ndl = dot(n, d * inversesqrt(dd));
-      sum += there * clamp(ndl * 0.8 + 0.2, 0.0, 1.0) / (1.0 + dd * 0.42);
+      if (lx > uStation.y - 0.5 && lx < uStation.z + 0.5) diff += lampAt(n, V, world, vec3(lx, ${STATION_LAMPS.y.toFixed(3)}, ${STATION_LAMPS.z.toFixed(3)}), 20.0, 1.0, gloss, spec);
     }
-    return albedo * uStationColor * sum * uStation.w;
+    if (uDebug > 5.5 && uDebug < 6.5) return vec3(diff);
+    for (int i = 0; i < 4; i++) {
+      vec4 q = uStationLights[i];
+      if (q.w > 0.0) diff += lampAt(n, V, world, q.xyz, q.w, 0.5, gloss, spec);
+    }
+    if (uDebug > 5.5 && uDebug < 6.5) return vec3(diff);
+    if (uDebug > 6.5 && uDebug < 7.5) return vec3(fract((world.x - uStation.x) / 12.0));
+    // Close in, the lamps look whiter; their light warms as it thins.
+    vec3 lampCol = mix(uStationColor, vec3(1.0, 0.94, 0.84), clamp(diff * 0.25, 0.0, 0.5));
+    vec3 col = albedo * lampCol * diff + uStationColor * spec * gloss;
+    // The rooms' light out through the windows: onto the platform, and onto what faces the house.
+    float away = world.z - ${PLATFORM.back.toFixed(3)};
+    if (away > -0.05 && away < 6.0 && world.y < ${(PLATFORM.y + 2.9).toFixed(3)}) {
+      float tx = (world.x - uStationGeo.x) * uStationGeo.y;
+      float spread = (0.12 + away * 0.45) * uStationGeo.y;
+      float w = texture2D(uStationTex, vec2(tx, 0.5)).r * 0.4 + (texture2D(uStationTex, vec2(tx - spread, 0.5)).r + texture2D(uStationTex, vec2(tx + spread, 0.5)).r) * 0.3;
+      float face = clamp(n.y, 0.0, 1.0) * 0.9 + clamp(-n.z, 0.0, 1.0) * smoothstep(${(PLATFORM.y + 2.9).toFixed(3)}, ${(PLATFORM.y + 1.6).toFixed(3)}, world.y);
+      w *= face * smoothstep(-0.05, 0.3, away) / (1.0 + away * away * 0.45);
+      col += albedo * uStationWin * w;
+    }
+    return col * uStation.w;
+  }
+  // The moon's glint on what's glossy (rails, wet stone, paint).
+  vec3 moonGloss(vec3 n, vec3 world, float gloss) {
+    vec3 toEye = cameraPosition - world;
+    vec3 V = toEye * inversesqrt(max(dot(toEye, toEye), 1e-6));
+    vec3 hv = V + uSunDir;
+    vec3 h = hv * inversesqrt(max(dot(hv, hv), 1e-6));
+    float s = clamp(dot(n, h), 0.0, 1.0);
+    s *= s;
+    s *= s;
+    s *= s;
+    s *= s;
+    return uSunColor * s * gloss * 0.3 * uMoonK;
   }
   vec3 moonHaze(vec3 dir) {
     float s = max(dot(dir, uMoonDir), 0.0);
@@ -220,7 +303,10 @@ const FRAG = /* glsl */ `
     if (uUseMap > 0.5) albedo *= texture2D(uMap, vUv * uMapScale).rgb;
     vec3 n = vNrm * inversesqrt(max(dot(vNrm, vNrm), 1e-8));
     if (!gl_FrontFacing) n = -n;
-    vec3 col = moonlit(albedo, n, vWorld);
+    // (A glow below zero marks something glossy, the rails: how glossy.)
+    float gloss = max(-vGlow.x, 0.0);
+    vec3 col = moonlit(albedo, n, vWorld) * (1.0 - 0.85 * stationCover(vWorld));
+    if (gloss > 0.0) col += moonGloss(n, vWorld, gloss);
     // A little moon sheen on snow and ice (not on fields or leaves).
     float shiny = uSheen * smoothstep(0.25, 0.6, dot(albedo, vec3(0.3, 0.5, 0.2)));
     if (shiny > 0.0) {
@@ -238,10 +324,10 @@ const FRAG = /* glsl */ `
     }
     col += albedo * uSpillColor * spillAt(vWorld, n) * 1.3;
     col += albedo * sparkAt(vWorld);
-    col += stationLit(albedo, n, vWorld);
+    col += stationLit(albedo, n, vWorld, gloss);
     // The city's glow lights things a little from below the sky, everywhere.
     col += albedo * uGlow;
-    col += vGlow;
+    col += max(vGlow, vec3(0.0));
     gl_FragColor = vec4(nightFade(col, vWorld), 1.0);
   }
 `;
@@ -322,7 +408,7 @@ export function cityMaterial(u: DaylightUniforms) {
           shop *= smoothstep(0.45, 0.6, vUv.y) * (1.0 - smoothstep(2.9, 3.05, vUv.y));
           lit += vec3(1.0, 0.72, 0.45) * 0.55 * shop * step(0.9, hash(vec2(cell.x, 9.0) + seed * 0.0131));
         }
-        vec3 col = moonlit(albedo * 0.55, n, vWorld) + albedo * uGlow * 1.5 + lit + stationLit(albedo, n, vWorld);
+        vec3 col = moonlit(albedo * 0.55, n, vWorld) + albedo * uGlow * 1.5 + lit + stationLit(albedo, n, vWorld, 0.0);
         gl_FragColor = vec4(nightFade(col, vWorld), 1.0);
       }
     `,
@@ -401,5 +487,275 @@ export function waterMaterial(u: DaylightUniforms) {
       }
     `,
     uniforms: { ...u, uMoon: { value: MOON_DIR.clone() } },
+  });
+}
+
+/**
+ * What a station's surfaces are made of, drawn from where each pixel is on them
+ * (uvs in meters): brick in courses, dressed and rubble stone, weatherboards,
+ * the platform's flags with their coping and painted line, slates and tiles,
+ * boards and glazing under the canopy, snow, ice, iron and wood; and the sheet
+ * of posters and names. Each gives its color, how glossy it is, and any light
+ * of its own. Where the pattern's finer than a pixel or two, its average, so it
+ * never shimmers.
+ */
+const SURFACES = /* glsl */ `
+  float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+  float vn(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
+  // How much of a joint w wide (a fraction of the cell, each way) a pixel is on, softened by its footprint.
+  float joints(vec2 f, vec2 w, vec2 fw) {
+    vec2 d = min(f, 1.0 - f);
+    vec2 s = 1.0 - smoothstep(w - fw, w + fw, d);
+    return max(s.x, s.y);
+  }
+  float farOff(vec2 fw) { return smoothstep(0.2, 0.55, max(fw.x, fw.y)); }
+  const vec3 MORTAR = vec3(0.13, 0.12, 0.105);
+
+  vec3 brick(vec2 uv, vec3 base, float seed) {
+    vec2 g = uv / vec2(0.225, 0.075);
+    vec2 fw = fwidth(g);
+    g.x += 0.5 * mod(floor(g.y), 2.0);
+    vec2 id = floor(g);
+    float j = joints(fract(g), vec2(0.024, 0.075), fw);
+    float r = h21(id + seed);
+    vec3 c = base * (0.74 + 0.5 * r) * mix(vec3(1.0), vec3(0.72, 0.7, 0.8), step(0.9, h21(id * 1.7 + 3.0)));
+    return mix(mix(c, MORTAR * 1.6, j), mix(base, MORTAR * 1.6, 0.18), farOff(fw));
+  }
+  vec3 ashlar(vec2 uv, vec3 base, float seed) {
+    vec2 size = vec2(0.76, 0.38);
+    vec2 g = uv / size;
+    vec2 fw = fwidth(g);
+    g.x += 0.5 * mod(floor(g.y), 2.0) + 0.17 * h21(vec2(floor(g.y), seed));
+    vec2 id = floor(g);
+    vec2 f = fract(g);
+    float j = joints(f, vec2(0.016, 0.04), fw);
+    // Each block chamfered at its edges (the light catching the top one, the bottom in shadow), its own shade, a tooled face, weathered.
+    vec2 m = min(f, 1.0 - f) * size;
+    float bevel = mix(0.5, 1.0, smoothstep(0.0, 0.04, min(m.x, m.y))) * (1.0 + 0.18 * (1.0 - smoothstep(0.0, 0.03, (1.0 - f.y) * size.y)));
+    vec3 c = base * (0.78 + 0.36 * h21(id + seed)) * bevel * (0.88 + 0.16 * vn(uv * vec2(7.0, 19.0))) * (0.85 + 0.15 * vn(uv * 1.3 + seed));
+    return mix(mix(c, MORTAR, j), base * 0.92, farOff(fw));
+  }
+  vec3 rubble(vec2 uv, vec3 base, float seed) {
+    vec2 p = uv * vec2(2.7, 3.7);
+    vec2 ip = floor(p);
+    vec2 fp = fract(p);
+    float d1 = 9.0;
+    float d2 = 9.0;
+    vec2 id = vec2(0.0);
+    for (int j = -1; j <= 1; j++)
+      for (int i = -1; i <= 1; i++) {
+        vec2 o = vec2(float(i), float(j));
+        vec2 c = o + 0.15 + 0.7 * vec2(h21(ip + o + seed), h21(ip + o + 31.7)) - fp;
+        float dd = dot(c, c);
+        if (dd < d1) {
+          d2 = d1;
+          d1 = dd;
+          id = ip + o;
+        } else if (dd < d2) d2 = dd;
+      }
+    float e = sqrt(d2) - sqrt(d1);
+    float fwp = max(fwidth(p.x), fwidth(p.y));
+    float jn = 1.0 - smoothstep(0.05, 0.13 + fwp, e);
+    vec3 st = base * (0.66 + 0.56 * h21(id + seed)) * mix(vec3(1.0), vec3(1.08, 1.0, 0.9), h21(id + 5.1));
+    st *= 0.8 + 0.2 * smoothstep(0.0, 0.3, e);
+    return mix(mix(st, MORTAR * 1.5, jn), base * 0.88, farOff(vec2(fwp)));
+  }
+  vec3 boards(vec2 uv, vec3 base) {
+    float g = uv.y / 0.17;
+    float f = fract(g);
+    float row = floor(g);
+    float fw = fwidth(g);
+    // The shadow under each board's lapped edge, the edge itself catching light.
+    float shade = mix(1.0, 0.5, smoothstep(0.74, 1.0, f)) * (1.0 + 0.14 * (1.0 - smoothstep(0.0, 0.08, f)));
+    float bx = fract(uv.x / 3.1 + h21(vec2(row, 3.0)));
+    float bfw = fwidth(uv.x / 3.1);
+    float butt = 1.0 - smoothstep(0.003 - bfw, 0.003 + bfw, min(bx, 1.0 - bx));
+    vec3 c = base * shade * (0.92 + 0.12 * h21(vec2(row, 1.0))) * (1.0 - 0.35 * butt);
+    // Paint worn off here and there.
+    c = mix(c, base * vec3(0.55, 0.48, 0.4), 0.6 * smoothstep(0.72, 0.9, vn(uv * vec2(3.0, 26.0))));
+    return mix(c, base * 0.86, smoothstep(0.25, 0.6, fw));
+  }
+
+  void surface(float kind, vec2 uv, vec3 base, float vary, out vec3 alb, out float gloss, out vec3 emit) {
+    alb = base;
+    gloss = 0.0;
+    emit = vec3(0.0);
+    float seed = floor(vary * 37.0);
+    if (kind < 0.5) {
+      gloss = 0.12;
+    } else if (kind < 1.5) {
+      alb = brick(uv, base, seed);
+      gloss = 0.04;
+    } else if (kind < 2.5) {
+      alb = ashlar(uv, base, seed);
+      gloss = 0.05;
+    } else if (kind < 3.5) {
+      alb = rubble(uv, base, seed);
+      gloss = 0.05;
+    } else if (kind < 4.5) {
+      alb = boards(uv, base);
+      gloss = 0.1;
+    } else if (kind < 5.5) {
+      // The platform: uv.y is how far out from the line.
+      float z = uv.y;
+      float fwz = fwidth(z);
+      if (z > ${PLATFORM.edge.toFixed(3)} - 0.45) {
+        // The coping stones along the edge, their rounded front catching the light.
+        float g = uv.x / 0.9;
+        float fw = fwidth(g);
+        float j = 1.0 - smoothstep(0.012 - fw, 0.012 + fw, min(fract(g), 1.0 - fract(g)));
+        vec3 cope = mix(base, vec3(0.5, 0.48, 0.45), 0.55) * (0.9 + 0.14 * h21(vec2(floor(g), 3.0)));
+        cope *= 1.0 + 0.3 * smoothstep(${PLATFORM.edge.toFixed(3)} - 0.12, ${PLATFORM.edge.toFixed(3)} + 0.04, z);
+        alb = mix(cope, MORTAR, j * (1.0 - farOff(vec2(fw))));
+        gloss = 0.3;
+      } else {
+        vec2 g = vec2(uv.x / 0.6, (z - ${PLATFORM.back.toFixed(3)}) / 0.55);
+        vec2 fw = fwidth(g);
+        g.x += 0.5 * mod(floor(g.y), 2.0);
+        vec2 id = floor(g);
+        float j = joints(fract(g), vec2(0.018, 0.02), fw);
+        vec3 flag = base * (0.82 + 0.32 * h21(id + 7.0)) * mix(vec3(1.0), vec3(1.05, 1.0, 0.93), h21(id + 2.0));
+        alb = mix(mix(flag, MORTAR, j), base * 0.96, farOff(fw));
+        // Damp here and there, so the lamps shine in it.
+        float wet = smoothstep(0.55, 0.85, vn(uv * vec2(0.45, 0.9) + 3.0));
+        gloss = 0.08 + 0.6 * wet;
+        alb *= 1.0 - 0.2 * wet;
+        // The line to stand behind, worn where feet go.
+        float line = smoothstep(${(PLATFORM.edge - 1.03).toFixed(3)} - fwz, ${(PLATFORM.edge - 1.03).toFixed(3)} + fwz, z) * (1.0 - smoothstep(${(PLATFORM.edge - 0.93).toFixed(3)} - fwz, ${(PLATFORM.edge - 0.93).toFixed(3)} + fwz, z));
+        vec3 paint = vary < 0.25 ? vec3(0.6, 0.42, 0.05) : vec3(0.7, 0.7, 0.66);
+        alb = mix(alb, paint, line * (1.0 - 0.5 * smoothstep(0.35, 0.8, vn(uv * vec2(1.2, 6.0)))));
+        gloss = mix(gloss, 0.35, line);
+      }
+      if (vary > 0.3 && vary < 0.7) {
+        // Snow drifted against the back and lying in patches, trodden away down the middle.
+        float drift = clamp(smoothstep(${(PLATFORM.back + 1.2).toFixed(3)}, ${(PLATFORM.back + 0.2).toFixed(3)}, z) + smoothstep(0.6, 0.78, vn(uv * vec2(0.5, 1.6))) + 0.7 * smoothstep(${(PLATFORM.edge - 0.35).toFixed(3)}, ${(PLATFORM.edge).toFixed(3)}, z) * smoothstep(0.4, 0.6, vn(uv * vec2(1.4, 3.0))), 0.0, 1.0);
+        alb = mix(alb, vec3(0.7, 0.75, 0.82) * (0.92 + 0.08 * vn(uv * 7.0)), drift);
+        gloss = mix(gloss, 0.3, drift);
+      }
+    } else if (kind < 7.5) {
+      // Slates, or clay tiles: courses up the slope, each course's foot shadowing the one below.
+      bool tile = kind > 6.5;
+      vec2 size = tile ? vec2(0.22, 0.16) : vec2(0.3, 0.2);
+      vec2 g = uv / size;
+      vec2 fw = fwidth(g);
+      g.x += 0.5 * mod(floor(g.y), 2.0);
+      vec2 id = floor(g);
+      vec2 f = fract(g);
+      float j = 1.0 - smoothstep(0.03 - fw.x, 0.03 + fw.x, min(f.x, 1.0 - f.x));
+      float shade = mix(1.0, 0.55, smoothstep(0.8, 1.0, f.y));
+      if (tile) shade *= 0.8 + 0.25 * sin(f.x * 3.14159);
+      vec3 c = base * (0.78 + 0.4 * h21(id + seed)) * shade * (1.0 - 0.45 * j);
+      alb = mix(c, base * 0.82, farOff(fw));
+      gloss = tile ? 0.1 : 0.3;
+    } else if (kind < 8.5) {
+      // Boards under the canopy, running across it.
+      float g = uv.x / 0.12;
+      float fw = fwidth(g);
+      float j = 1.0 - smoothstep(0.05 - fw, 0.05 + fw, min(fract(g), 1.0 - fract(g)));
+      alb = mix(base * (0.88 + 0.16 * h21(vec2(floor(g), 4.0))) * (1.0 - 0.6 * j), base * 0.9, smoothstep(0.25, 0.6, fw));
+      gloss = 0.1;
+    } else if (kind < 9.5) {
+      // Glass in iron glazing bars, the night through it.
+      vec2 g = vec2(uv.x / 0.62, (uv.y - ${PLATFORM.back.toFixed(3)}) / 1.15);
+      vec2 fw = fwidth(g);
+      float bar = joints(fract(g), vec2(0.045, 0.025), fw);
+      vec3 glass = vec3(0.01, 0.014, 0.024);
+      float far = farOff(fw);
+      alb = mix(mix(glass, base, bar), mix(glass, base, 0.15), far);
+      emit = (1.0 - mix(bar, 0.15, far)) * vec3(0.005, 0.008, 0.016);
+      gloss = mix(mix(1.2, 0.35, bar), 0.6, far);
+    } else if (kind < 10.5) {
+      // Snow, glinting.
+      alb = base * (0.9 + 0.1 * vn(uv * 3.0));
+      vec2 fw = fwidth(uv * 60.0);
+      gloss = 0.25 + 3.0 * step(0.993, h21(floor(uv * 60.0))) * (1.0 - farOff(fw));
+    } else if (kind < 11.5) {
+      gloss = 0.45;
+    } else if (kind < 12.5) {
+      alb = base * (0.84 + 0.16 * vn(uv * vec2(1.5, 26.0)));
+      gloss = 0.12;
+    } else if (kind < 13.5) {
+      // Ice: glassy, holding a little of the lamps' light in it.
+      gloss = 1.6;
+      emit = base * 0.012;
+    } else if (kind < 14.5) {
+      // Boards across the lake's platform, a gap between each; the edge board painted white.
+      float z = uv.y;
+      float fwz = fwidth(z);
+      float g = uv.x / 0.16;
+      float fw = fwidth(g);
+      float gap = 1.0 - smoothstep(0.05 - fw, 0.05 + fw, min(fract(g), 1.0 - fract(g)));
+      vec3 bd = base * (0.78 + 0.38 * h21(vec2(floor(g), 1.0))) * (0.9 + 0.1 * vn(vec2(uv.x * 40.0, uv.y * 2.0)));
+      alb = mix(mix(bd, base * 0.22, gap), base * 0.84, smoothstep(0.2, 0.5, fw));
+      float edge = smoothstep(${(PLATFORM.edge - 0.32).toFixed(3)} - fwz, ${(PLATFORM.edge - 0.32).toFixed(3)} + fwz, z);
+      alb = mix(alb, vec3(0.68, 0.68, 0.64) * (0.9 + 0.1 * vn(uv * vec2(0.8, 5.0))), edge * 0.92);
+      gloss = 0.1 + 0.18 * edge;
+    } else if (kind < 15.5) {
+      // The platform's face: white along the coping, then brick, stone or boards down to the ballast.
+      if (uv.y > ${(PLATFORM.y - 0.13).toFixed(3)}) {
+        alb = vec3(0.68, 0.68, 0.64);
+        gloss = 0.3;
+      } else if (vary < 0.25) alb = brick(uv, base, 5.0);
+      else if (vary < 0.75) alb = rubble(uv, base, 5.0);
+      else alb = boards(uv, base);
+    } else if (kind < 16.5) {
+      alb = texture2D(uAtlas, uv).rgb;
+      gloss = 0.22;
+      emit = alb * 0.015;
+    } else {
+      gloss = 0.22;
+    }
+  }
+`;
+
+/** The stations: what each surface is made of (SURF, in the glow channel, with its shade and how shaded it is), lit by the moon and the station's lamps. */
+export function stationMaterial(u: DaylightUniforms, atlas: THREE.Texture) {
+  return new THREE.ShaderMaterial({
+    // (What's painted on, from the posters on, is drawn a hair nearer, along the line of sight: it stays exactly where it is on the screen, but never flickers into what it's on, however far off.)
+    vertexShader: VERT.replace('gl_Position = projectionMatrix * viewMatrix * w;', `vec4 mv = viewMatrix * w;\n    mv.xyz *= 1.0 - step(${(SURF.atlas - 0.5).toFixed(1)}, aGlow.x) * 0.0012;\n    gl_Position = projectionMatrix * mv;`),
+    fragmentShader: /* glsl */ `
+      ${DAYLIGHT}
+      ${SPILL}
+      ${NIGHT}
+      uniform vec3 uGlow;
+      uniform sampler2D uAtlas;
+      varying vec3 vNrm;
+      varying vec3 vWorld;
+      varying vec3 vColor;
+      varying vec3 vGlow;
+      varying vec2 vUv;
+      ${SURFACES}
+      void main() {
+        vec3 n = vNrm * inversesqrt(max(dot(vNrm, vNrm), 1e-8));
+        if (!gl_FrontFacing) n = -n;
+        float kind = floor(vGlow.x + 0.5);
+        float occl = 1.0 - clamp(vGlow.z, 0.0, 1.0);
+        vec3 albedo;
+        float gloss;
+        vec3 emit;
+        surface(kind, vUv, vColor, vGlow.y, albedo, gloss, emit);
+        vec3 col = moonlit(albedo, n, vWorld) * (1.0 - 0.85 * stationCover(vWorld)) * occl;
+        if (gloss > 0.0) col += moonGloss(n, vWorld, gloss) * occl;
+        // (The train's own windows light the platform beside it, but more softly than the lamps: blinds are down at this hour.)
+        col += albedo * uSpillColor * spillAt(vWorld, n) * 0.2;
+        col += albedo * sparkAt(vWorld);
+        col += stationLit(albedo, n, vWorld, gloss) * mix(occl, 1.0, 0.35);
+        col += albedo * uGlow + emit;
+        if (uDebug > 0.5) col = uDebug < 1.5 ? moonlit(albedo, n, vWorld) * (1.0 - 0.85 * stationCover(vWorld)) * occl : uDebug < 2.5 ? stationLit(albedo, n, vWorld, gloss) : uDebug < 3.5 ? albedo * uSpillColor * spillAt(vWorld, n) * 0.2 : uDebug < 4.5 ? vec3(stationCover(vWorld)) : vec3(stationLit(vec3(1.0), n, vWorld, 0.0).g * 0.1);
+        if (uDebug > 5.5) col = stationLit(vec3(1.0), n, vWorld, 0.0) * 0.1;
+        if (uDebug > 7.5) col = vec3(fract(vWorld.x), fract(vWorld.z), 0.0) * 0.3;
+        if (uDebug > 8.5) col = (n * 0.5 + 0.5) * 0.3;
+        gl_FragColor = vec4(nightFade(col, vWorld), 1.0);
+      }
+    `,
+    defines: { GLOWS: '' },
+    uniforms: { ...u, uAtlas: { value: atlas }, uDebug: { value: 0 } },
+    vertexColors: true,
+    side: THREE.DoubleSide,
   });
 }

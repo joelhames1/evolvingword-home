@@ -18,7 +18,35 @@ export const PLATFORM = { y: -0.45, edge: -1.72, back: -5.6 };
  * The platform lamps: one every `step` m, `offset` m on from where our window stops (so the sign
  * there stands between two), this high, this far out. (The night light lights what's round them.)
  */
-export const STATION_LAMPS = { step: 12, offset: 6, y: PLATFORM.y + 3.25, z: -4.55 };
+export const STATION_LAMPS = { step: 12, offset: 4, y: PLATFORM.y + 3.25, z: -4.55 };
+/** The platforms' canopy: its front edge, and the height of its underside. */
+export const CANOPY = { front: -2.15, y: PLATFORM.y + 3.85 };
+/**
+ * What a station's surfaces are made of, for the station material to draw: each
+ * vertex carries one of these in its glow channel (with a shade and how much
+ * it's in shadow). From `atlas` on they're painted on (posters, frames, bars),
+ * so they're drawn a hair nearer than what they're on, and never flicker into it.
+ */
+export const SURF = {
+  plain: 0,
+  brick: 1,
+  ashlar: 2,
+  rubble: 3,
+  boards: 4,
+  paving: 5,
+  slate: 6,
+  tiles: 7,
+  soffit: 8,
+  glazing: 9,
+  snow: 10,
+  iron: 11,
+  wood: 12,
+  ice: 13,
+  decking: 14,
+  edge: 15,
+  atlas: 16,
+  trim: 17,
+} as const;
 /** The water in the gorge, and the lake's. */
 export const WATER = { gorge: -94.2, lake: -3.6 };
 
