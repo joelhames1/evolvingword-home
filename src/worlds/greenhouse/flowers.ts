@@ -208,13 +208,14 @@ const SHAPE = /* glsl */ `
     float w;
     if (shape < 0.5) w = pow(max(sin(3.14159 * t), 0.0), 0.5) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
     else if (shape < 1.5) w = pow(max(sin(3.14159 * pow(t, 0.68)), 0.0), 0.9);
-    else if (shape < 2.5) w = pow(max(sin(3.14159 * t), 0.0), 0.45) * (1.0 + 0.1 * sin(t * 30.0 + aMisc.z * 6.0)) * mix(0.45, 1.0, smoothstep(0.0, 0.4, t));
+    else if (shape < 2.5) w = pow(max(sin(3.14159 * t), 0.0), 0.45) * (1.0 + 0.08 * sin(t * 19.0 + aMisc.z * 6.0)) * mix(0.45, 1.0, smoothstep(0.0, 0.4, t));
     else w = pow(max(sin(3.14159 * min(t * 1.04, 1.0)), 0.0), 0.42) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
     return w;
   }
   vec3 petalAt(float u, float t, float open, float cup) {
     float shape = aPetal.w;
     float len = aPetal.y;
+    float seed = aMisc.z;
     float w = petalWidth(t, shape) * aPetal.z * 0.5;
     // A notch at the tip: the middle a little shorter than the sides.
     if (shape > 2.5) t *= 1.0 - 0.16 * (1.0 - abs(u)) * smoothstep(0.55, 1.0, t);
@@ -223,9 +224,20 @@ const SHAPE = /* glsl */ `
     float arc = cup * (1.0 - open * 0.25) + 0.15;
     float y = sin(arc * t) / arc * len;
     float z = -(1.0 - cos(arc * t)) / arc * len;
-    // A shallow trough across it, and a frill at the edges.
-    z -= u * u * w * 0.35;
-    if (shape > 1.5 && shape < 2.5) z += sin(t * 26.0 + u * 2.0 + aMisc.z * 5.0) * 0.12 * w * abs(u) * t;
+    // Open, the tip turns back a little, the way a petal relaxes.
+    z += open * (0.06 + 0.05 * seed) * len * pow(smoothstep(0.45, 1.0, t), 2.0);
+    // Cupped across its width, softly (a trough, deepest at the margins), more so near the heart.
+    float across = 1.0 - cos(u * 1.4);
+    z -= across * w * mix(0.55, 0.3, t);
+    // A ruffle along the margins: gentle on most, deep on a frilled petal.
+    float frill = shape > 1.5 && shape < 2.5 ? 0.16 : 0.05;
+    float wave = sin(t * (shape > 1.5 && shape < 2.5 ? 17.0 : 10.0) + u * 2.0 + seed * 9.0) + 0.3 * sin(t * 23.0 - seed * 5.0);
+    z += wave * frill * w * pow(abs(u), 2.0) * smoothstep(0.15, 0.7, t);
+    // And a slight twist along its length, each petal its own.
+    float tw = (seed - 0.5) * 0.35 * t;
+    float xt = x * cos(tw) - z * sin(tw);
+    z = x * sin(tw) + z * cos(tw);
+    x = xt;
     // Open on the hinge: from pointing up the flower's axis to splayed out.
     float ang = mix(0.1, aPetal.x, open);
     float c = cos(ang), s = sin(ang);
@@ -240,8 +252,8 @@ const SHAPE = /* glsl */ `
     float u = p.x;
     float t = p.y;
     vec3 q = petalAt(u, t, open, aWin.w);
-    vec3 du = petalAt(u + 0.05, t, open, aWin.w) - petalAt(u - 0.05, t, open, aWin.w);
-    vec3 dt = petalAt(u, t + 0.04, open, aWin.w) - petalAt(u, max(t - 0.04, 0.0), open, aWin.w);
+    vec3 du = petalAt(min(u + 0.04, 1.0), t, open, aWin.w) - petalAt(max(u - 0.04, -1.0), t, open, aWin.w);
+    vec3 dt = petalAt(u, min(t + 0.03, 1.0), open, aWin.w) - petalAt(u, max(t - 0.03, 0.0), open, aWin.w);
     vec3 nn = cross(du, dt);
     n = length(nn) > 1e-9 ? normalize(nn) : vec3(0.0, 0.0, 1.0);
     p = q * max(size, 1e-4);
@@ -303,6 +315,7 @@ const SHAPE = /* glsl */ `
       p.xz *= mix(0.45, 1.0, grow) * step(aWin.x, gGrowth());
     } else {
       // The eye of a flower: a little dome of stamens, coming up as it opens.
+      vPart = p.xz;
       p *= max(smoothstep(aWin.y, aWin.z, gGrowth()), 1e-4);
     }
   }
@@ -324,9 +337,12 @@ const PAINT = /* glsl */ `
     float u = vPart.x;
     float t = vPart.y;
     vec3 col = mix(vBase, vTip, smoothstep(0.08, 0.92, t));
-    // Fine veins along it, and a deeper flush at the very heart.
-    col *= 1.0 - 0.07 * smoothstep(0.6, 1.0, abs(sin(u * 22.0 + vSeed * 3.0)));
-    col *= mix(0.78, 1.0, smoothstep(0.0, 0.16, t));
+    // Fine veins running out from the heart, fading toward the tip, and a deeper flush at the very heart.
+    float vein = smoothstep(0.82, 1.0, abs(sin(u * 17.0 + sin(t * 5.0 + vSeed * 6.0) * 0.6 + vSeed * 3.0)));
+    col *= 1.0 - 0.09 * vein * (1.0 - smoothstep(0.5, 1.0, t)) - 0.06 * smoothstep(0.1, 0.0, abs(u)) * (1.0 - t);
+    col *= mix(0.7, 1.0, smoothstep(0.0, 0.2, t));
+    // The margins thinner and paler, catching the light.
+    col = mix(col, col * 1.12 + 0.015, smoothstep(0.7, 1.0, abs(u)) * 0.5);
     float m = 0.0;
     if (vPattern > 0.5 && vPattern < 1.5) {
       // Stripes running out from the heart.
@@ -345,13 +361,23 @@ const PAINT = /* glsl */ `
     }
     return mix(col, vMark, m * 0.92);
   }
+  vec3 eyeColor() {
+    // Stamens packed in the middle, their tips dusted with pollen; darker at the very heart.
+    float r = length(vPart);
+    vec2 g = vPart * 9.0;
+    vec2 c = floor(g);
+    float tip = smoothstep(0.42, 0.16, length(fract(g) - 0.5)) * step(0.3, h21(c + 1.7));
+    vec3 col = vColor * mix(0.55, 1.08, smoothstep(0.0, 0.8, r));
+    return mix(col, col * 1.4 + vec3(0.05, 0.035, 0.0), tip * 0.55);
+  }
   vec3 leafColor() {
     float u = vPart.x;
     float t = vPart.y;
-    vec3 col = vColor * mix(0.75, 1.1, t);
-    // A paler midrib and the side veins running out from it.
-    col = mix(col, col * 1.45 + 0.02, smoothstep(0.08, 0.0, abs(u)) * 0.6);
-    col *= 1.0 - 0.1 * smoothstep(0.75, 1.0, abs(sin((t - abs(u) * 0.35) * 26.0)));
+    // Deeper along the midrib and at the base, a little lighter out to the margins.
+    vec3 col = vColor * mix(0.72, 1.05, t) * mix(0.9, 1.08, smoothstep(0.2, 1.0, abs(u)));
+    // A paler midrib, and the side veins running out from it toward the tip.
+    col = mix(col, col * 1.4 + 0.015, smoothstep(0.07, 0.0, abs(u)) * 0.55);
+    col *= 1.0 - 0.12 * smoothstep(0.78, 1.0, abs(sin((t - abs(u) * 0.38) * 24.0))) * smoothstep(0.05, 0.2, abs(u));
     return col;
   }
 `;
@@ -410,7 +436,7 @@ function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
     vertex(s, false);
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>\n${PAINT}`)
-      .replace('#include <color_fragment>', 'diffuseColor.rgb = uKind < 0.5 ? petalColor() : uKind < 1.5 ? leafColor() : vColor;')
+      .replace('#include <color_fragment>', 'diffuseColor.rgb = uKind < 0.5 ? petalColor() : uKind < 1.5 ? leafColor() : uKind < 2.5 ? vColor : eyeColor();')
       .replace(
         '#include <lights_fragment_end>',
         /* glsl */ `
@@ -422,9 +448,13 @@ function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
             gSun = getShadow(directionalShadowMap[0], directionalLightShadows[0].shadowMapSize, directionalLightShadows[0].shadowIntensity, directionalLightShadows[0].shadowBias, directionalLightShadows[0].shadowRadius, vDirectionalShadowCoord[0]);
           #endif
           vec3 gL = directionalLights[0].direction;
-          float gThrough = 0.35 * max(-dot(normal, gL), 0.0) + 0.9 * pow(max(dot(-geometryViewDir, gL), 0.0), 3.0);
-          float gThin = uKind < 0.5 ? 0.6 : uKind < 1.5 ? 0.55 : 0.0;
-          totalEmissiveRadiance += diffuseColor.rgb * directionalLights[0].color * gSun * gThrough * gThin;
+          // Light reaching the far side of the leaf or petal, and light scattered on through it toward the eye.
+          float gBack = max(-dot(normal, gL), 0.0);
+          float gAhead = pow(max(dot(-geometryViewDir, gL), 0.0), 2.0);
+          float gThin = uKind < 0.5 ? 0.42 * mix(0.75, 1.3, max(smoothstep(0.55, 1.0, abs(vPart.x)), smoothstep(0.6, 1.0, vPart.y))) : uKind < 1.5 ? 0.22 : 0.0;
+          // What comes through is the petal's own color, deepened.
+          vec3 gTint = diffuseColor.rgb * mix(vec3(1.0), diffuseColor.rgb * 1.8, 0.45);
+          totalEmissiveRadiance += gTint * directionalLights[0].color * gSun * (0.55 * gBack + 0.9 * gAhead * (0.35 + gBack)) * gThin;
         #endif
         totalEmissiveRadiance += vec3(0.16, 0.1, 0.03) * vGlow;
       `,
@@ -465,6 +495,81 @@ function parts(kind: Kind, geo: THREE.BufferGeometry, n: number, attrs: Record<s
   return mesh;
 }
 
+// --- scent ------------------------------------------------------------------------------------------
+
+/**
+ * A scented flower in bloom breathes out a few motes: pale, faintly its own
+ * color, each rising from the bloom on its own slow, swirling way, fading in
+ * and out, so the air just above it shimmers a little. A faint scent gives a
+ * couple; a heady one, six. Nothing about them is touched per frame but the time.
+ */
+const SCENT_VERT = /* glsl */ `
+  attribute vec4 aMote;
+  uniform float uTime;
+  uniform float uPx;
+  uniform vec4 uScent[${SLOTS}];
+  uniform vec3 uScentColor[${SLOTS}];
+  varying float vA;
+  varying vec3 vColor;
+  void main() {
+    int slot = int(aMote.x + 0.5);
+    vec4 src = uScent[slot];
+    float seed = aMote.y;
+    float rank = aMote.z;
+    // Each mote's own cycle: ten to sixteen seconds from the bloom up into the air and gone.
+    float life = fract(uTime * (0.06 + 0.04 * fract(seed * 7.3)) + fract(seed * 13.7));
+    float ph = seed * 6.2832;
+    float rise = life * (0.16 + 0.1 * fract(seed * 3.1));
+    float swirl = 0.012 + 0.05 * life;
+    vec3 p = src.xyz + vec3(
+      sin(uTime * 0.37 + ph + life * 4.0) * swirl + (fract(seed * 5.9) - 0.5) * 0.05,
+      0.015 + rise,
+      cos(uTime * 0.29 + ph * 1.3 + life * 3.0) * swirl + (fract(seed * 9.1) - 0.5) * 0.05);
+    // A breath of air through the house carries it a little sideways as it goes.
+    p.x += sin(uTime * 0.11 + ph) * 0.03 * life;
+    vec4 mv = viewMatrix * vec4(p, 1.0);
+    // How many motes this flower has: the stronger the scent, the more.
+    float shown = step(rank, src.w * 6.0 - 0.5);
+    float breathe = 0.6 + 0.4 * sin(uTime * (0.8 + fract(seed * 4.3)) + ph);
+    vA = shown * smoothstep(0.0, 0.18, life) * (1.0 - smoothstep(0.5, 1.0, life)) * breathe * smoothstep(0.08, 0.3, -mv.z);
+    vColor = uScentColor[slot];
+    gl_PointSize = clamp(uPx * 0.0045 / max(-mv.z, 0.05) * (0.7 + 0.6 * life), 1.0, 9.0);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+const SCENT_FRAG = /* glsl */ `
+  varying float vA;
+  varying vec3 vColor;
+  void main() {
+    float r = length(gl_PointCoord - 0.5) * 2.0;
+    float soft = exp(-r * r * 3.5) * (1.0 - smoothstep(0.85, 1.0, r));
+    gl_FragColor = vec4(vColor * vA * soft * 0.32, 1.0);
+  }
+`;
+
+function scentMotes() {
+  const PER = 6;
+  const mote = new Float32Array(SLOTS * PER * 4);
+  for (let slot = 0; slot < SLOTS; slot++)
+    for (let k = 0; k < PER; k++) {
+      const i = slot * PER + k;
+      mote.set([slot, ((i * 0.618034 + slot * 0.1371) % 1) + 0.001, k, 0], i * 4);
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SLOTS * PER * 3), 3));
+  geo.setAttribute('aMote', new THREE.BufferAttribute(mote, 4));
+  const uniforms = {
+    uTime: shared.uTime,
+    uPx: { value: 900 },
+    uScent: { value: Array.from({ length: SLOTS }, () => new THREE.Vector4()) },
+    uScentColor: { value: Array.from({ length: SLOTS }, () => new THREE.Color()) },
+  };
+  const points = new THREE.Points(geo, new THREE.ShaderMaterial({ vertexShader: SCENT_VERT, fragmentShader: SCENT_FRAG, uniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  points.frustumCulled = false;
+  points.renderOrder = 3;
+  return { points, uniforms };
+}
+
 // --- the flowers in the house ----------------------------------------------------------------------
 
 export interface Flowers {
@@ -480,7 +585,8 @@ export interface Flowers {
   /** The top of the plant in a pot, in the world, or the pot's rim if it's empty. */
   top(slot: number): THREE.Vector3;
   plan(slot: number): Plan | null;
-  tick(t: number): void;
+  /** Per frame: the time, and the picture's height in pixels (the scent's motes keep a size in meters). */
+  tick(t: number, px?: number): void;
 }
 
 /** A pot's world matrix: its foot on the staging, turned to face the aisle. */
@@ -490,15 +596,19 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
   const group = new THREE.Group();
   const high = quality === 'high';
   const MAX = { petal: SLOTS * 4 * 28, leaf: SLOTS * 40, stem: SLOTS * 26, eye: SLOTS * 4 };
-  const petals = parts('petal', strip(high ? 6 : 4, high ? 8 : 5), MAX.petal, { aPetal: 4, aWin: 4, aBase: 3, aTip: 3, aMark: 3 }, { roughness: 0.55 });
-  const leafMesh = parts('leaf', strip(4, high ? 7 : 5), MAX.leaf, { aLeaf: 4, aWin: 4, aColor: 3 }, { roughness: 0.6 });
+  const petals = parts('petal', strip(high ? 10 : 6, high ? 16 : 8), MAX.petal, { aPetal: 4, aWin: 4, aBase: 3, aTip: 3, aMark: 3 }, { roughness: 0.55 });
+  const leafMesh = parts('leaf', strip(high ? 6 : 4, high ? 10 : 6), MAX.leaf, { aLeaf: 4, aWin: 4, aColor: 3 }, { roughness: 0.6 });
   const stemGeo = new THREE.CylinderGeometry(0.8, 1, 1, 6, 1, true);
   stemGeo.translate(0, 0.5, 0);
   const stemMesh = parts('stem', stemGeo, MAX.stem, { aWin: 4, aColor: 3 }, { roughness: 0.6 });
-  const eyeGeo = new THREE.SphereGeometry(1, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+  const eyeGeo = new THREE.SphereGeometry(1, high ? 18 : 10, high ? 7 : 4, 0, Math.PI * 2, 0, Math.PI / 2);
   eyeGeo.scale(1, 0.55, 1);
   const eyeMesh = parts('eye', eyeGeo, MAX.eye, { aWin: 4, aColor: 3 }, { roughness: 0.85 });
   group.add(petals, leafMesh, stemMesh, eyeMesh);
+  const scent = scentMotes();
+  group.add(scent.points);
+  /** Each pot's scent at full bloom (0..1), and where its main bloom is. */
+  const scentOf = new Float32Array(SLOTS);
 
   // The pots and their soil.
   const potProfile = [
@@ -540,10 +650,10 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
   const basis = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const leafColor = (g: Genome, k: number) => {
-    const c = new THREE.Color(['#3a6a2a', '#5a9a32', '#6a908a', '#7a5428'][g.foliage]);
+    const c = new THREE.Color(['#2c6428', '#4a9230', '#5a8a86', '#7a4a24'][g.foliage]);
     return c.multiplyScalar(0.85 + k * 0.3);
   };
-  const stemColor = (g: Genome) => new THREE.Color(['#467028', '#5a8a30', '#648a74', '#6a5a2a'][g.foliage]);
+  const stemColor = (g: Genome) => new THREE.Color(['#3a6626', '#4e8230', '#5a8270', '#5e4e26'][g.foliage]);
   /** A frame for a part: y along `y`, z as near `z` as can be. */
   const frame = (at: THREE.Vector3, y: THREE.Vector3, z: THREE.Vector3, scale = 1) => {
     const ny = y.clone().normalize();
@@ -649,11 +759,19 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
       a.z = (seeds[slot] % 1000) / 159;
       a.w = p ? p.height : 0.3;
       shared.uPlantB.value[slot].set(POT_AT[slot].x, POT_AT[slot].y + POT.h * 0.82, POT_AT[slot].z, 0);
+      // Its scent: how strong, faintly its own color, rising from its main bloom.
+      scentOf[slot] = g ? g.scent / 3 : 0;
+      if (g && p) {
+        const b = p.blooms[0];
+        scent.uniforms.uScent.value[slot].set(POT_AT[slot].x + b.at.x, POT_AT[slot].y + POT.h * 0.82 + b.at.y + b.size * 0.3, POT_AT[slot].z + b.at.z, 0);
+        scent.uniforms.uScentColor.value[slot].copy(linear(g.tip)).lerp(new THREE.Color(1, 0.9, 0.7), 0.65);
+      }
       dirty = true;
     },
     state(slot, growth, droop, glow) {
       const a = shared.uPlantA.value[slot];
       a.x = growth;
+      scent.uniforms.uScent.value[slot].w = scentOf[slot] * THREE.MathUtils.smoothstep(growth, 0.86, 0.97) * (1 - droop * 0.6);
       a.y = droop;
       shared.uPlantB.value[slot].w = glow;
     },
@@ -668,7 +786,8 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
       return v(POT_AT[slot].x, POT_AT[slot].y + POT.h + (p ? p.top : 0), POT_AT[slot].z);
     },
     plan: (slot) => plans[slot],
-    tick(t) {
+    tick(t, px) {
+      if (px) scent.uniforms.uPx.value = px;
       if (dirty) {
         dirty = false;
         rebuild();

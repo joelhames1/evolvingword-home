@@ -184,9 +184,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const bloomShot = (i: number): Shot => {
     const b = mainBloom(i);
     const dir = v(b.axis.x * 0.25, 0.42, 1).normalize();
-    const pos = b.at.clone().addScaledVector(dir, 0.5 + b.size * 2.2);
+    const pos = b.at.clone().addScaledVector(dir, 0.34 + b.size * 2.5);
     for (let k = 0; k < 12 && !roomy(pos); k++) pos.addScaledVector(dir, 0.1);
-    return { pos, target: b.at.clone().add(v(0, -0.01, 0)), fov: 32, near: 0.02, lean: 0.008, shift: CARD };
+    return { pos, target: b.at.clone().add(v(0, -0.008, 0)), fov: 30, near: 0.02, lean: 0.006, shift: CARD };
   };
 
   // --- the cards ------------------------------------------------------------------------------------
@@ -347,12 +347,17 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     plantCard(i);
   };
   const closer = (i: number) => {
+    const same = lensOn === i;
     selected = i;
     lensOn = i;
     Object.assign(SHOTS.bloom, bloomShot(i));
-    // Already there: the card and the lens again, for this one.
-    if (wiring?.current() === 'bloom' && !wiring.moving()) arrived = '';
-    else wiring?.goTo('bloom');
+    // Already looking at this one: the card and the lens again.
+    if (same && wiring?.current() === 'bloom' && !wiring.moving()) arrived = '';
+    else {
+      // Another flower: the lens goes back to its hook while the camera moves across.
+      if (wiring?.current() === 'bloom') tools.hold(null);
+      wiring?.goTo('bloom');
+    }
   };
   /** The bee carries pollen from a to b, then a seed to an empty pot. */
   const cross = async (a: number, b: number) => {
@@ -694,7 +699,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
           const b = mainBloom(lensOn);
           toCam.copy(camera.position).sub(b.at).normalize();
           side.crossVectors(toCam, UP).normalize();
-          tools.hold(b.at.clone().addScaledVector(toCam, 0.16).addScaledVector(side, -0.05).add(v(0, -0.02, 0)), camera.position.clone());
+          // The lens held beside the bloom, low and to the right, a little toward the eye.
+          tools.hold(b.at.clone().addScaledVector(toCam, 0.1).addScaledVector(side, -(b.size * 0.95 + 0.04)).add(v(0, -b.size * 0.45, 0)), camera.position.clone());
           lensCard(lensOn);
         }
       }
@@ -728,8 +734,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
 
       tools.tick(t, dt);
       catalog.tick(t, dt);
-      flowers.tick(t);
-      grounds.tick(t, camera, renderer);
+      // (The scent's motes keep their size in meters whatever the lens.)
+      flowers.tick(t, renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)));
+      grounds.tick(t);
       // The rosettes stir a little in the air from the vents.
       for (const r of dressing?.rosettes ?? []) r.rotation.z = Math.sin(t * 0.8 + (r.userData.phase as number)) * 0.03;
     },

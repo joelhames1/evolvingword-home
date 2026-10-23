@@ -5,6 +5,7 @@
 // flower, and the bin takes what you don't want with a thunk of its lid.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { canvas, texture } from '../../textures';
 import { CAN, COMPOST, RACK } from './plan';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -130,7 +131,21 @@ export function buildTools(woodLike: THREE.MeshStandardMaterial): Tools {
   const lens = new THREE.Group();
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 8, 32), lensBrass);
   lens.add(ring);
-  const glass = new THREE.Mesh(new THREE.CircleGeometry(0.044, 32), new THREE.MeshStandardMaterial({ color: '#dfeef0', transparent: true, opacity: 0.16, roughness: 0.05, metalness: 0.2, depthWrite: false }));
+  // The glass: clear, with a faint sheen toward the rim and a thin crescent of light high on one side.
+  const [gc, gg] = canvas(128, 128);
+  const sheen = gg.createRadialGradient(64, 64, 20, 64, 64, 64);
+  sheen.addColorStop(0, 'rgba(235,245,250,0)');
+  sheen.addColorStop(0.75, 'rgba(235,245,250,0.04)');
+  sheen.addColorStop(1, 'rgba(235,245,250,0.2)');
+  gg.fillStyle = sheen;
+  gg.fillRect(0, 0, 128, 128);
+  gg.strokeStyle = 'rgba(255,255,248,0.45)';
+  gg.lineWidth = 4;
+  gg.lineCap = 'round';
+  gg.beginPath();
+  gg.arc(64, 64, 52, Math.PI * 1.08, Math.PI * 1.42);
+  gg.stroke();
+  const glass = new THREE.Mesh(new THREE.CircleGeometry(0.044, 32), new THREE.MeshBasicMaterial({ map: texture(gc), transparent: true, depthWrite: false, side: THREE.DoubleSide }));
   lens.add(glass);
   const handle = new THREE.Mesh(tube(v(0, -0.05, 0), v(0, -0.14, 0), 0.008, 0.01), handleWood.clone());
   lens.add(handle);
