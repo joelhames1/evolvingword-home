@@ -60,6 +60,8 @@ const AIR: Record<Land, { haze: number; mist: number; color: THREE.Color }> = {
 const hazeCol = new THREE.Color();
 const NO_SHEDS: [number, number][] = [];
 const LAMP_WARM = new THREE.Color('#ffb874');
+/** The crossing's lamps flash in turn, once round every this many seconds. */
+const CROSSING_BLINK = 1.1;
 const LAMP_WHITE = new THREE.Color('#ffe2bc');
 const signAt = new THREE.Vector3();
 
@@ -651,6 +653,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       (uniforms.uHaze.value as THREE.Color).copy(hazeCol);
       uniforms.uMist.value = mist;
       (uniforms.uGlow.value as THREE.Color).setRGB(0.07, 0.04, 0.015).multiplyScalar(glowK);
+      const fieldsK = (mix.a.land === 'fields' ? 1 - kB : 0) + (mix.b.land === 'fields' ? kB : 0);
+      (uniforms.uLand.value as THREE.Vector3).set(((s % 24) + 24) % 24, glowK, fieldsK);
       sky.setCity(glowK);
       sky.setHaze(hazeCol, uniforms.uMoonGlow.value as THREE.Color);
 
@@ -767,15 +771,26 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         band.whistle();
       }
 
-      // The level crossing's bells as we come up to it, go by and leave it behind.
+      // The level crossing's bells as we come up to it, go by and leave it behind; its red lamps, flashing in turn, light the road.
       let bellLevel = 0;
       let bellPan = 0;
       let closing = 0;
+      const red = uniforms.uCross.value as THREE.Vector4[];
+      red[0].w = red[1].w = 0;
       for (const l of journey.legs) {
         const c = LAYOUT[l.land].crossing;
         if (c === undefined) continue;
         const du = l.start + c - uWin;
         if (Math.abs(du) > 600) continue;
+        // (The pair on each side: the left one lit for the first half of each beat, the right one for the second; see the crossing in scenery.ts.)
+        const right = (t / CROSSING_BLINK) % 1 >= 0.5;
+        for (const [i, side] of [
+          [0, -1],
+          [1, 1],
+        ] as const) {
+          const cu = l.start + c;
+          red[i].set(cu - side * 4.2 + (right ? 0.32 : -0.32) - s, land.ground(cu, side * 4.6) + 2.2, side * 4.42, 22);
+        }
         const d = Math.hypot(du, 6);
         bellLevel = Math.max(bellLevel, Math.min(1, 40 / d));
         bellPan = Math.max(-1, Math.min(1, du / 40));

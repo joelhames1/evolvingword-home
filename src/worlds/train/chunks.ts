@@ -94,7 +94,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
   const group = new THREE.Group();
   group.name = 'land';
   const mats = {
-    terrain: nightMaterial(uniforms, { vertexColors: true, sheen: 0.18 }),
+    terrain: nightMaterial(uniforms, { vertexColors: true, sheen: 0.18, detail: true }),
     decor: nightMaterial(uniforms, { vertexColors: true, glows: true }),
     stone: nightMaterial(uniforms, { vertexColors: true, map: stone('ashlar'), mapScale: 0.3, side: THREE.DoubleSide }),
     brick: nightMaterial(uniforms, { vertexColors: true, map: stone('brick'), mapScale: 0.36, side: THREE.DoubleSide }),
@@ -180,6 +180,8 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       for (let j = 0; j < rows; j++) H[i * rows + j] = ground(u, ZS[j]);
     }
     const nCols = cols - 2;
+    // (uvs: where it is along the land, starting again every 1200 m, at a piece's start, and out from the line.)
+    const wrap = Math.floor(u0 / 1200) * 1200;
     const pos = new Float32Array(nCols * rows * 3);
     const nrm = new Float32Array(nCols * rows * 3);
     const col = new Float32Array(nCols * rows * 3);
@@ -221,6 +223,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     ].map(([j0, j1]) => {
       const n = j1 - j0 + 1;
       const p2 = new Float32Array(nCols * n * 3);
+      const uv2 = new Float32Array(nCols * n * 2);
       const n2 = new Float32Array(nCols * n * 3);
       const c2 = new Float32Array(nCols * n * 3);
       for (let i = 0; i < nCols; i++)
@@ -232,6 +235,8 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
             n2[to + q] = nrm[from + q];
             c2[to + q] = col[from + q];
           }
+          uv2[(to / 3) * 2] = u0 - wrap + pos[from];
+          uv2[(to / 3) * 2 + 1] = pos[from + 2];
         }
       const index: number[] = [];
       for (let i = 0; i < nCols - 1; i++)
@@ -244,6 +249,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       geo.setAttribute('position', new THREE.BufferAttribute(p2, 3));
       geo.setAttribute('normal', new THREE.BufferAttribute(n2, 3));
       geo.setAttribute('color', new THREE.BufferAttribute(c2, 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(uv2, 2));
       geo.setIndex(index);
       geo.computeBoundingSphere();
       const mesh = new THREE.Mesh(geo, mats.terrain);

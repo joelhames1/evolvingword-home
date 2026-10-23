@@ -54,6 +54,10 @@ export function nightUniforms(): DaylightUniforms {
     uGlow: { value: new THREE.Color('#000000') },
     // The brakes' sparks, lighting the ballast round the wheels: where, and how brightly.
     uSpark: { value: new THREE.Vector4(0, -1.15, -0.8, 0) },
+    // The level crossing's red lamps, the one of each pair that's lit: where, and how bright.
+    uCross: { value: [new THREE.Vector4(0, 0, 0, 0), new THREE.Vector4(0, 0, 0, 0)] },
+    // The city's street lamps along the line, one every 24 m: where they fall now (the line's position, mod 24); how much of the city, and of the fields, there is here.
+    uLand: { value: new THREE.Vector3(0, 0, 0) },
   };
 }
 
@@ -148,7 +152,6 @@ const NIGHT = /* glsl */ `
   uniform vec4 uStationGeo;
   uniform vec4 uStationLights[4];
   uniform vec3 uStationWin;
-  uniform float uDebug;
   // How much of the sky a station's canopy hides here: 0 out in the open, 1 well in under it.
   float stationCover(vec3 world) {
     if (uStation.w <= 0.0 || world.y > ${CANOPY.y.toFixed(3)} + 0.05 || world.z < ${PLATFORM.back.toFixed(3)} - 0.6 || world.z > ${CANOPY.front.toFixed(3)} + 0.9) return 0.0;
@@ -190,13 +193,10 @@ const NIGHT = /* glsl */ `
       float lx = uStation.x + (base + float(i)) * ${STATION_LAMPS.step.toFixed(1)};
       if (lx > uStation.y - 0.5 && lx < uStation.z + 0.5) diff += lampAt(n, V, world, vec3(lx, ${STATION_LAMPS.y.toFixed(3)}, ${STATION_LAMPS.z.toFixed(3)}), 20.0, 1.0, gloss, spec);
     }
-    if (uDebug > 5.5 && uDebug < 6.5) return vec3(diff);
     for (int i = 0; i < 4; i++) {
       vec4 q = uStationLights[i];
       if (q.w > 0.0) diff += lampAt(n, V, world, q.xyz, q.w, 0.5, gloss, spec);
     }
-    if (uDebug > 5.5 && uDebug < 6.5) return vec3(diff);
-    if (uDebug > 6.5 && uDebug < 7.5) return vec3(fract((world.x - uStation.x) / 12.0));
     // Close in, the lamps look whiter; their light warms as it thins.
     vec3 lampCol = mix(uStationColor, vec3(1.0, 0.94, 0.84), clamp(diff * 0.25, 0.0, 0.5));
     vec3 col = albedo * lampCol * diff + uStationColor * spec * gloss;
@@ -211,6 +211,32 @@ const NIGHT = /* glsl */ `
       col += albedo * uStationWin * w;
     }
     return col * uStation.w;
+  }
+  uniform vec4 uCross[2];
+  // Where the street lamps along the line fall now (its position, mod 24 m), and how much of the city and of the fields there are here.
+  uniform vec3 uLand;
+  // The level crossing's red lamps, flashing in turn: their light out along the road, on the barriers and the car waiting.
+  vec3 crossingLit(vec3 albedo, vec3 n, vec3 world) {
+    vec3 sum = vec3(0.0);
+    for (int i = 0; i < 2; i++) {
+      vec4 q = uCross[i];
+      if (q.w <= 0.0) continue;
+      vec3 d = q.xyz - world;
+      float dd = dot(d, d);
+      if (dd > 1600.0) continue;
+      vec3 L = d * inversesqrt(max(dd, 1e-4));
+      // They face out along the road, away from the line.
+      float ahead = clamp(-L.z * sign(q.z), 0.0, 1.0);
+      float fall = q.w * (0.1 + 0.9 * ahead * ahead) / (dd + 0.5);
+      // (And a red sheen on the road and the grass, wet with the night.)
+      vec3 hv = L + normalize(cameraPosition - world);
+      float s = clamp(dot(n, hv * inversesqrt(max(dot(hv, hv), 1e-6))), 0.0, 1.0);
+      s *= s;
+      s *= s;
+      s *= s;
+      sum += vec3(1.0, 0.09, 0.04) * fall * (clamp(dot(n, L) * 0.9 + 0.1, 0.0, 1.0) + s * clamp(n.y, 0.0, 1.0) * 0.06 / max(dot(albedo, vec3(0.33)), 0.02));
+    }
+    return albedo * sum;
   }
   // The moon's glint on what's glossy (rails, wet stone, paint).
   vec3 moonGloss(vec3 n, vec3 world, float gloss) {
@@ -293,14 +319,38 @@ const FRAG = /* glsl */ `
   uniform float uUseMap;
   uniform float uMapScale;
   uniform float uSheen;
+  uniform float uDetail;
   varying vec3 vNrm;
   varying vec3 vWorld;
   varying vec3 vColor;
   varying vec3 vGlow;
   varying vec2 vUv;
+  float hd(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+  // Value noise whose lattice repeats every per cells along x (the ground's uvs start again every 1200 m).
+  float vnw(vec2 p, float per) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float i0 = mod(i.x, per);
+    float i1 = mod(i.x + 1.0, per);
+    return mix(mix(hd(vec2(i0, i.y)), hd(vec2(i1, i.y)), f.x), mix(hd(vec2(i0, i.y + 1.0)), hd(vec2(i1, i.y + 1.0)), f.x), f.y);
+  }
+  // Close by, the ground isn't one flat color: tussocks and clods, and furrows along the ploughed fields.
+  vec3 groundDetail(vec3 albedo, vec2 uv, vec3 world) {
+    float near = 1.0 - smoothstep(40.0, 180.0, length(cameraPosition - world));
+    if (near <= 0.0) return albedo;
+    vec2 fw = fwidth(uv * 2.4);
+    float small = mix(vnw(uv * 2.4, 2880.0), 0.5, smoothstep(0.3, 0.8, max(fw.x, fw.y)));
+    float k = 0.8 + 0.3 * vnw(uv * 0.5, 600.0) + 0.24 * (small - 0.5);
+    float ph = uv.y / 0.7;
+    float furrow = mix(0.5 + 0.5 * sin(ph * 6.2832), 0.5, smoothstep(0.2, 0.5, fwidth(ph)));
+    k *= 1.0 - smoothstep(0.0, 0.025, albedo.r - albedo.g) * 0.16 * furrow * uLand.z;
+    return albedo * mix(1.0, k, near);
+  }
   void main() {
     vec3 albedo = uColor * vColor;
     if (uUseMap > 0.5) albedo *= texture2D(uMap, vUv * uMapScale).rgb;
+    if (uDetail > 0.5) albedo = groundDetail(albedo, vUv, vWorld);
     vec3 n = vNrm * inversesqrt(max(dot(vNrm, vNrm), 1e-8));
     if (!gl_FrontFacing) n = -n;
     // (A glow below zero marks something glossy, the rails: how glossy.)
@@ -325,6 +375,7 @@ const FRAG = /* glsl */ `
     col += albedo * uSpillColor * spillAt(vWorld, n) * 1.3;
     col += albedo * sparkAt(vWorld);
     col += stationLit(albedo, n, vWorld, gloss);
+    col += crossingLit(albedo, n, vWorld);
     // The city's glow lights things a little from below the sky, everywhere.
     col += albedo * uGlow;
     col += max(vGlow, vec3(0.0));
@@ -333,7 +384,7 @@ const FRAG = /* glsl */ `
 `;
 
 /** A surface outside at night: a color, vertex or instance colors, optional map, optional per-vertex glow (aGlow). */
-export function nightMaterial(u: DaylightUniforms, opts: { color?: THREE.ColorRepresentation; map?: THREE.Texture; mapScale?: number; vertexColors?: boolean; glows?: boolean; sheen?: number; side?: THREE.Side } = {}) {
+export function nightMaterial(u: DaylightUniforms, opts: { color?: THREE.ColorRepresentation; map?: THREE.Texture; mapScale?: number; vertexColors?: boolean; glows?: boolean; sheen?: number; side?: THREE.Side; detail?: boolean } = {}) {
   return new THREE.ShaderMaterial({
     vertexShader: VERT,
     fragmentShader: FRAG,
@@ -345,6 +396,7 @@ export function nightMaterial(u: DaylightUniforms, opts: { color?: THREE.ColorRe
       uUseMap: { value: opts.map ? 1 : 0 },
       uMapScale: { value: opts.mapScale ?? 1 },
       uSheen: { value: opts.sheen ?? 0 },
+      uDetail: { value: opts.detail ? 1 : 0 },
     },
     vertexColors: opts.vertexColors ?? false,
     side: opts.side ?? THREE.FrontSide,
@@ -371,6 +423,19 @@ export function cityMaterial(u: DaylightUniforms) {
       varying vec3 vGlow;
       varying vec2 vUv;
       float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+      // The street lamps along the line, every 24 m either side: their sodium light up the fronts of the buildings.
+      vec3 streetLit(vec3 albedo, vec3 n, vec3 world) {
+        if (uLand.y <= 0.0 || abs(world.z) > 90.0) return vec3(0.0);
+        float sz = world.z < 0.0 ? -8.0 : 8.0;
+        float base = floor((world.x + uLand.x) / 24.0);
+        float sum = 0.0;
+        for (int i = 0; i < 2; i++) {
+          vec3 d = vec3((base + float(i)) * 24.0 - uLand.x, -2.0, sz) - world;
+          float dd = max(dot(d, d), 1e-3);
+          sum += clamp(dot(n, d * inversesqrt(dd)) * 0.9 + 0.1, 0.0, 1.0) * 60.0 / (dd + 1.0);
+        }
+        return albedo * vec3(1.0, 0.5, 0.17) * sum * uLand.y;
+      }
       void main() {
         vec3 n = vNrm * inversesqrt(max(dot(vNrm, vNrm), 1e-8));
         if (!gl_FrontFacing) n = -n;
@@ -408,7 +473,7 @@ export function cityMaterial(u: DaylightUniforms) {
           shop *= smoothstep(0.45, 0.6, vUv.y) * (1.0 - smoothstep(2.9, 3.05, vUv.y));
           lit += vec3(1.0, 0.72, 0.45) * 0.55 * shop * step(0.9, hash(vec2(cell.x, 9.0) + seed * 0.0131));
         }
-        vec3 col = moonlit(albedo * 0.55, n, vWorld) + albedo * uGlow * 1.5 + lit + stationLit(albedo, n, vWorld, 0.0);
+        vec3 col = moonlit(albedo * 0.55, n, vWorld) + albedo * uGlow * 1.5 + lit + stationLit(albedo, n, vWorld, 0.0) + streetLit(albedo, n, vWorld);
         gl_FragColor = vec4(nightFade(col, vWorld), 1.0);
       }
     `,
@@ -748,15 +813,11 @@ export function stationMaterial(u: DaylightUniforms, atlas: THREE.Texture) {
         col += albedo * sparkAt(vWorld);
         col += stationLit(albedo, n, vWorld, gloss) * mix(occl, 1.0, 0.35);
         col += albedo * uGlow + emit;
-        if (uDebug > 0.5) col = uDebug < 1.5 ? moonlit(albedo, n, vWorld) * (1.0 - 0.85 * stationCover(vWorld)) * occl : uDebug < 2.5 ? stationLit(albedo, n, vWorld, gloss) : uDebug < 3.5 ? albedo * uSpillColor * spillAt(vWorld, n) * 0.2 : uDebug < 4.5 ? vec3(stationCover(vWorld)) : vec3(stationLit(vec3(1.0), n, vWorld, 0.0).g * 0.1);
-        if (uDebug > 5.5) col = stationLit(vec3(1.0), n, vWorld, 0.0) * 0.1;
-        if (uDebug > 7.5) col = vec3(fract(vWorld.x), fract(vWorld.z), 0.0) * 0.3;
-        if (uDebug > 8.5) col = (n * 0.5 + 0.5) * 0.3;
         gl_FragColor = vec4(nightFade(col, vWorld), 1.0);
       }
     `,
     defines: { GLOWS: '' },
-    uniforms: { ...u, uAtlas: { value: atlas }, uDebug: { value: 0 } },
+    uniforms: { ...u, uAtlas: { value: atlas } },
     vertexColors: true,
     side: THREE.DoubleSide,
   });
