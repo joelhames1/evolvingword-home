@@ -38,6 +38,7 @@ const KITS: Record<WorldId, () => Promise<KitModule>> = {
   heavens: () => import('./worlds/heavens/kit'),
   library: () => import('./worlds/library/kit'),
   greenhouse: () => import('./worlds/greenhouse/kit'),
+  train: () => import('./worlds/train/kit'),
 };
 
 const CONTACT = 'studio@evolvingword.com';
