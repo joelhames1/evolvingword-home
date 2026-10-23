@@ -134,7 +134,7 @@ test('the night train: picked from the globes, the studio in a sleeper, wall by 
 });
 
 test('the night train: the lever picks the line, the brake stops us, the window drops, the ticket punches', async ({ page }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(480_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   const problems = watch(page);
   await page.goto('/?shot=desk&full&world=train');

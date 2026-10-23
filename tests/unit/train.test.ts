@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { ALPHABET, clean, MAX_PHRASE } from '../../src/evolve';
 import { WORLDS } from '../../src/worlds';
 import { MODULES, pad, PHRASES } from '../../src/worlds/train/board';
-import { bpmFor, BRANCHES, clackInterval, inStep, Journey, LANDS, LAYOUT, LEVER_LIT, LEVER_LOCK, RAIL, type Land, type TrainEvent } from '../../src/worlds/train/journey';
+import { bpmFor, BRANCHES, clackInterval, FIRST_LEAD, inStep, Journey, LANDS, LAYOUT, LEVER_LIT, LEVER_LOCK, RAIL, VIADUCT_LIMIT, type Land, type TrainEvent } from '../../src/worlds/train/journey';
+import { PLATFORM, STATION_LAMPS } from '../../src/worlds/train/ground';
+import { SHED_PILLARS } from '../../src/worlds/train/scenery';
 import { CAR, clear, CORRIDOR, OPPOSITE, ROOM, route, solid, THROUGH, where, WINDOW } from '../../src/worlds/train/plan';
 import { CHORDS, ECHOES, MELODY } from '../../src/worlds/train/sound';
 import { fresh, MAX_HOLES, nextHole, parseTicket, SHAPES } from '../../src/worlds/train/ticket';
@@ -93,6 +95,29 @@ describe('the line', () => {
     // Over the points, and on into the landscape chosen.
     const points = run(j, 400).find((e) => e.kind === 'points');
     expect(points && points.kind === 'points' && points.to.land).toBe(after);
+  });
+
+  it('starts on the viaduct with the first lever still dark, and lights it a little after you sit down', () => {
+    const at = LAYOUT.gorge.viaduct![0] + 150;
+    const j = new Journey({ rand: seeded(21), land: 'gorge', at, speed: VIADUCT_LIMIT, lead: FIRST_LEAD });
+    expect(j.junction().live).toBe(false);
+    // The way in takes 11 seconds; the lamp should still be dark then, and lit within a minute and a half.
+    let t = 0;
+    let lit = -1;
+    for (; t < 90 && lit < 0; t += 0.1) if (j.step(0.1).some((e) => e.kind === 'lit')) lit = t;
+    expect(lit).toBeGreaterThan(15);
+    expect(lit).toBeLessThan(60);
+  });
+
+  it('hands back the same junction and the same list of events each time, rather than making new ones every frame', () => {
+    const j = new Journey({ rand: seeded(2), land: 'fields', at: 100 });
+    expect(j.junction()).toBe(j.junction());
+    expect(j.step(0.1)).toBe(j.step(0.1));
+  });
+
+  it('crosses the viaduct fast enough for the band to keep time, with room to spare', () => {
+    expect((60 * VIADUCT_LIMIT) / RAIL).toBeGreaterThan(41.5);
+    expect(inStep(VIADUCT_LIMIT - 0.05)).toBe(true);
   });
 
   it('locks the points before it gets to them', () => {
@@ -214,6 +239,24 @@ describe('the ticket', () => {
     }
     expect(state.holes.length).toBeGreaterThan(8);
     expect(nextHole({ ...state, holes: Array.from({ length: MAX_HOLES }, () => state.holes[0]) }, r)).toBeNull();
+  });
+});
+
+describe('the snow sheds', () => {
+  it('stand their pillars slim, well apart and well out from the window, so they flick past instead of filling it', () => {
+    expect(SHED_PILLARS.step).toBeGreaterThanOrEqual(8);
+    expect(SHED_PILLARS.width).toBeLessThanOrEqual(0.5);
+    expect(SHED_PILLARS.z1).toBeLessThan(-CAR.outer - 2.4);
+  });
+});
+
+describe('the stations', () => {
+  it('hang their lamps either side of the sign by our window, not over it, along the back of the platform', () => {
+    expect(STATION_LAMPS.offset % STATION_LAMPS.step).toBeGreaterThan(3);
+    expect(STATION_LAMPS.step - (STATION_LAMPS.offset % STATION_LAMPS.step)).toBeGreaterThan(3);
+    expect(STATION_LAMPS.z).toBeLessThan(PLATFORM.edge - 1.5);
+    expect(STATION_LAMPS.z).toBeGreaterThan(PLATFORM.back);
+    expect(STATION_LAMPS.y).toBeGreaterThan(PLATFORM.y + 2.5);
   });
 });
 
