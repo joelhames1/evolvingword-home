@@ -275,8 +275,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       return;
     }
     card(`Under the lens · “${gardenName(g)}”`, latinName(g), [{ list: traits(g) }, { note: parentage(p) }], [
-      ...(i < POTS ? [{ label: 'Share this flower', run: () => void share(i) }, { label: 'Water it', run: () => void waterPot(i) }] : []),
-      { label: 'Back to the staging', quiet: true, run: () => wiring?.goTo('staging') },
+      ...(i < POTS ? [{ label: 'Share it', run: () => void share(i) }, { label: 'Water it', run: () => void waterPot(i) }] : []),
+      { label: 'Back', quiet: true, run: () => wiring?.goTo('staging') },
     ]);
   };
   const startOverCard = () =>
@@ -767,8 +767,11 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       compost: (i: number) => compostPot(i),
       lens: (i: number) => closer(i),
       shareLink: (i: number) => (garden.pots[i] ? shareLink(location.origin, garden.pots[i]!.code) : null),
-      /** Make it rain (true), clear (false), or let the weather do as it likes (null). */
-      shower: (on: boolean | null) => (forced = on),
+      /** Make it rain (true), clear (false), or let the weather do as it likes (null); `now` skips the easing. */
+      shower: (on: boolean | null, now = false) => {
+        forced = on;
+        if (now && on !== null) rain = on ? 1 : 0;
+      },
       busy: () => busy || tools.busy() || bee.flying(),
       line: () => line,
       solid: (p: THREE.Vector3) => solid(p),

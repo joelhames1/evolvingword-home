@@ -132,7 +132,9 @@ const LAWN_FRAG = /* glsl */ `
     // The walk: gravel along the front, and round the end to the door.
     float walk = step(uWalk.x, p.y) * step(p.y, uWalk.y) * step(abs(p.x), uWalk.z);
     walk = max(walk, step(uWalk.w, p.x) * step(p.x, uWalk.w + 1.3) * step(uWalk.x, p.y) * step(p.y, 1.6));
-    vec3 gravel = mix(vec3(0.56, 0.48, 0.38), vec3(0.7, 0.62, 0.5), noise(p * 40.0));
+    // Gravel: buff, with a pebble's worth of light and dark in it.
+    float pebble = noise(p * 55.0) * 0.6 + noise(p * 13.0) * 0.4;
+    vec3 gravel = mix(vec3(0.3, 0.26, 0.2), vec3(0.46, 0.4, 0.31), pebble);
     vec3 albedo = mix(grass, gravel, walk);
     vec3 col = daylight(albedo, normalize(vNrm), vWorld);
     gl_FragColor = vec4(fade(col, vWorld), 1.0);
@@ -486,6 +488,10 @@ function foliageMaterial(u: DaylightUniforms) {
         vec3 v = normalize(toEye);
         float far = smoothstep(15.0, 60.0, length(toEye));
         float leaves = vn(vWorld * 9.0) * 0.55 + vn(vWorld * 23.0) * 0.45;
+        // Up close, single leaves: small crisp flecks, lit or in shade, gone to an average further off.
+        float near = 1.0 - smoothstep(3.0, 12.0, length(toEye));
+        float fleck = smoothstep(0.38, 0.62, vn(vWorld * 47.0 + leaves * 2.0));
+        leaves = mix(leaves, leaves * (0.7 + 0.6 * fleck), near);
         leaves = mix(leaves, 0.5, far * 0.7);
         vec3 bump = vec3(vn(vWorld * 4.0 + 1.7), vn(vWorld * 4.0 + 4.1), vn(vWorld * 4.0 + 8.3)) - 0.5;
         vec3 n = normalize(normalize(vNrm) + bump * 1.1);
