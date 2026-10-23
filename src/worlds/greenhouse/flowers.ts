@@ -257,10 +257,13 @@ const SHAPE = /* glsl */ `
     float u = p.x;
     float t = p.y;
     vec3 q = petalAt(u, t, open, aWin.w);
-    vec3 du = petalAt(min(u + 0.04, 1.0), t, open, aWin.w) - petalAt(max(u - 0.04, -1.0), t, open, aWin.w);
-    vec3 dt = petalAt(u, min(t + 0.03, 1.0), open, aWin.w) - petalAt(u, max(t - 0.03, 0.0), open, aWin.w);
-    vec3 nn = cross(du, dt);
-    n = length(nn) > 1e-9 ? normalize(nn) : vec3(0.0, 0.0, 1.0);
+    // (The shadow's pass needs only where it is, not which way it faces.)
+    #ifndef G_DEPTH
+      vec3 du = petalAt(min(u + 0.04, 1.0), t, open, aWin.w) - petalAt(max(u - 0.04, -1.0), t, open, aWin.w);
+      vec3 dt = petalAt(u, min(t + 0.03, 1.0), open, aWin.w) - petalAt(u, max(t - 0.03, 0.0), open, aWin.w);
+      vec3 nn = cross(du, dt);
+      n = length(nn) > 1e-9 ? normalize(nn) : vec3(0.0, 0.0, 1.0);
+    #endif
     p = q * max(size, 1e-4);
   }
 
@@ -297,10 +300,12 @@ const SHAPE = /* glsl */ `
     float u = p.x;
     float t = p.y;
     vec3 q = leafAt(u, t, unfurl, arch);
-    vec3 du = leafAt(u + 0.05, t, unfurl, arch) - leafAt(u - 0.05, t, unfurl, arch);
-    vec3 dt = leafAt(u, t + 0.04, unfurl, arch) - leafAt(u, max(t - 0.04, 0.0), unfurl, arch);
-    vec3 nn = cross(du, dt);
-    n = length(nn) > 1e-9 ? normalize(nn) : vec3(0.0, 0.0, 1.0);
+    #ifndef G_DEPTH
+      vec3 du = leafAt(u + 0.05, t, unfurl, arch) - leafAt(u - 0.05, t, unfurl, arch);
+      vec3 dt = leafAt(u, t + 0.04, unfurl, arch) - leafAt(u, max(t - 0.04, 0.0), unfurl, arch);
+      vec3 nn = cross(du, dt);
+      n = length(nn) > 1e-9 ? normalize(nn) : vec3(0.0, 0.0, 1.0);
+    #endif
     p = q * max(mix(0.12, 1.0, unfurl) * step(aWin.x, g), 1e-4);
   }
 
@@ -410,7 +415,7 @@ function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
   const uKind = { value: KINDS[kind] };
   const vertex = (s: { vertexShader: string }, depth: boolean) => {
     s.vertexShader = s.vertexShader
-      .replace('#include <common>', `#include <common>\n${BEND}\n${SHAPE}`)
+      .replace('#include <common>', `#include <common>\n${depth ? '#define G_DEPTH' : ''}\n${BEND}\n${SHAPE}`)
       .replace(
         '#include <beginnormal_vertex>',
         /* glsl */ `
@@ -743,7 +748,7 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
     shared.uPlantA.value[SLOTS + i].set(1, 0, i * 1.7, b.height);
     shared.uPlantB.value[SLOTS + i].set(b.at.x, b.at.y, b.at.z, 0);
   });
-  const petals = parts('petal', strip(high ? 10 : 6, high ? 16 : 8), MAX.petal, { aPetal: 4, aWin: 4, aBase: 3, aTip: 3, aMark: 3 }, { roughness: 0.55 });
+  const petals = parts('petal', strip(high ? 8 : 6, high ? 14 : 8), MAX.petal, { aPetal: 4, aWin: 4, aBase: 3, aTip: 3, aMark: 3 }, { roughness: 0.55 });
   const leafMesh = parts('leaf', strip(high ? 6 : 4, high ? 10 : 6), MAX.leaf, { aLeaf: 4, aWin: 4, aColor: 3 }, { roughness: 0.6 });
   const stemGeo = new THREE.CylinderGeometry(0.8, 1, 1, 6, 1, true);
   stemGeo.translate(0, 0.5, 0);

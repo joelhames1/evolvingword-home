@@ -555,47 +555,64 @@ function foliageMaterial(u: DaylightUniforms) {
                    mix(mix(h13(i + vec3(0, 0, 1)), h13(i + vec3(1, 0, 1)), f.x), mix(h13(i + vec3(0, 1, 1)), h13(i + vec3(1, 1, 1)), f.x), f.y), f.z);
       }
       void main() {
-        // A spray of leaves: cut out where the painting has none.
-        float spray = step(vCrown.w, -1e-3);
-        vec4 painted = texture2D(uLeaves, vUv);
-        if (spray > 0.5 && painted.a < 0.45) discard;
-        float reachOf = abs(vCrown.w);
         vec3 toEye = cameraPosition - vWorld;
         float dist = length(toEye);
         vec3 v = toEye / max(dist, 1e-4);
+        float reachOf = abs(vCrown.w);
+        vec3 fromMid = vWorld - vCrown.xyz;
+        float reach = length(fromMid);
+        float back = max(dot(-v, uSunDir), 0.0);
+        if (vCrown.w < -1e-3) {
+          // A spray of leaves: cut out where the painting has none, and lit only as its crown (no noise to work out).
+          vec4 painted = texture2D(uLeaves, vUv);
+          if (painted.a < 0.45) discard;
+          vec3 n = reach > 1e-4 ? fromMid / reach : vec3(0.0, 1.0, 0.0);
+          float heart = mix(0.32, 1.0, smoothstep(0.25, 0.95, reach / max(reachOf, 1e-3)));
+          vec3 albedo = vColor * painted.rgb;
+          float lit = max(dot(n, uSunDir), 0.0);
+          vec3 amb = mix(uGround, uSky, n.y * 0.5 + 0.5) * vec3(0.8, 0.88, 0.8);
+          vec3 col = albedo * (amb * heart + uSunColor * lit * mix(1.0, heart, 0.5));
+          col += uSunColor * albedo * pow(1.0 - max(dot(n, v), 0.0), 2.0) * lit * 0.85;
+          col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * (pow(back, 4.0) * 0.55 * heart + pow(1.0 - abs(dot(n, v)), 2.0) * back * back * 1.1);
+          gl_FragColor = vec4(fade(col, vWorld), 1.0);
+          return;
+        }
         float nl = length(vNrm);
         vec3 nb = nl > 1e-5 ? vNrm / nl : vec3(0.0, 1.0, 0.0);
         float far = smoothstep(15.0, 60.0, dist);
         float leaves = vn(vWorld * 9.0) * 0.55 + vn(vWorld * 23.0) * 0.45;
         // Up close, single leaves: small crisp flecks, lit or in shade, gone to an average further off.
         float near = 1.0 - smoothstep(3.0, 12.0, dist);
-        float fleck = smoothstep(0.38, 0.62, vn(vWorld * 47.0 + leaves * 2.0));
-        leaves = mix(leaves, leaves * (0.7 + 0.6 * fleck), near);
+        if (near > 0.0) {
+          float fleck = smoothstep(0.38, 0.62, vn(vWorld * 47.0 + leaves * 2.0));
+          leaves = mix(leaves, leaves * (0.7 + 0.6 * fleck), near);
+        }
         leaves = mix(leaves, 0.5, far * 0.7);
         float inCrown = step(1e-3, reachOf);
         // A ragged edge on a clump: where it turns away from the eye, sprays of leaves with sky between
         // (only near enough for a leaf to be a few pixels; further off it would shimmer).
-        float edge = 1.0 - abs(dot(nb, v));
-        float sprays = vn(vWorld * 6.5 + 3.1) * 0.65 + vn(vWorld * 17.0) * 0.35;
-        if ((1.0 - spray) * inCrown * edge * (1.0 - smoothstep(22.0, 40.0, dist)) > 0.42 + 0.75 * sprays) discard;
-        vec3 bump = vec3(vn(vWorld * 4.0 + 1.7), vn(vWorld * 4.0 + 4.1), vn(vWorld * 4.0 + 8.3)) - 0.5;
-        // Lit as part of its crown: the clump's own roundness leaning out from the crown's middle (a spray, the crown's alone).
-        vec3 fromMid = vWorld - vCrown.xyz;
-        float reach = length(fromMid);
+        float ragged = inCrown * (1.0 - abs(dot(nb, v))) * (1.0 - smoothstep(22.0, 40.0, dist));
+        if (ragged > 0.42) {
+          float sprays = vn(vWorld * 6.5 + 3.1) * 0.65 + vn(vWorld * 17.0) * 0.35;
+          if (ragged > 0.42 + 0.75 * sprays) discard;
+        }
+        // The leafy unevenness of the surface, fading out where it's too far off to see.
+        float bumpK = 1.0 - smoothstep(20.0, 34.0, dist);
+        vec3 bump = bumpK > 0.0 ? (vec3(vn(vWorld * 4.0 + 1.7), vn(vWorld * 4.0 + 4.1), vn(vWorld * 4.0 + 8.3)) - 0.5) * bumpK : vec3(0.0);
+        // Lit as part of its crown: the clump's own roundness leaning out from the crown's middle.
         vec3 outward = reach > 1e-4 ? fromMid / reach : nb;
-        vec3 n = normalize(mix(nb, outward, mix(0.62 * inCrown, 1.0, spray)) + bump * mix(mix(1.1, 0.75, inCrown), 0.0, spray));
+        vec3 n = normalize(mix(nb, outward, 0.62 * inCrown) + bump * mix(1.1, 0.75, inCrown));
         float heart = mix(1.0, mix(0.32, 1.0, smoothstep(0.25, 0.95, reach / max(reachOf, 1e-3))), inCrown);
-        vec3 albedo = vColor * mix(vec3(0.58 + 0.66 * leaves), painted.rgb, spray);
+        vec3 albedo = vColor * (0.58 + 0.66 * leaves);
         float lit = max(dot(n, uSunDir), 0.0);
         // The shade side stays green and deep: less of the sky's blue in it than on open ground.
         vec3 amb = mix(uGround, uSky, n.y * 0.5 + 0.5) * vec3(0.8, 0.88, 0.8);
         vec3 col = albedo * (amb * heart + uSunColor * lit * mix(1.0, heart, 0.5));
         // Gold on the edges toward the sun, and with the sun behind, a glow through the leaves, brightest round the crown's edge.
         col += uSunColor * albedo * pow(1.0 - max(dot(n, v), 0.0), 2.0) * lit * 0.85;
-        float back = max(dot(-v, uSunDir), 0.0);
-        col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * (pow(back, 4.0) * 0.55 * heart + pow(1.0 - abs(dot(n, v)), 2.0) * back * back * mix(0.8 * inCrown, 1.1, spray));
+        col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * (pow(back, 4.0) * 0.55 * heart + pow(1.0 - abs(dot(n, v)), 2.0) * back * back * 0.8 * inCrown);
         // The hollows between clumps of leaves stay dark.
-        col *= mix(0.62 + 0.38 * smoothstep(0.2, 0.6, leaves), 1.0, spray);
+        col *= 0.62 + 0.38 * smoothstep(0.2, 0.6, leaves);
         gl_FragColor = vec4(fade(col, vWorld), 1.0);
       }
     `,
