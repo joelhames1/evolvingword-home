@@ -18,8 +18,8 @@ export function nightUniforms(): DaylightUniforms {
   const u = daylightUniforms({
     sunDir: MOONLIGHT,
     sunColor: new THREE.Color('#8ea6d8').multiplyScalar(0.55),
-    sky: new THREE.Color('#1c2a4a').multiplyScalar(0.7),
-    ground: new THREE.Color('#0a0d14').multiplyScalar(0.5),
+    sky: new THREE.Color('#1c2a4a').multiplyScalar(1.15),
+    ground: new THREE.Color('#0a0d14').multiplyScalar(0.9),
     haze: new THREE.Color('#0d1424'),
     hazeDensity: 0.0012,
     mist: 0.4,

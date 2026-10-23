@@ -55,12 +55,8 @@ export const LEVER_LOCK = 560;
 
 /** The length of a rail: the wheels clack once over each joint between two. */
 export const RAIL = 22.5;
-/** The usual speed, m/s (a little under 90 km/h). */
-export const CRUISE = 24;
 /** Seconds between two rail joints at a speed; never, standing still. */
 export const clackInterval = (v: number) => (v > 0.05 ? RAIL / v : Infinity);
-/** Where the four wheels of the bogie under the compartment cross a joint, as shares of the time between joints: two axles, then the next car's two. */
-export const AXLES = [0, 2.5 / RAIL, 16.9 / RAIL, 19.4 / RAIL];
 /** The band's tempo: a beat for every rail joint while the wheels come at a tempo it can play, and a slow walk otherwise. */
 export const bpmFor = (v: number) => Math.min(80, Math.max(40, (60 * v) / RAIL));
 /** Whether the band's beat is the wheels' beat at this speed. */
@@ -103,6 +99,8 @@ export const EASE = 2.6;
 const EMERGENCY = 1.55;
 const PULL_AWAY = 0.38;
 const SLOW = 0.6;
+/** Over the viaduct, slowly (still fast enough for the band to keep time with the wheels). */
+export const VIADUCT_LIMIT = 15;
 
 export class Journey {
   /** Where the train is along the line (meters), and how fast it's going. */
@@ -235,7 +233,9 @@ export class Journey {
   /** The speed limit here: the lower of this stretch's and the next one's, near the points. */
   limit(): number {
     const l = this.current();
-    const here = LAYOUT[l.land].limit;
+    const via = LAYOUT[l.land].viaduct;
+    const local = this.s - l.start;
+    const here = via && local > via[0] - 200 && local < via[1] ? Math.min(VIADUCT_LIMIT, LAYOUT[l.land].limit) : LAYOUT[l.land].limit;
     const next = this.ahead();
     return next && l.end - this.s < 400 ? Math.min(here, LAYOUT[next.land].limit) : here;
   }

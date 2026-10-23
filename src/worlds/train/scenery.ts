@@ -474,7 +474,9 @@ function viaduct(b: Build, a: number, end: number) {
       const depth = crown - ground;
       const w1 = 4.2;
       const w0 = w1 + depth * 0.06;
+      // Up from the ground, tapering, and on up between the arches to the deck.
       pier(b.stone, x(b, pu), ground, crown - 13, w0, 5.5 + depth * 0.07, w1, 5.5, stoneColor);
+      pier(b.stone, x(b, pu), crown - 13, deck - 1.4, w1, 5.5, w1, 5.5, stoneColor);
       // A string course at the springing.
       slab(b.stone, x(b, pu) - w1 / 2 - 0.2, crown - 13.4, -2.95, x(b, pu) + w1 / 2 + 0.2, crown - 12.9, 2.95, stoneColor, 'nsewt');
     }

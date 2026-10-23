@@ -16,7 +16,7 @@ import { buildCar } from './car';
 import { buildLand } from './chunks';
 import { buildConsist } from './consist';
 import { BRAKE_AT, buildControls, LEVER_AT, type LeverState } from './controls';
-import { DWELL, Journey, LAYOUT, LEVER_LIT, LEVER_LOCK, NAMES, type Land, type TrainEvent } from './journey';
+import { DWELL, Journey, LAYOUT, LEVER_LIT, LEVER_LOCK, NAMES, VIADUCT_LIMIT, type Land, type TrainEvent } from './journey';
 import { smooth } from './mesher';
 import { nightUniforms } from './night';
 import { CORRIDOR, MIDDLE, ROOM, route, solid, TABLE, WINDOW, WINDOW_X, clear, where, THROUGH, BUNK } from './plan';
@@ -46,13 +46,25 @@ const CARD = 0.13;
 /** The window's glass, across the wall's thickness. */
 const GLASS_Z = -1.59;
 
+/** The air in each landscape: how thick the haze is, how much mist lies low, and its color. */
+const AIR: Record<Land, { haze: number; mist: number; color: THREE.Color }> = {
+  fields: { haze: 0.0013, mist: 0.5, color: new THREE.Color('#0d1424') },
+  gorge: { haze: 0.00095, mist: 0.25, color: new THREE.Color('#0d1424') },
+  pass: { haze: 0.00075, mist: 0.1, color: new THREE.Color('#101a2c') },
+  city: { haze: 0.0017, mist: 0.05, color: new THREE.Color('#1e1714') },
+  lake: { haze: 0.001, mist: 0.55, color: new THREE.Color('#0d1424') },
+};
+const hazeCol = new THREE.Color();
+const tint = new THREE.Color();
+const signAt = new THREE.Vector3();
+
 export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   log('COUPLING THE CARS', 40);
   scene.background = new THREE.Color('#03050b');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const uniforms = nightUniforms();
   // We join the train on the viaduct, over the gorge.
-  const journey = new Journey({ land: 'gorge', at: LAYOUT.gorge.viaduct![0] + 40, speed: 15 });
+  const journey = new Journey({ land: 'gorge', at: (LAYOUT.gorge.viaduct![0] + LAYOUT.gorge.viaduct![1]) / 2 - 60, speed: VIADUCT_LIMIT });
   const board = buildBoard(1.32);
   board.group.position.set(WINDOW_X, 1.955, ROOM.z0 + 0.032);
   const car = buildCar();
@@ -326,14 +338,15 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     objects: [car.group, consist.group, controls.group, board.group, outside, skyHolder, sparks, signHit, routeMap.mesh, glints],
     board,
     shots: {
-      // Alongside the train as it crosses the viaduct, out over the gorge, a little below the line.
-      vista: { pos: v(30, -8.5, -36), target: v(-14, -1.5, 0), fov: 44, lean: 0.3 },
+      // Down in the gorge on the far side, the train crossing the viaduct in front of the moon,
+      // its corridor windows lit all along.
+      vista: { pos: v(7, -10, 34), target: v(-7.2, -6.6, -6.4), fov: 46, lean: 0.3 },
       // Nose to the glass, looking out and a little back, down at what's going by.
       window: { pos: v(0.12, 1.36, -1.2), target: v(-0.9, 0.85, -9), fov: 62, lean: 0.03 },
       board: { pos: v(0.12, 1.86, -0.32), target: v(WINDOW_X, 1.95, ROOM.z0), fov: 40, lean: 0.02 },
     },
-    // In from out over the gorge, along the train to our window, and through it to the table.
-    intro: { via: [v(16, -3.5, -21), v(6, 0.6, -9.5), THROUGH.far, THROUGH.outside, THROUGH.inside], duration: 10.5, lines: ['EVOLVING WORD', 'A LITTLE STUDIO ON THE NIGHT TRAIN', 'WHERE WE MAKE THINGS TOGETHER'] },
+    // Up out of the gorge to the train, in through the corridor window across from our door, through the door to the table.
+    intro: { via: [v(5.5, -3.5, 19), v(2.4, 0.9, 8), THROUGH.farSide, THROUGH.outsideSide, THROUGH.insideSide, THROUGH.corridor, THROUGH.room], duration: 11, lines: ['EVOLVING WORD', 'A LITTLE STUDIO ON THE NIGHT TRAIN', 'WHERE WE MAKE THINGS TOGETHER'] },
     tagline: 'A LITTLE STUDIO ON THE NIGHT TRAIN.',
     band,
     walls,
@@ -576,13 +589,13 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       let haze = 0;
       let glowK = 0;
       let mist = 0;
-      const hazeCol = new THREE.Color(0, 0, 0);
+      hazeCol.setRGB(0, 0, 0);
       for (const { leg, w } of journey.weights(uWin)) {
-        const d = { fields: 0.0013, gorge: 0.00095, pass: 0.00075, city: 0.0017, lake: 0.001 }[leg.land];
-        haze += d * w;
+        const air = AIR[leg.land];
+        haze += air.haze * w;
         if (leg.land === 'city') glowK += w;
-        mist += ({ fields: 0.5, lake: 0.55, gorge: 0.25, pass: 0.1, city: 0.05 } as const)[leg.land] * w;
-        hazeCol.add(new THREE.Color(leg.land === 'city' ? '#1e1714' : leg.land === 'pass' ? '#101a2c' : '#0d1424').multiplyScalar(w));
+        mist += air.mist * w;
+        hazeCol.add(tint.copy(air.color).multiplyScalar(w));
       }
       uniforms.uHazeDensity.value = haze;
       (uniforms.uHaze.value as THREE.Color).copy(hazeCol);
@@ -729,8 +742,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       let sign: THREE.Object3D | null = null;
       let near = 40;
       for (const m of land.signs()) {
-        const p = m.getWorldPosition(new THREE.Vector3());
-        const d = p.distanceTo(camera.position);
+        const d = m.getWorldPosition(signAt).distanceTo(camera.position);
         if (d < near) ((near = d), (sign = m));
       }
       if (sign) {

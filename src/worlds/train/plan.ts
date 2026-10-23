@@ -168,13 +168,18 @@ export const where = (p: THREE.Vector3): Where => {
   return p.z < ROOM.z1 + PARTITION / 2 ? 'room' : 'corridor';
 };
 
-/** In and out through our window, and through our door. */
+/** The corridor window across from our door. */
+export const OPPOSITE = corridorWindowAt((DOOR.x0 + DOOR.x1) / 2);
+/** In and out through our window, through our door, and through the corridor window across from it. */
 export const THROUGH = {
   far: v(WINDOW_X, 1.33, -4.6),
   outside: v(WINDOW_X, 1.33, -2.4),
   inside: v(WINDOW_X, 1.36, -0.55),
   room: v(0.98, 1.5, -0.2),
   corridor: v(0.98, 1.5, 0.95),
+  farSide: v(OPPOSITE, 1.31, 4.6),
+  outsideSide: v(OPPOSITE, 1.31, 2.5),
+  insideSide: v(OPPOSITE, 1.33, 1.25),
 };
 /** Where the camera can stand in the open middle of the compartment, and down the corridor. */
 export const MIDDLE = v(0.32, 1.5, -0.32);
@@ -206,8 +211,12 @@ export function route(a: THREE.Vector3, b: THREE.Vector3): THREE.Vector3[] | und
   if (wa === 'room' && wb === 'corridor') return [...inRoom(a), THROUGH.room, ...toCorridor(b)];
   if (wa === 'corridor' && wb === 'room') return [...toCorridor(a).reverse(), THROUGH.room, ...inRoom(b)];
   // From outside, in through the window (and on through the door, for the corridor); and back out.
+  // From the corridor's side, in through its window across from our door.
   const fromWindow = (p: THREE.Vector3) =>
     where(p) === 'corridor' ? [THROUGH.inside, ...inRoom(THROUGH.inside), THROUGH.room, ...toCorridor(p)] : clear(THROUGH.inside, p) ? [THROUGH.inside] : [THROUGH.inside, MIDDLE];
-  if (wa === 'out') return [THROUGH.far, THROUGH.outside, ...fromWindow(b)];
-  return [...fromWindow(a).reverse(), THROUGH.outside, THROUGH.far];
+  const fromSide = (p: THREE.Vector3) => (where(p) === 'corridor' ? [THROUGH.insideSide, ...toCorridor(p)] : [THROUGH.insideSide, THROUGH.corridor, THROUGH.room, ...inRoom(p)]);
+  const out = wa === 'out' ? a : b;
+  const there = wa === 'out' ? b : a;
+  const way = out.z > 0 ? [THROUGH.farSide, THROUGH.outsideSide, ...fromSide(there)] : [THROUGH.far, THROUGH.outside, ...fromWindow(there)];
+  return wa === 'out' ? way : way.reverse();
 }
