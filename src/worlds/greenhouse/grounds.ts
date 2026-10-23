@@ -448,6 +448,8 @@ export function balustradeGeometry(high: boolean, z: number, y: number) {
     parts.push(new THREE.LatheGeometry(urn, high ? 22 : 12).translate(x, y + 0.91, z));
   }
   const geo = mergeGeometries(parts.map((g) => plain(g)));
+  // (A lathe leaves its end normals unscaled.)
+  geo.normalizeNormals();
   const p = geo.attributes.position;
   const c = geo.attributes.color;
   for (let i = 0; i < p.count; i++) {
