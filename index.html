@@ -58,12 +58,14 @@
     </div>
 
     <aside id="about" class="notepad" hidden aria-labelledby="about-title">
+      <button class="tuck" type="button" aria-label="Hide the note to see the room">Hide</button>
       <h2 id="about-title">About</h2>
       <div id="about-body"></div>
       <p class="sig">Evolving Word</p>
     </aside>
 
     <aside id="card" class="card" hidden aria-live="polite">
+      <button class="tuck" type="button" aria-label="Hide the card to see what's behind it">Hide</button>
       <p class="card-kicker" id="card-kicker"></p>
       <h2 id="card-title"></h2>
       <div id="card-body"></div>
@@ -84,6 +86,7 @@
     </div>
 
     <aside id="project" class="ticket" hidden aria-live="polite">
+      <button class="tuck" type="button" aria-label="Hide the ticket to see the shirt">Hide</button>
       <p class="ticket-no" id="project-no"></p>
       <h2 id="project-title"></h2>
       <p class="ticket-tag" id="project-tagline"></p>
@@ -95,6 +98,8 @@
         <button id="project-next" aria-label="Next project">›</button>
       </div>
     </aside>
+
+    <button id="untuck" class="untuck" type="button" hidden>Show the card</button>
 
     <div id="tooltip" role="presentation"></div>
 

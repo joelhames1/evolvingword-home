@@ -478,6 +478,38 @@ test('the owner chooses which globes show; ?worlds=all shows every one', async (
   expect(problems.filter((p) => !/503/.test(p))).toEqual([]);
 });
 
+test('a card can be tucked away to see what it covers, and brought back', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 900, height: 900 });
+  const problems = watch(page);
+  await page.goto('/?shot=map&full');
+  await expect(page.locator('#card')).toBeVisible({ timeout: 60_000 });
+  const offset = () =>
+    page.evaluate(() => {
+      const view = (window as unknown as { __ew: { camera: { view: { enabled: boolean; offsetX: number } | null } } }).__ew.camera.view;
+      return view?.enabled ? view.offsetX : 0;
+    });
+  await page.waitForTimeout(800);
+  expect(Math.abs(await offset())).toBeGreaterThan(50);
+  // Hide: the card goes, a tab takes its place, and the picture slides back to the middle.
+  await page.locator('#card .tuck').click();
+  await expect(page.locator('#card')).toBeHidden();
+  await expect(page.locator('#untuck')).toBeVisible();
+  await expect(page.locator('#untuck')).toBeFocused();
+  await expect.poll(async () => Math.abs(await offset()), { timeout: 30_000 }).toBeLessThan(2);
+  // The tab brings it back, shifted again.
+  await page.locator('#untuck').click();
+  await expect(page.locator('#card')).toBeVisible();
+  await expect(page.locator('#untuck')).toBeHidden();
+  await expect.poll(async () => Math.abs(await offset()), { timeout: 30_000 }).toBeGreaterThan(50);
+  // Tucked, then off somewhere else: the next place starts with its card showing.
+  await page.locator('#card .tuck').click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#untuck')).toBeHidden();
+  await expect(page.locator('body')).not.toHaveClass(/tucked/);
+  expect(problems).toEqual([]);
+});
+
 test('phones get the plain page, with the project link', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const problems = watch(page);

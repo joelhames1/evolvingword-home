@@ -229,6 +229,23 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
   const navFor: Record<string, string> = { desk: 'desk', projects: 'projects', about: 'about', library: 'library', signal: 'signal' };
   let projectIndex = 0;
 
+  // Any card, ticket or note can be tucked away to see what's behind it; a tab
+  // brings it back, and the next place you go starts with it showing.
+  const untuck = $<HTMLButtonElement>('untuck');
+  const tuck = (on: boolean) => {
+    if (document.body.classList.contains('tucked') === on) return;
+    document.body.classList.toggle('tucked', on);
+    untuck.hidden = !on;
+    untuck.classList.toggle('right', on && !panels.about.hidden);
+    rig.clear = on;
+    if (on) untuck.focus();
+  };
+  for (const b of document.querySelectorAll<HTMLButtonElement>('.tuck')) b.addEventListener('click', () => tuck(true));
+  untuck.addEventListener('click', () => {
+    tuck(false);
+    document.querySelector<HTMLElement>('aside:not([hidden]) .tuck')?.focus();
+  });
+
   type Body = string | { list: { head: string; text: string }[] } | { note: string };
   const showCard = (kicker: string, title: string, body: Body[], actions: { label: string; quiet?: boolean; href?: string; run?: () => void }[] = []) => {
     $('card-kicker').textContent = kicker;
@@ -261,6 +278,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
       }),
     );
     panels.card.hidden = false;
+    tuck(false);
   };
 
   const showProject = (i: number) => {
@@ -437,6 +455,7 @@ export async function startScene(worldId: WorldId, opts: { sound: boolean; onEnt
     panels.about.hidden = true;
     panels.project.hidden = true;
     panels.card.hidden = true;
+    tuck(false);
     if (reader.isOpen()) reader.close();
     if (name !== 'signal' && terminal.page() !== 'menu') terminal.show('menu');
     if (name !== 'board' && watching) {
