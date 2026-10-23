@@ -424,7 +424,22 @@ test('the greenhouse: grows and breeds with no storage at all, and from a garden
  * the letterbox's bars or under the card: run in the page, for the pots (by
  * slot) or for any world points.
  */
-const hidden = (page: Page, slots: number[], extra: number[][] = []) =>
+/** Until the letterbox has finished closing (the lens is fitted to the picture between its bars). */
+const barsStill = async (page: Page) => {
+  const bar = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bar'));
+  for (let k = 0, last = ''; k < 40; k++) {
+    const now = await bar();
+    if (now === last) return;
+    last = now;
+    await page.waitForTimeout(500);
+  }
+};
+
+const hidden = async (page: Page, slots: number[], extra: number[][] = []) => {
+  await barsStill(page);
+  return visibility(page, slots, extra);
+};
+const visibility = (page: Page, slots: number[], extra: number[][] = []) =>
   page.evaluate(
     ([slots, extra]) => {
       const w = (window as unknown as { __ew: Ew }).__ew;

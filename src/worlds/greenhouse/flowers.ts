@@ -899,7 +899,8 @@ function fibres() {
     g.strokeStyle = `rgba(${col.map(Math.round).join(',')},${0.35 + deep * 0.5})`;
     g.lineWidth = 0.6 + r() * 1.4;
     const sway = (r() - 0.5) * 18;
-    for (const dy of [0, -H, H]) {
+    // (Drawn again a texture's height away only if it runs off an edge, so it wraps.)
+    for (const dy of y + len > H ? [0, -H] : [0]) {
       g.beginPath();
       g.moveTo(x, y + dy);
       g.bezierCurveTo(x + sway + lean * len * 0.3, y + dy + len * 0.33, x - sway + lean * len * 0.6, y + dy + len * 0.66, x + lean * len, y + dy + len);

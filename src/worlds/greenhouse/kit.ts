@@ -42,20 +42,23 @@ const roomy = (p: THREE.Vector3) => !solid(p, 0.06);
 const STAGE_FIT = POT_AT.slice(0, POTS).flatMap((p) => [p.clone(), p.clone().add(v(-0.11, POT.h, 0.02)), p.clone().add(v(0.11, POT.h, 0.02)), p.clone().add(v(0, POT.h + 0.3, 0))]);
 /**
  * The staging from the back of the aisle, square on (for a wide window), and
- * from above the potting bench's end, looking along it (for a narrow one),
- * clear of the hanging baskets.
+ * from high over the potting bench, looking down the length of the benches
+ * (for a narrow one: the two rows run away up the picture, so they fit a tall
+ * room beside the card). Between them, a way round under the hanging basket.
  */
 const SQUARE_ON = { pos: v(-3.3, 2.35, 1.6), target: v(-3.85, 1.0, -1.6) };
-const ALONG = { pos: v(-0.6, 2.6, 0.4), target: v(-4.1, 0.9, -1.65) };
+const ALONG = { pos: v(0.0, 2.85, -1.05), target: v(-4.0, 0.9, -1.65) };
+const BETWEEN = v(-0.9, 2.45, -0.4);
 /**
- * The view of the staging for this window: square on when it's wide, turning
- * to look along the benches as it gets narrower, so the two rows of pots fit
- * the room beside the card either way (the lens widens to keep every pot in,
- * card or no card; see Shot.fit).
+ * The view of the staging for this window: square on when it's wide, down the
+ * benches when it's narrow (the views in between fit less well, so it doesn't
+ * linger there), so the two rows of pots fit the room beside the card either
+ * way (the lens widens to keep every pot in, card or no card; see Shot.fit).
  */
 export function stagingShot(aspect: number): Shot {
-  const k = 1 - THREE.MathUtils.smoothstep(aspect, 0.8, 1.45);
-  return { pos: SQUARE_ON.pos.clone().lerp(ALONG.pos, k), target: SQUARE_ON.target.clone().lerp(ALONG.target, k), fov: 50 - 20 * k, lean: 0.04, shift: CARD, fit: STAGE_FIT };
+  const k = 1 - THREE.MathUtils.smoothstep(aspect, 1.15, 1.35);
+  const pos = SQUARE_ON.pos.clone().multiplyScalar((1 - k) * (1 - k)).addScaledVector(BETWEEN, 2 * k * (1 - k)).addScaledVector(ALONG.pos, k * k);
+  return { pos, target: SQUARE_ON.target.clone().lerp(ALONG.target, k), fov: 50 - 20 * k, lean: 0.04, shift: CARD, fit: STAGE_FIT };
 }
 
 /** A plant label pushed into the soil: "a gift from a friend". */
@@ -227,15 +230,15 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     const top = soil + (plan ? plan.top : 0.45);
     const mid = foot.clone().add(v(0, top * 0.5, 0));
     // From in front and above; turned a little either way, or lower, if a hanging basket's in the way
-    // there or on the walk in from the staging.
-    const from = SHOTS.staging?.pos ?? v(-3.3, 2.35, 1.6);
+    // there or on the walk in (from the staging, and from the aisle, the way in from anywhere else).
+    const from = [SHOTS.staging?.pos ?? v(-3.3, 2.35, 1.6), v(foot.x, 1.7, 0.35)];
     const ways = i >= 8 ? [v(0.12, 1.05, 0.75), v(0.6, 1.0, 0.7), v(-0.5, 1.0, 0.7), v(0.12, 0.8, 1)] : [v(0.12, 0.72, 1), v(0.55, 0.7, 0.9), v(-0.45, 0.7, 0.9), v(0.12, 0.5, 1)];
     let pos = mid.clone();
     for (const way of ways) {
       const dir = way.normalize();
       pos = mid.clone().addScaledVector(dir, 0.75 + top * 1.25);
       for (let k = 0; k < 14 && !roomy(pos); k++) pos.addScaledVector(dir, 0.08);
-      if (roomy(pos) && clear(from, pos, route(from, pos) ?? [], 0.03)) break;
+      if (roomy(pos) && from.every((f) => clear(f, pos, route(f, pos) ?? [], 0.03))) break;
     }
     const fit = [foot.clone().add(v(-POT.r, 0, POT.r)), foot.clone().add(v(POT.r, 0, POT.r)), foot.clone().add(v(0, top, 0))];
     for (const b of plan?.blooms ?? []) {
