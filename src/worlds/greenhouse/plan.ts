@@ -91,6 +91,20 @@ export const POT_AT = [
 ];
 export const GIFT_POT = 16;
 export const SHOW_POT = 17;
+/**
+ * Which empty pot a seed (or a gift) goes into first: the near row before the
+ * back row (nothing stands in front of it), from the end by the potting bench,
+ * the one nearest the aisle's view and furthest from the card.
+ */
+export const FILL_ORDER = [7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8];
+/** Where a pot on the staging is, in words, as seen from the aisle: "the near row, third from the left". */
+export function potPlace(i: number) {
+  const row = i < 8 ? 'the near row' : 'the back row';
+  const k = i % 8;
+  const nth = ['', 'second', 'third', 'fourth'];
+  const side = k < 4 ? (k === 0 ? 'far left' : `${nth[k]} from the left`) : k === 7 ? 'far right' : `${nth[7 - k]} from the right`;
+  return `${row}, ${side}`;
+}
 /** A pot: its height and the radius of its rim. */
 export const POT = { h: 0.17, r: 0.098 };
 

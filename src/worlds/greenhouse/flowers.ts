@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash, rgb, seeded, type Genome, type Tint } from './genome';
-import { BASKETS, FERN_POTS, HOUSE, POT, POT_AT, TREE_FERN } from './plan';
+import { BASKETS, FERN_POTS, HOUSE, POT, POT_AT, POTS, TREE_FERN } from './plan';
 import { terracotta, soil as soilTexture } from './surfaces';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -675,6 +675,109 @@ function fernLayout(): { fronds: Frond[]; bases: { at: THREE.Vector3; height: nu
   return { fronds, bases };
 }
 
+/** The digits, chalked: strokes in a box 0.6 wide and 1 tall. */
+const CHALK: number[][][] = [
+  Array.from({ length: 15 }, (_, k) => [0.3 + Math.sin((k / 14) * Math.PI * 2) * 0.27, 0.5 + Math.cos((k / 14) * Math.PI * 2) * 0.48]),
+  [[0.12, 0.78], [0.33, 1.0], [0.33, 0.0]],
+  [[0.04, 0.78], [0.13, 0.95], [0.3, 1.0], [0.5, 0.92], [0.56, 0.74], [0.47, 0.5], [0.04, 0.02], [0.6, 0.02]],
+  [[0.06, 0.92], [0.3, 1.0], [0.52, 0.9], [0.54, 0.72], [0.3, 0.55], [0.54, 0.42], [0.58, 0.2], [0.42, 0.03], [0.2, 0.0], [0.03, 0.1]],
+  [[0.46, 0.0], [0.46, 1.0], [0.02, 0.3], [0.6, 0.3]],
+  [[0.55, 1.0], [0.1, 1.0], [0.06, 0.56], [0.3, 0.63], [0.52, 0.5], [0.58, 0.28], [0.46, 0.06], [0.24, 0.0], [0.03, 0.1]],
+  [[0.5, 0.96], [0.3, 1.0], [0.12, 0.85], [0.04, 0.5], [0.06, 0.2], [0.2, 0.02], [0.4, 0.02], [0.56, 0.18], [0.54, 0.42], [0.36, 0.56], [0.14, 0.5], [0.05, 0.34]],
+  [[0.02, 1.0], [0.58, 1.0], [0.22, 0.0]],
+  [
+    ...Array.from({ length: 13 }, (_, k) => [0.3 + Math.sin((k / 12) * Math.PI * 2) * 0.22, 0.76 - Math.cos((k / 12) * Math.PI * 2) * 0.23]),
+    ...Array.from({ length: 13 }, (_, k) => [0.3 - Math.sin((k / 12) * Math.PI * 2) * 0.27, 0.27 + Math.cos((k / 12) * Math.PI * 2) * 0.26]),
+  ],
+  [[0.55, 0.64], [0.4, 0.48], [0.2, 0.48], [0.05, 0.62], [0.06, 0.86], [0.24, 1.0], [0.44, 0.98], [0.56, 0.82], [0.55, 0.5], [0.45, 0.12], [0.25, 0.0], [0.07, 0.06]],
+];
+
+/**
+ * Each pot on the staging has its number chalked on the side that faces the
+ * aisle, as a gardener numbers them: thin strokes standing just proud of the
+ * pot's cone (never in it, whatever the lathe's facets), off-white with chalk's
+ * unevenness. Vertex colors, to go in with the other ironmongery.
+ */
+export function chalkNumbers(count: number) {
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  const col: number[] = [];
+  const R = POT.r;
+  // The pot's cone below the rim: its radius up its height, and how it leans out.
+  const r0 = R * 0.72;
+  const slope = (R * 0.92 - r0) / (POT.h * 0.82);
+  const tall = 0.042;
+  const half = 0.0017;
+  const lift = 0.0024;
+  const mid = POT.h * 0.48;
+  const rand = seeded(91);
+  const a2 = new THREE.Vector2();
+  const b2 = new THREE.Vector2();
+  const side = new THREE.Vector2();
+  for (let i = 0; i < count; i++) {
+    const foot = POT_AT[i];
+    const digits = String(i + 1).split('').map(Number);
+    const advance = 0.68;
+    const width = (digits.length * advance - (advance - 0.6)) * tall;
+    // Turned a little toward the potting bench's end, where the camera comes from to watch a pot.
+    const face = 0.22 + (rand() - 0.5) * 0.1;
+    const tilt = (rand() - 0.5) * 0.12;
+    /** A point on the chalked face (u across, along the pot's round; v up) on the pot. */
+    const at = (u: number, vv: number, out: number[]) => {
+      const y = mid + vv;
+      const r = r0 + slope * y + lift;
+      const th = face + u / r;
+      out.push(foot.x + Math.sin(th) * r, foot.y + y, foot.z + Math.cos(th) * r);
+      const n = new THREE.Vector3(Math.sin(th), -slope, Math.cos(th)).normalize();
+      nrm.push(n.x, n.y, n.z);
+    };
+    digits.forEach((d, k) => {
+      for (const stroke of [CHALK[d]]) {
+        for (let s = 0; s + 1 < stroke.length; s++) {
+          // Each stroke a ribbon, a little uneven, the letter leaning as a hand does.
+          const place = (p: number[], o: THREE.Vector2) => {
+            const x = (k * advance + p[0]) * tall - width / 2;
+            const y = (p[1] - 0.5) * tall;
+            return o.set(x + y * tilt, y);
+          };
+          place(stroke[s], a2);
+          place(stroke[s + 1], b2);
+          side.subVectors(b2, a2);
+          const len = side.length();
+          if (len < 1e-6) continue;
+          side.set(-side.y / len, side.x / len);
+          const w0 = half * (0.8 + rand() * 0.4);
+          const w1 = half * (0.8 + rand() * 0.4);
+          // Overlap the next stroke a touch, so the joins don't gap.
+          const ext = (half * 0.8) / len;
+          const ax = a2.x - (b2.x - a2.x) * ext;
+          const ay = a2.y - (b2.y - a2.y) * ext;
+          const bx = b2.x + (b2.x - a2.x) * ext;
+          const by = b2.y + (b2.y - a2.y) * ext;
+          const quad = [
+            [ax + side.x * w0, ay + side.y * w0],
+            [ax - side.x * w0, ay - side.y * w0],
+            [bx - side.x * w1, by - side.y * w1],
+            [ax + side.x * w0, ay + side.y * w0],
+            [bx - side.x * w1, by - side.y * w1],
+            [bx + side.x * w1, by + side.y * w1],
+          ];
+          for (const [u, vv] of quad) {
+            at(u, vv, pos);
+            const c = 0.78 + rand() * 0.2;
+            col.push(c * 0.98, c * 0.93, c * 0.86);
+          }
+        }
+      }
+    });
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return geo;
+}
+
 /** The baskets (wire, lined with moss), their chains, and the tree fern's trunk: one mesh, in vertex colors. */
 function fernFurniture(high: boolean) {
   const parts: THREE.BufferGeometry[] = [];
@@ -713,6 +816,8 @@ function fernFurniture(high: boolean) {
   trunk.computeVertexNormals();
   trunk.translate(TREE_FERN.x, 1.2, TREE_FERN.z);
   parts.push(shade(trunk, '#3e2c1e'));
+  // The staging's pots, numbered in chalk.
+  parts.push(chalkNumbers(POTS));
   return mergeGeometries(parts);
 }
 
