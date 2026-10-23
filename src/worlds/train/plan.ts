@@ -203,7 +203,9 @@ export function route(a: THREE.Vector3, b: THREE.Vector3): THREE.Vector3[] | und
       return [MIDDLE];
     }
     if (wa === 'corridor') return [along(a.x, (a.y + b.y) / 2), along(b.x, (a.y + b.y) / 2)];
-    return undefined;
+    // From one side of the train to the other: up and over the roof.
+    const over = (p: THREE.Vector3) => v(p.x, CAR.roof + 0.9, Math.sign(p.z || 1) * (CAR.outer + 0.6));
+    return [over(a), over(b)];
   }
   // Between the compartment and the corridor: through the door.
   const toCorridor = (p: THREE.Vector3) => (Math.abs(p.x - THROUGH.corridor.x) > 1.0 ? [THROUGH.corridor, along(p.x + Math.sign(THROUGH.corridor.x - p.x) * 0.6, 1.5)] : [THROUGH.corridor]);

@@ -90,12 +90,9 @@ test('the night train: picked from the globes, the studio in a sleeper, wall by 
   });
   await page.waitForTimeout(1500);
 
-  // Not too many draws at the table.
-  await page.evaluate(() => (window as unknown as Win).__ew.calls());
-  await page.waitForTimeout(3000);
-  const calls = await page.evaluate(() => (window as unknown as Win).__ew.calls());
-  expect(calls).toBeGreaterThan(50);
-  expect(calls).toBeLessThan(400);
+  // Not too many draws at the table (counted over a whole frame, once counting's switched on).
+  await page.waitForFunction(() => (window as unknown as Win).__ew.calls() > 50, null, { timeout: 60_000 });
+  expect(await page.evaluate(() => (window as unknown as Win).__ew.calls())).toBeLessThan(400);
 
   // Wall to wall, all the way round the compartment and out to the corridor.
   for (const next of ['honors', 'corridor', 'places', 'desk']) {
