@@ -12,7 +12,7 @@ import { rng } from '../../textures';
 import type { Board, Evolution } from '../kit';
 import { DAYLIGHT, outdoor, type DaylightUniforms } from '../outdoor';
 import { glyph } from '../tower/board';
-import { BANK } from './grounds';
+import { BANK, whiteColors } from './grounds';
 
 export const PHRASES = ['EVOLVING WORD', 'IN FULL BLOOM', 'GOLDEN HOUR', 'GROW SOMETHING', 'TEND YOUR GARDEN', 'MAKE SOMETHING', 'SOW AND SEE', 'BEST IN SHOW'];
 
@@ -144,8 +144,8 @@ export function buildBed(daylight: DaylightUniforms): Bed {
       edgeParts.push(e);
     }
   }
-  const soil = new THREE.Mesh(mergeGeometries(soilParts), outdoor(daylight, { color: '#3a2a1e' }));
-  const edging = new THREE.Mesh(mergeGeometries(edgeParts), outdoor(daylight, { color: '#b5623e' }));
+  const soil = new THREE.Mesh(whiteColors(mergeGeometries(soilParts)), outdoor(daylight, { color: '#3a2a1e', vertexColors: true }));
+  const edging = new THREE.Mesh(whiteColors(mergeGeometries(edgeParts)), outdoor(daylight, { color: '#b5623e', vertexColors: true }));
   group.add(soil, edging);
 
   // A plant in every cell: a mound of leaves, and a flower that only shows in the letter's strokes.

@@ -183,6 +183,16 @@ const plain = (g: THREE.BufferGeometry) => {
   return out;
 };
 
+/**
+ * White vertex colors for a geometry that has none. Every surface outside is
+ * drawn with vertex colors on, so they all share one shader program (each
+ * program is a compile, and compiles are most of the wait on the way in).
+ */
+export const whiteColors = <T extends THREE.BufferGeometry>(g: T) => {
+  if (!g.attributes.color) g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3));
+  return g;
+};
+
 /** A geometry's colors multiplied by a tint. */
 const tinted = (g: THREE.BufferGeometry, c: THREE.Color) => {
   const a = g.attributes.color;
@@ -231,18 +241,18 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
 
   // --- the garden wall, on from the house's back wall either way --------------------------------------
   const wallBrick = brick(23, { moss: true });
-  const wallMat = outdoor(daylight, { map: wallBrick.map });
-  const stoneMat = outdoor(daylight, { color: '#cfc3a6' });
+  const wallMat = outdoor(daylight, { map: wallBrick.map, vertexColors: true });
+  const stoneMat = outdoor(daylight, { color: '#cfc3a6', vertexColors: true });
   for (const s of [-1, 1]) {
     const len = 26;
     // A tile of the brick is two meters by one (outdoor shaders take the uv's as they are).
     const wallGeo = new THREE.BoxGeometry(len, 3.2, 0.4);
     const uv = wallGeo.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (len / 2), uv.getY(i) * 3.2);
-    const w = new THREE.Mesh(wallGeo, wallMat);
+    const w = new THREE.Mesh(whiteColors(wallGeo), wallMat);
     w.position.set(s * (HOUSE.x1 + 0.3 + len / 2), 1.6, HOUSE.back + 0.25);
     group.add(w);
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(len, 0.08, 0.5), stoneMat);
+    const cap = new THREE.Mesh(whiteColors(new THREE.BoxGeometry(len, 0.08, 0.5)), stoneMat);
     cap.position.set(w.position.x, 3.24, w.position.z);
     group.add(cap);
   }
@@ -310,7 +320,12 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     blobs.push({ at: v(x + (r() - 0.5) * 0.12, s * 0.7, HOUSE.kneeOut - 1.5 - r() * 0.55), s: v(s, s * (1.2 + r() * 0.7), s), color: new THREE.Color(['#3e5a26', '#4a6a2c', '#56702e'][Math.floor(r() * 3)]) });
   }
   const foliage = foliageMaterial(daylight);
-  group.add(new THREE.Mesh(mergeGeometries(solidLeaf), foliage));
+  // (One instance of the hedges and cones, so they share the crowns' program.)
+  const solid = new THREE.InstancedMesh(mergeGeometries(solidLeaf), foliage, 1);
+  solid.setMatrixAt(0, new THREE.Matrix4());
+  solid.setColorAt(0, new THREE.Color(1, 1, 1));
+  solid.frustumCulled = false;
+  group.add(solid);
   group.add(new THREE.Mesh(mergeGeometries(wood), outdoor(daylight, { vertexColors: true })));
   // The near blobs (the borders) rounder than the far ones.
   const m4 = new THREE.Matrix4();
@@ -418,7 +433,7 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     hp.setY(i, top ? h : -10);
   }
   hillGeo.computeVertexNormals();
-  const hills = new THREE.Mesh(hillGeo, outdoor(daylight, { color: '#6d7a52' }));
+  const hills = new THREE.Mesh(whiteColors(hillGeo), outdoor(daylight, { color: '#6d7a52', vertexColors: true }));
   hills.position.set(0, 0, -420);
   group.add(hills);
 

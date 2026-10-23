@@ -179,202 +179,192 @@ const BEND = /* glsl */ `
   }
 `;
 
-/** Each kind's own shaping, in its local space: gShape(p, n) moves the vertex and gives its normal. */
-const SHAPES: Record<'petal' | 'leaf' | 'stem' | 'eye', string> = {
+/**
+ * Each kind's own shaping, in its local space. All four kinds share one shader
+ * (one program to compile, not four), and uKind picks: 0 a petal, 1 a leaf,
+ * 2 a stem, 3 a flower's eye. gShape(p, n) moves the vertex and gives its normal.
+ */
+const SHAPE = /* glsl */ `
+  uniform float uKind;
+  attribute vec4 aPetal;
+  attribute vec4 aLeaf;
+  attribute vec4 aWin;
+  attribute vec3 aBase;
+  attribute vec3 aTip;
+  attribute vec3 aMark;
+  attribute vec3 aColor;
+  varying vec3 vBase;
+  varying vec3 vTip;
+  varying vec3 vMark;
+  varying vec3 vColor;
+  varying vec2 vPart;
+  varying float vPattern;
+  varying float vSeed;
+  varying float vGlow;
+
   // A petal: u across (-1..1), t along (0..1). Width by shape, cupped, opened on its hinge.
-  petal: /* glsl */ `
-    attribute vec4 aPetal;
-    attribute vec4 aWin;
-    attribute vec3 aBase;
-    attribute vec3 aTip;
-    attribute vec3 aMark;
-    varying vec3 vBase;
-    varying vec3 vTip;
-    varying vec3 vMark;
-    varying vec2 vPetal;
-    varying float vPattern;
-    varying float vSeed;
-    varying float vGlow;
-    float halfWidth(float t, float shape) {
-      t = clamp(t, 0.0, 1.0);
-      float w;
-      if (shape < 0.5) w = pow(max(sin(3.14159 * t), 0.0), 0.5) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
-      else if (shape < 1.5) w = pow(max(sin(3.14159 * pow(t, 0.68)), 0.0), 0.9);
-      else if (shape < 2.5) w = pow(max(sin(3.14159 * t), 0.0), 0.45) * (1.0 + 0.1 * sin(t * 30.0 + aMisc.z * 6.0)) * mix(0.45, 1.0, smoothstep(0.0, 0.4, t));
-      else w = pow(max(sin(3.14159 * min(t * 1.04, 1.0)), 0.0), 0.42) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
-      return w;
-    }
-    vec3 petalAt(float u, float t, float open, float cup) {
-      float shape = aPetal.w;
-      float len = aPetal.y;
-      float w = halfWidth(t, shape) * aPetal.z * 0.5;
-      // A notch at the tip: the middle a little shorter than the sides.
-      if (shape > 2.5) t *= 1.0 - 0.16 * (1.0 - abs(u)) * smoothstep(0.55, 1.0, t);
-      float x = u * w;
-      // The length bends toward the front (−z) the more it's cupped, as an arc.
-      float arc = cup * (1.0 - open * 0.25) + 0.15;
-      float y = sin(arc * t) / arc * len;
-      float z = -(1.0 - cos(arc * t)) / arc * len;
-      // A shallow trough across it, and a frill at the edges.
-      z -= u * u * w * 0.35;
-      if (shape > 1.5 && shape < 2.5) z += sin(t * 26.0 + u * 2.0 + aMisc.z * 5.0) * 0.12 * w * abs(u) * t;
-      // Open on the hinge: from pointing up the flower's axis to splayed out.
-      float ang = mix(0.1, aPetal.x, open);
-      float c = cos(ang), s = sin(ang);
-      return vec3(x, y * c - z * s, y * s + z * c);
-    }
-    void gShape(inout vec3 p, inout vec3 n) {
-      float g = gGrowth();
-      float droop = uPlantA[gSlot()].y;
-      float swell = smoothstep(aWin.x, aWin.y, g);
-      float open = smoothstep(aWin.y, aWin.z, g) * (1.0 - droop * 0.3);
-      float size = swell * mix(0.36, 1.0, smoothstep(0.0, 0.6, open));
-      float u = p.x;
-      float t = p.y;
-      vec3 q = petalAt(u, t, open, aWin.w);
-      vec3 du = petalAt(u + 0.05, t, open, aWin.w) - petalAt(u - 0.05, t, open, aWin.w);
-      vec3 dt = petalAt(u, t + 0.04, open, aWin.w) - petalAt(u, max(t - 0.04, 0.0), open, aWin.w);
-      vec3 nn = cross(du, dt);
-      n = length(nn) > 1e-9 ? normalize(nn) : vec3(0.0, 0.0, 1.0);
-      p = q * max(size, 1e-4);
-      vBase = aBase;
-      vTip = aTip;
-      vMark = aMark;
-      vPetal = vec2(u, t);
-      vPattern = aMisc.y;
-      vSeed = aMisc.z;
-      vGlow = uPlantB[gSlot()].w;
-    }
-  `,
+  float petalWidth(float t, float shape) {
+    t = clamp(t, 0.0, 1.0);
+    float w;
+    if (shape < 0.5) w = pow(max(sin(3.14159 * t), 0.0), 0.5) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
+    else if (shape < 1.5) w = pow(max(sin(3.14159 * pow(t, 0.68)), 0.0), 0.9);
+    else if (shape < 2.5) w = pow(max(sin(3.14159 * t), 0.0), 0.45) * (1.0 + 0.1 * sin(t * 30.0 + aMisc.z * 6.0)) * mix(0.45, 1.0, smoothstep(0.0, 0.4, t));
+    else w = pow(max(sin(3.14159 * min(t * 1.04, 1.0)), 0.0), 0.42) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
+    return w;
+  }
+  vec3 petalAt(float u, float t, float open, float cup) {
+    float shape = aPetal.w;
+    float len = aPetal.y;
+    float w = petalWidth(t, shape) * aPetal.z * 0.5;
+    // A notch at the tip: the middle a little shorter than the sides.
+    if (shape > 2.5) t *= 1.0 - 0.16 * (1.0 - abs(u)) * smoothstep(0.55, 1.0, t);
+    float x = u * w;
+    // The length bends toward the front (−z) the more it's cupped, as an arc.
+    float arc = cup * (1.0 - open * 0.25) + 0.15;
+    float y = sin(arc * t) / arc * len;
+    float z = -(1.0 - cos(arc * t)) / arc * len;
+    // A shallow trough across it, and a frill at the edges.
+    z -= u * u * w * 0.35;
+    if (shape > 1.5 && shape < 2.5) z += sin(t * 26.0 + u * 2.0 + aMisc.z * 5.0) * 0.12 * w * abs(u) * t;
+    // Open on the hinge: from pointing up the flower's axis to splayed out.
+    float ang = mix(0.1, aPetal.x, open);
+    float c = cos(ang), s = sin(ang);
+    return vec3(x, y * c - z * s, y * s + z * c);
+  }
+  void petalShape(inout vec3 p, inout vec3 n) {
+    float g = gGrowth();
+    float droop = uPlantA[gSlot()].y;
+    float swell = smoothstep(aWin.x, aWin.y, g);
+    float open = smoothstep(aWin.y, aWin.z, g) * (1.0 - droop * 0.3);
+    float size = swell * mix(0.36, 1.0, smoothstep(0.0, 0.6, open));
+    float u = p.x;
+    float t = p.y;
+    vec3 q = petalAt(u, t, open, aWin.w);
+    vec3 du = petalAt(u + 0.05, t, open, aWin.w) - petalAt(u - 0.05, t, open, aWin.w);
+    vec3 dt = petalAt(u, t + 0.04, open, aWin.w) - petalAt(u, max(t - 0.04, 0.0), open, aWin.w);
+    vec3 nn = cross(du, dt);
+    n = length(nn) > 1e-9 ? normalize(nn) : vec3(0.0, 0.0, 1.0);
+    p = q * max(size, 1e-4);
+  }
+
   // A leaf: u across, t along. Folded while young, flat and arching once grown.
-  leaf: /* glsl */ `
-    attribute vec4 aLeaf;
-    attribute vec4 aWin;
-    attribute vec3 aColor;
-    varying vec3 vColor;
-    varying vec2 vLeafUv;
-    varying float vGlow;
-    float halfWidth(float t, float shape) {
-      t = clamp(t, 0.0, 1.0);
-      if (shape < 0.5) return pow(max(sin(3.14159 * t), 0.0), 0.75);
-      if (shape < 1.5) return pow(max(sin(3.14159 * pow(t, 0.55)), 0.0), 1.1);
-      if (shape < 2.5) return pow(max(sin(3.14159 * t), 0.0), 0.7) * (0.72 + 0.28 * abs(sin(t * 3.14159 * 3.0)));
-      if (shape < 3.5) return pow(max(sin(3.14159 * (0.2 + 0.8 * t)), 0.0), 0.6);
-      if (shape < 4.5) return pow(max(sin(3.14159 * pow(t, 0.7)), 0.0), 1.2);
-      return pow(max(sin(3.14159 * t), 0.0), 0.6);
-    }
-    vec3 leafAt(float u, float t, float unfurl, float arch) {
-      float w = halfWidth(t, aLeaf.z) * aLeaf.y * 0.5;
-      float x = u * w;
-      float len = aLeaf.x;
-      // A heart's two lobes sweep back past the stalk.
-      float back = aLeaf.z > 2.5 && aLeaf.z < 3.5 ? abs(u) * (1.0 - t) * 0.22 * len : 0.0;
-      float a = max(arch, 1e-3);
-      float y = sin(a * t) / a * len - back;
-      float z = -(1.0 - cos(a * t)) / a * len;
-      // Young, it's folded up along the midrib; grown, a little cupped.
-      z += abs(u) * w * mix(0.9, 0.12, unfurl);
-      return vec3(x, y, z);
-    }
-    void gShape(inout vec3 p, inout vec3 n) {
-      float g = gGrowth();
-      float droop = uPlantA[gSlot()].y;
-      float unfurl = smoothstep(aWin.x, aWin.y, g);
-      float arch = aLeaf.w * mix(0.3, 1.0, unfurl) + droop * 0.7;
-      float u = p.x;
-      float t = p.y;
-      vec3 q = leafAt(u, t, unfurl, arch);
-      vec3 du = leafAt(u + 0.05, t, unfurl, arch) - leafAt(u - 0.05, t, unfurl, arch);
-      vec3 dt = leafAt(u, t + 0.04, unfurl, arch) - leafAt(u, max(t - 0.04, 0.0), unfurl, arch);
-      vec3 nn = cross(du, dt);
-      n = length(nn) > 1e-9 ? normalize(nn) : vec3(0.0, 0.0, 1.0);
-      p = q * max(mix(0.12, 1.0, unfurl) * step(aWin.x, g), 1e-4);
-      vColor = aColor;
-      vLeafUv = vec2(u, t);
-      vGlow = uPlantB[gSlot()].w;
-    }
-  `,
-  // A stem: a short tapering tube, growing up its length.
-  stem: /* glsl */ `
-    attribute vec4 aWin;
-    attribute vec3 aColor;
-    varying vec3 vColor;
-    varying float vGlow;
-    void gShape(inout vec3 p, inout vec3 n) {
+  float leafWidth(float t, float shape) {
+    t = clamp(t, 0.0, 1.0);
+    if (shape < 0.5) return pow(max(sin(3.14159 * t), 0.0), 0.75);
+    if (shape < 1.5) return pow(max(sin(3.14159 * pow(t, 0.55)), 0.0), 1.1);
+    if (shape < 2.5) return pow(max(sin(3.14159 * t), 0.0), 0.7) * (0.72 + 0.28 * abs(sin(t * 3.14159 * 3.0)));
+    if (shape < 3.5) return pow(max(sin(3.14159 * (0.2 + 0.8 * t)), 0.0), 0.6);
+    if (shape < 4.5) return pow(max(sin(3.14159 * pow(t, 0.7)), 0.0), 1.2);
+    return pow(max(sin(3.14159 * t), 0.0), 0.6);
+  }
+  vec3 leafAt(float u, float t, float unfurl, float arch) {
+    float w = leafWidth(t, aLeaf.z) * aLeaf.y * 0.5;
+    float x = u * w;
+    float len = aLeaf.x;
+    // A heart's two lobes sweep back past the stalk.
+    float back = aLeaf.z > 2.5 && aLeaf.z < 3.5 ? abs(u) * (1.0 - t) * 0.22 * len : 0.0;
+    float a = max(arch, 1e-3);
+    float y = sin(a * t) / a * len - back;
+    float z = -(1.0 - cos(a * t)) / a * len;
+    // Young, it's folded up along the midrib; grown, a little cupped.
+    z += abs(u) * w * mix(0.9, 0.12, unfurl);
+    return vec3(x, y, z);
+  }
+  void leafShape(inout vec3 p, inout vec3 n) {
+    float g = gGrowth();
+    float droop = uPlantA[gSlot()].y;
+    float unfurl = smoothstep(aWin.x, aWin.y, g);
+    float arch = aLeaf.w * mix(0.3, 1.0, unfurl) + droop * 0.7;
+    float u = p.x;
+    float t = p.y;
+    vec3 q = leafAt(u, t, unfurl, arch);
+    vec3 du = leafAt(u + 0.05, t, unfurl, arch) - leafAt(u - 0.05, t, unfurl, arch);
+    vec3 dt = leafAt(u, t + 0.04, unfurl, arch) - leafAt(u, max(t - 0.04, 0.0), unfurl, arch);
+    vec3 nn = cross(du, dt);
+    n = length(nn) > 1e-9 ? normalize(nn) : vec3(0.0, 0.0, 1.0);
+    p = q * max(mix(0.12, 1.0, unfurl) * step(aWin.x, g), 1e-4);
+  }
+
+  void gShape(inout vec3 p, inout vec3 n) {
+    vPart = p.xy;
+    vBase = aBase;
+    vTip = aTip;
+    vMark = aMark;
+    vColor = aColor;
+    vPattern = aMisc.y;
+    vSeed = aMisc.z;
+    vGlow = uPlantB[gSlot()].w;
+    if (uKind < 0.5) petalShape(p, n);
+    else if (uKind < 1.5) leafShape(p, n);
+    else if (uKind < 2.5) {
+      // A stem: a short tapering tube, growing up its length.
       float grow = smoothstep(aWin.x, aWin.y, gGrowth());
       p.y *= max(grow, 1e-4);
       p.xz *= mix(0.45, 1.0, grow) * step(aWin.x, gGrowth());
-      vColor = aColor;
-      vGlow = uPlantB[gSlot()].w;
+    } else {
+      // The eye of a flower: a little dome of stamens, coming up as it opens.
+      p *= max(smoothstep(aWin.y, aWin.z, gGrowth()), 1e-4);
     }
-  `,
-  // The eye of a flower: a little dome of stamens, coming up as it opens.
-  eye: /* glsl */ `
-    attribute vec4 aWin;
-    attribute vec3 aColor;
-    varying vec3 vColor;
-    varying float vGlow;
-    void gShape(inout vec3 p, inout vec3 n) {
-      float open = smoothstep(aWin.y, aWin.z, gGrowth());
-      p *= max(open, 1e-4);
-      vColor = aColor;
-      vGlow = uPlantB[gSlot()].w;
-    }
-  `,
-};
+  }
+`;
 
-/** The colors, in the fragment shader: a petal's gradient and its markings; a leaf's veins. */
-const PAINT: Record<'petal' | 'leaf' | 'stem' | 'eye', string> = {
-  petal: /* glsl */ `
-    float h21(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-    vec3 petalColor() {
-      float u = vPetal.x;
-      float t = vPetal.y;
-      vec3 col = mix(vBase, vTip, smoothstep(0.08, 0.92, t));
-      // Fine veins along it, and a deeper flush at the very heart.
-      col *= 1.0 - 0.07 * smoothstep(0.6, 1.0, abs(sin(u * 22.0 + vSeed * 3.0)));
-      col *= mix(0.78, 1.0, smoothstep(0.0, 0.16, t));
-      float m = 0.0;
-      if (vPattern > 0.5 && vPattern < 1.5) {
-        // Stripes running out from the heart.
-        m = smoothstep(0.55, 0.9, abs(sin(u * 5.2 + 0.4 * sin(t * 6.0)))) * smoothstep(0.05, 0.25, t) * (1.0 - smoothstep(0.86, 1.0, t));
-      } else if (vPattern > 1.5 && vPattern < 2.5) {
-        // An edge of another color all round.
-        float e = min(1.0 - abs(u), (1.0 - t) * 2.6);
-        m = smoothstep(0.24, 0.1, e) * smoothstep(0.1, 0.3, t);
-      } else if (vPattern > 2.5) {
-        // Freckles, thickest toward the heart.
-        vec2 g = vec2(u * 5.0, t * 9.0);
-        vec2 c = floor(g);
-        vec2 f = fract(g) - (0.3 + 0.4 * vec2(h21(c + vSeed), h21(c + 7.7 + vSeed)));
-        float there = step(h21(c + 3.1 + vSeed), 0.75 - t * 0.5);
-        m = smoothstep(0.24, 0.14, length(f)) * there * smoothstep(0.04, 0.12, t);
-      }
-      return mix(col, vMark, m * 0.92);
+/** The colors, in the fragment shader: a petal's gradient and its markings; a leaf's veins; a stem or an eye just its color. */
+const PAINT = /* glsl */ `
+  uniform float uKind;
+  varying vec3 vBase;
+  varying vec3 vTip;
+  varying vec3 vMark;
+  varying vec3 vColor;
+  varying vec2 vPart;
+  varying float vPattern;
+  varying float vSeed;
+  varying float vGlow;
+  float h21(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+  vec3 petalColor() {
+    float u = vPart.x;
+    float t = vPart.y;
+    vec3 col = mix(vBase, vTip, smoothstep(0.08, 0.92, t));
+    // Fine veins along it, and a deeper flush at the very heart.
+    col *= 1.0 - 0.07 * smoothstep(0.6, 1.0, abs(sin(u * 22.0 + vSeed * 3.0)));
+    col *= mix(0.78, 1.0, smoothstep(0.0, 0.16, t));
+    float m = 0.0;
+    if (vPattern > 0.5 && vPattern < 1.5) {
+      // Stripes running out from the heart.
+      m = smoothstep(0.55, 0.9, abs(sin(u * 5.2 + 0.4 * sin(t * 6.0)))) * smoothstep(0.05, 0.25, t) * (1.0 - smoothstep(0.86, 1.0, t));
+    } else if (vPattern > 1.5 && vPattern < 2.5) {
+      // An edge of another color all round.
+      float e = min(1.0 - abs(u), (1.0 - t) * 2.6);
+      m = smoothstep(0.24, 0.1, e) * smoothstep(0.1, 0.3, t);
+    } else if (vPattern > 2.5) {
+      // Freckles, thickest toward the heart.
+      vec2 g = vec2(u * 5.0, t * 9.0);
+      vec2 c = floor(g);
+      vec2 f = fract(g) - (0.3 + 0.4 * vec2(h21(c + vSeed), h21(c + 7.7 + vSeed)));
+      float there = step(h21(c + 3.1 + vSeed), 0.75 - t * 0.5);
+      m = smoothstep(0.24, 0.14, length(f)) * there * smoothstep(0.04, 0.12, t);
     }
-  `,
-  leaf: /* glsl */ `
-    vec3 leafColor() {
-      float u = vLeafUv.x;
-      float t = vLeafUv.y;
-      vec3 col = vColor * mix(0.75, 1.1, t);
-      // A paler midrib and the side veins running out from it.
-      col = mix(col, col * 1.45 + 0.02, smoothstep(0.08, 0.0, abs(u)) * 0.6);
-      col *= 1.0 - 0.1 * smoothstep(0.75, 1.0, abs(sin((t - abs(u) * 0.35) * 26.0)));
-      return col;
-    }
-  `,
-  stem: '',
-  eye: '',
-};
+    return mix(col, vMark, m * 0.92);
+  }
+  vec3 leafColor() {
+    float u = vPart.x;
+    float t = vPart.y;
+    vec3 col = vColor * mix(0.75, 1.1, t);
+    // A paler midrib and the side veins running out from it.
+    col = mix(col, col * 1.45 + 0.02, smoothstep(0.08, 0.0, abs(u)) * 0.6);
+    col *= 1.0 - 0.1 * smoothstep(0.75, 1.0, abs(sin((t - abs(u) * 0.35) * 26.0)));
+    return col;
+  }
+`;
 
-type Kind = keyof typeof SHAPES;
+const KINDS = { petal: 0, leaf: 1, stem: 2, eye: 3 } as const;
+type Kind = keyof typeof KINDS;
 
 /** A MeshStandardMaterial (and its shadow) taught to grow, bend and color one kind of plant part. */
 function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
+  const uKind = { value: KINDS[kind] };
   const vertex = (s: { vertexShader: string }, depth: boolean) => {
     s.vertexShader = s.vertexShader
-      .replace('#include <common>', `#include <common>\n${BEND}\n${SHAPES[kind]}`)
+      .replace('#include <common>', `#include <common>\n${BEND}\n${SHAPE}`)
       .replace(
         '#include <beginnormal_vertex>',
         /* glsl */ `
@@ -416,18 +406,11 @@ function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
   };
   const mat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, ...opts });
   mat.onBeforeCompile = (s) => {
-    Object.assign(s.uniforms, shared);
+    Object.assign(s.uniforms, shared, { uKind });
     vertex(s, false);
-    const varyings = SHAPES[kind]
-      .split('\n')
-      .filter((l) => l.trim().startsWith('varying'))
-      .join('\n');
     s.fragmentShader = s.fragmentShader
-      .replace('#include <common>', `#include <common>\n${varyings}\n${PAINT[kind]}`)
-      .replace(
-        '#include <color_fragment>',
-        kind === 'petal' ? 'diffuseColor.rgb = petalColor();' : kind === 'leaf' ? 'diffuseColor.rgb = leafColor();' : 'diffuseColor.rgb = vColor;',
-      )
+      .replace('#include <common>', `#include <common>\n${PAINT}`)
+      .replace('#include <color_fragment>', 'diffuseColor.rgb = uKind < 0.5 ? petalColor() : uKind < 1.5 ? leafColor() : vColor;')
       .replace(
         '#include <lights_fragment_end>',
         /* glsl */ `
@@ -440,19 +423,21 @@ function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
           #endif
           vec3 gL = directionalLights[0].direction;
           float gThrough = 0.35 * max(-dot(normal, gL), 0.0) + 0.9 * pow(max(dot(-geometryViewDir, gL), 0.0), 3.0);
-          totalEmissiveRadiance += diffuseColor.rgb * directionalLights[0].color * gSun * gThrough * ${kind === 'petal' ? '0.6' : kind === 'leaf' ? '0.55' : '0.0'};
+          float gThin = uKind < 0.5 ? 0.6 : uKind < 1.5 ? 0.55 : 0.0;
+          totalEmissiveRadiance += diffuseColor.rgb * directionalLights[0].color * gSun * gThrough * gThin;
         #endif
         totalEmissiveRadiance += vec3(0.16, 0.1, 0.03) * vGlow;
       `,
       );
   };
-  mat.customProgramCacheKey = () => `greenhouse-${kind}`;
+  // The same program for every kind: only uKind differs.
+  mat.customProgramCacheKey = () => 'greenhouse-plant';
   const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
   depth.onBeforeCompile = (s) => {
-    Object.assign(s.uniforms, shared);
+    Object.assign(s.uniforms, shared, { uKind });
     vertex(s, true);
   };
-  depth.customProgramCacheKey = () => `greenhouse-${kind}-depth`;
+  depth.customProgramCacheKey = () => 'greenhouse-plant-depth';
   return { mat, depth };
 }
 

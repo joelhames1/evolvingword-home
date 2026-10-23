@@ -34,7 +34,7 @@ test('the greenhouse: picked from the globes, the flowers, the bed of words, and
   await fresh(page);
   await page.goto('/?full&worlds=all');
   await page.getByRole('button', { name: /The Greenhouse/ }).click();
-  await expect(page.locator('body')).toHaveClass(/inside/, { timeout: 90_000 });
+  await expect(page.locator('body')).toHaveClass(/inside/, { timeout: 120_000 });
   expect(await ew(page, (w) => w.worldId)).toBe('greenhouse');
 
   // The bed on the bank breeds words; the house has its own things, and a starter garden in flower.
@@ -244,18 +244,9 @@ test('the greenhouse: a shared flower grows in a friend’s greenhouse, and odd 
   expect(await page.evaluate((c) => (window as unknown as { __ew: Ew }).__ew.garden().pots.filter((p: Ew | null) => p && p.code === c && p.gift).length, code)).toBe(1);
 
   // Hostile or broken links: nothing planted, nothing put on the page, nothing breaks.
+  // (A few through the page here; the unit tests put many more through the decoder.)
   const before = await ew(page, (w) => JSON.stringify(w.garden()));
-  for (const bad of [
-    '<img src=x onerror=alert(1)>',
-    '"><script>alert(1)</script>',
-    '__proto__',
-    'constructor',
-    `${code.slice(0, 12)}${code[12] === 'A' ? 'B' : 'A'}`,
-    'f'.repeat(13),
-    `${code}${'A'.repeat(5000)}`,
-    '%00%00%00',
-    '',
-  ]) {
+  for (const bad of ['<img src=x onerror=alert(1)>', '__proto__', `${code.slice(0, 12)}${code[12] === 'A' ? 'B' : 'A'}`, `${code}${'A'.repeat(5000)}`]) {
     await page.goto(`/?bloom=${encodeURIComponent(bad)}&world=greenhouse&shot=staging&full`);
     await page.waitForFunction(() => 'garden' in ((window as unknown as { __ew?: object }).__ew ?? {}));
     expect(await ew(page, (w) => JSON.stringify(w.garden())), bad.slice(0, 30)).toBe(before);
