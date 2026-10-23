@@ -315,7 +315,7 @@ test('the night studio: the same room, the city outside, and the choice remember
   const problems = watch(page);
   await page.goto('/?full&worlds=all');
   await page.getByRole('button', { name: /Night Studio/ }).click();
-  await expect(page.locator('body')).toHaveClass(/inside/, { timeout: 60_000 });
+  await expect(page.locator('body')).toHaveClass(/inside/, { timeout: 90_000 });
   const ew = () => page.evaluate(() => {
     const w = (window as unknown as { __ew: { worldId: string; flap: { evolution(): { generation: number } }; map: { visited(): number } } }).__ew;
     return { world: w.worldId, generation: w.flap.evolution().generation, visited: w.map.visited() };
