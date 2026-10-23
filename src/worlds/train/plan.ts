@@ -70,7 +70,7 @@ export const FURNITURE: Box[] = [
   [ROOM.x1 - 0.2, 0, -0.74, ROOM.x1, 1.26, 0.24],
   [ROOM.x1 - 0.12, 1.4, -0.66, ROOM.x1, 2.02, 0.04],
   // On the window wall: the lever, the brake handle, the horn's cord; the board over the window.
-  [0.94, 1.3, ROOM.z0, 1.4, 1.98, ROOM.z0 + 0.2],
+  [1.0, 1.3, ROOM.z0, 1.43, 1.98, ROOM.z0 + 0.2],
   [-1.24, 1.38, ROOM.z0, -0.86, 1.8, ROOM.z0 + 0.14],
   [-0.84, 1.62, ROOM.z0, -0.68, 2.3, ROOM.z0 + 0.16],
   [WINDOW.x0 - 0.08, 1.84, ROOM.z0, WINDOW.x1 + 0.08, 2.3, ROOM.z0 + 0.12],

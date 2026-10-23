@@ -13,7 +13,7 @@ import { ceilingAt, ROOM } from './plan';
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
 /** Where they are, on the window wall. */
-export const LEVER_AT = v(1.17, 1.4, ROOM.z0);
+export const LEVER_AT = v(1.235, 1.4, ROOM.z0);
 export const BRAKE_AT = v(-1.05, 1.6, ROOM.z0);
 export const CORD_AT = v(-0.76, 0, ROOM.z0 + 0.1);
 

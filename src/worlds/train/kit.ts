@@ -79,7 +79,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const controls = buildControls({ brass: car.materials.brass, iron: car.materials.iron });
   log('LAYING THE LINE', 55);
   const sky = buildSky(quality);
-  const land = buildLand({ journey, uniforms, flapTexture: board.texture });
+  // (On a slower computer, fewer trees and houses far off.)
+  const land = buildLand({ journey, uniforms, flapTexture: board.texture, detail: quality === 'high' ? 1 : 0.55 });
   const ticket = buildTicket();
   const routeMap = buildRouteMap(journey);
   const band = buildBand();
@@ -208,7 +209,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   };
   const brake = () => {
     if (!journey.brake()) {
-      say(journey.phase === 'dwell' ? "WE'RE STANDING IN A STATION" : 'ALREADY STOPPING');
+      const p = journey.phase;
+      say(p === 'dwell' ? "WE'RE STANDING IN A STATION" : p === 'braking' ? 'ALREADY STOPPING' : p === 'still' ? "STOPPED · WE'LL BE OFF IN A MINUTE" : p === 'easing' ? 'THE BRAKES ARE COMING OFF' : "WE'RE BARELY MOVING");
       return false;
     }
     controls.setBrake(true);
@@ -404,6 +406,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       }
       // (A shaded lamp a hand's breadth over the table: much gentler than the desk's.)
       if (spot && fill) deskLamp = { spot, fill, base: [1.15, 0.45] };
+      // Its shadows needn't be as fine on a slower computer.
+      if (spot && quality !== 'high') spot.shadow.mapSize.set(512, 512);
       // The rest of the table.
       s.watch.group.position.copy(ON_TABLE.watch);
       s.watch.group.rotation.y = -0.2;
@@ -502,7 +506,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         signal: { pos: crtAt.clone().add(v(0, 0.01, 0.54)), target: crtAt.clone().add(v(0, -0.004, 0)), fov: 31, lean: 0.012, near: 0.02 },
         treats: { pos: v(0.53, 1.12, -0.86), target: v(0.53, 0.8, -1.36), fov: 34, lean: 0.015, near: 0.02, shift: CARD },
         ticket: { pos: ON_TABLE.ticket.clone().add(v(0.0, 0.3, 0.17)), target: ON_TABLE.ticket.clone().add(v(0, 0, -0.005)), fov: 30, lean: 0.008, near: 0.02, shift: CARD },
-        lever: { pos: v(0.82, 1.64, -0.5), target: LEVER_AT.clone().add(v(0, 0.26, 0.05)), fov: 40, lean: 0.015, shift: CARD },
+        lever: { pos: v(0.9, 1.64, -0.52), target: LEVER_AT.clone().add(v(0, 0.26, 0.05)), fov: 40, lean: 0.015, shift: CARD },
         brake: { pos: v(-0.66, 1.58, -0.9), target: BRAKE_AT.clone().add(v(0, 0, 0.05)), fov: 32, lean: 0.015, shift: CARD },
         // Out by the line on the corridor's side, low, behind our wheels, looking along them: the sparks fly at you.
         sparks: { pos: v(-5.2, 0.05, 4.9), target: v(0.6, -0.9, 0.6), fov: 46, lean: 0.01 },
@@ -513,7 +517,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         diplomas: { pos: v(-0.6, 1.56, CORRIDOR.z1 - 0.16), target: v(-0.6, 1.56, CORRIDOR.z0), fov: 50, lean: 0.015, shift: CARD },
         places: { pos: v(1.12, 1.5, -0.5), target: v(ROOM.x0, 1.1, -0.6), fov: 54, lean: 0.04 },
         map: { pos: v(-0.22, 1.58, -0.62), target: v(ROOM.x0, 1.58, -0.62), fov: 42, lean: 0.015, shift: CARD },
-        route: { pos: v(-0.6, 1.16, -0.62), target: v(ROOM.x0, 1.09, -0.62), fov: 40, lean: 0.01 },
+        route: { pos: v(-0.18, 1.16, -0.62), target: v(ROOM.x0, 1.09, -0.62), fov: 46, lean: 0.01, shift: CARD },
         shoes: { pos: v(-0.2, 0.62, -0.18), target: s.shoes.group.position.clone().add(v(0, 0.06, 0)), fov: 40, lean: 0.01, near: 0.02, shift: CARD },
       };
     },
@@ -553,6 +557,17 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     },
 
     frame({ t, dt, camera, renderer, ready, shot }) {
+      if (!lastRenderer) {
+        // Every shader the land and the brakes will need, compiled now while we're still at the gate,
+        // rather than when the first city or the first emergency stop comes along and stalls a frame.
+        const warm = new THREE.Group();
+        const tri = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, -500, 0, 1, -500, 0, 0, -500, 1], 3));
+        tri.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
+        for (const m of land.materials) warm.add(new THREE.Mesh(tri, m));
+        renderer.compile(warm, camera, scene);
+        renderer.compile(sparks.group, camera, scene);
+        tri.dispose();
+      }
       lastRenderer = renderer;
       // Counting draw calls for the tests: the composer draws in several passes, so add them up over a frame.
       if (!renderer.info.autoReset) {
@@ -640,7 +655,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       if (now < flickerUntil && !reduced) {
         if (now > flickerNext) {
           flickerNext = now + 40 + Math.random() * 70;
-          flicker = Math.random() < 0.4 ? 0.2 + Math.random() * 0.3 : 0.85 + Math.random() * 0.15;
+          // A dip as the current gaps at the points, not a blackout.
+          flicker = Math.random() < 0.35 ? 0.5 + Math.random() * 0.25 : 0.88 + Math.random() * 0.12;
         }
       } else flicker = 1;
       car.setLamps(flicker);
@@ -769,6 +785,44 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     },
 
     debug: {
+      /**
+       * For the tests: every vertex outside and in the car has a place and a normal that are real
+       * numbers, and every normal has a length (a zero one turns to not-a-number in the shaders and flickers).
+       */
+      badGeometry: () => {
+        const out: string[] = [];
+        const check = (root: THREE.Object3D) =>
+          root.traverse((o) => {
+            const m = o as THREE.Mesh;
+            if (!m.isMesh || !m.geometry) return;
+            const pos = m.geometry.attributes.position;
+            const nrm = m.geometry.attributes.normal;
+            if (!pos) return;
+            for (let i = 0; i < pos.count; i++)
+              if (!Number.isFinite(pos.getX(i)) || !Number.isFinite(pos.getY(i)) || !Number.isFinite(pos.getZ(i))) {
+                out.push(`${m.name || m.parent?.name || 'mesh'}: position ${i}`);
+                return;
+              }
+            const needs = (m.material as THREE.Material & { isShaderMaterial?: boolean }).isShaderMaterial ? !!nrm : !(m.material as THREE.Material & { isMeshBasicMaterial?: boolean }).isMeshBasicMaterial;
+            if (!needs) return;
+            if (!nrm) {
+              out.push(`${m.name || m.parent?.name || 'mesh'}: no normals`);
+              return;
+            }
+            for (let i = 0; i < nrm.count; i++) {
+              const l = Math.hypot(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
+              if (!(l > 0.5 && l < 1.5)) {
+                out.push(`${m.name || m.parent?.name || 'mesh'}: normal ${i} is ${l}`);
+                return;
+              }
+            }
+          });
+        check(land.group);
+        check(car.group);
+        check(consist.group);
+        check(controls.group);
+        return out;
+      },
       journey,
       land,
       car,

@@ -140,6 +140,8 @@ test('the night train: the lever picks the line, the brake stops us, the window 
   await page.goto('/?shot=desk&full&world=train');
   await page.waitForFunction(() => 'jump' in ((window as unknown as { __ew?: object }).__ew ?? {}), null, { timeout: 90_000 });
   await settled(page);
+  // Never through the panelling, nor through glass: out by the door and the corridor window that's let down.
+  await watchCamera(page);
 
   // Out in the fields with a junction coming: the lever's lamp is lit.
   await page.evaluate(() => (window as unknown as Win).__ew.jump('fields', 900));
@@ -163,9 +165,13 @@ test('the night train: the lever picks the line, the brake stops us, the window 
   await settled(page);
   await clickOn(page, 'controls.brake');
   await page.waitForFunction(() => (window as unknown as Win).__ew.state().phase === 'braking', null, { timeout: 30_000 });
-  // Over to the window to watch the sparks fly.
+  // Out by the line to watch the sparks fly: hot streaks off the wheels.
   await settled(page);
   expect(await current(page)).toBe('sparks');
+  await page.waitForFunction(() => (window as unknown as Win).__ew.sparksLive() > 10, null, { timeout: 30_000 });
+  // Pulling it again while it's stopping does nothing but say so.
+  await page.evaluate(() => (window as unknown as Win).__ew.brake());
+  await expect(page.locator('#hints')).toContainText('ALREADY STOPPING', { timeout: 10_000 });
   await page.evaluate(() => (window as unknown as Win).__ew.fast(6));
   await page.waitForFunction(() => (window as unknown as Win).__ew.state().phase === 'still', null, { timeout: 90_000 });
   expect((await state(page)).v).toBe(0);
@@ -177,6 +183,19 @@ test('the night train: the lever picks the line, the brake stops us, the window 
     null,
     { timeout: 90_000 },
   );
+  await page.evaluate(() => (window as unknown as Win).__ew.fast(1));
+  // Away again: back in from the line, to the brake where we were.
+  await settled(page);
+  expect(await current(page)).toBe('brake');
+  expect(await page.evaluate(() => (window as unknown as Win).__ew.sparksLive())).toBe(0);
+
+  // In a tunnel there's no room by the line: it's nose to the glass instead.
+  await page.evaluate(() => (window as unknown as Win).__ew.jump('pass', 1150, 19));
+  await page.evaluate(() => (window as unknown as Win).__ew.brake());
+  await settled(page);
+  expect(await current(page)).toBe('window');
+  await page.evaluate(() => (window as unknown as Win).__ew.fast(8));
+  await page.waitForFunction(() => (window as unknown as Win).__ew.state().phase === 'running', null, { timeout: 90_000 });
   await page.evaluate(() => (window as unknown as Win).__ew.fast(1));
 
   // The window drops open, and goes back up.
@@ -198,6 +217,59 @@ test('the night train: the lever picks the line, the brake stops us, the window 
   // The fields and the branch we took are stamped on it.
   const stamps = await page.evaluate(() => (window as unknown as Win).__ew.ticket.state().stamps);
   expect(stamps).toEqual(expect.arrayContaining(['fields', choice]));
+  expect(await page.evaluate(() => (window as unknown as Win).__ew.inSolid)).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
+test('the night train: every surface out there and in the car has real normals, in every landscape', async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 960, height: 600 });
+  const problems = watch(page);
+  await page.goto('/?shot=window&full&world=train');
+  await page.waitForFunction(() => 'badGeometry' in ((window as unknown as { __ew?: object }).__ew ?? {}), null, { timeout: 90_000 });
+  // Each landscape, and the stations, the crossing, the viaduct, the sheds and the tunnel in them.
+  for (const [land, at] of [
+    ['fields', 820],
+    ['gorge', 800],
+    ['pass', 400],
+    ['pass', 1300],
+    ['pass', 2000],
+    ['city', 1050],
+    ['lake', 1100],
+  ] as const) {
+    await page.evaluate(({ land, at }) => (window as unknown as Win).__ew.jump(land, at), { land, at });
+    await page.waitForTimeout(500);
+    expect(await page.evaluate(() => (window as unknown as Win).__ew.badGeometry()), `${land} ${at}`).toEqual([]);
+  }
+  expect(problems).toEqual([]);
+});
+
+test('the night train: a ticket that was tampered with, or no storage at all', async ({ page }) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 960, height: 600 });
+  const problems = watch(page);
+  // Junk where the ticket's kept: a fresh one, and no errors.
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem('ew.test.blocked')) localStorage.setItem('ew.train.ticket', '{"v":1,"holes":[{"x":"<img src=x>","y":1e999}],"stamps":["moon"]}');
+  });
+  await page.goto('/?shot=ticket&full&world=train');
+  await page.waitForFunction(() => 'ticket' in ((window as unknown as { __ew?: object }).__ew ?? {}), null, { timeout: 90_000 });
+  const fresh = await page.evaluate(() => (window as unknown as Win).__ew.ticket.state());
+  expect(fresh.holes).toEqual([]);
+  expect(fresh.stamps.every((s: string) => ['fields', 'gorge', 'pass', 'city', 'lake'].includes(s))).toBe(true);
+  // Storage that throws at every touch: the ticket still punches, it just won't remember.
+  await page.evaluate(() => sessionStorage.setItem('ew.test.blocked', '1'));
+  await page.addInitScript(() => {
+    const no = () => {
+      throw new DOMException('blocked', 'SecurityError');
+    };
+    Object.defineProperty(window, 'localStorage', { get: no, configurable: true });
+  });
+  await page.goto('/?shot=ticket&full&world=train');
+  await page.waitForFunction(() => 'ticket' in ((window as unknown as { __ew?: object }).__ew ?? {}), null, { timeout: 90_000 });
+  await settled(page);
+  expect(await page.evaluate(() => (window as unknown as Win).__ew.punch())).toBe(true);
+  expect(await page.evaluate(() => (window as unknown as Win).__ew.ticket.state().holes.length)).toBe(1);
   expect(problems).toEqual([]);
 });
 

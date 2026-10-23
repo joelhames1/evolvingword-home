@@ -53,6 +53,34 @@ const fillScreen = (globe: HTMLElement) => {
 /** The weather running in each globe, stopped once a world takes over. */
 const skies: { stop(): void }[] = [];
 
+/** A lamp's streak for the night train's globe: a soft bar fading out behind, in one color, drawn once. */
+const streaks = new Map<string, HTMLCanvasElement>();
+function streakOf(rgb: string) {
+  let c = streaks.get(rgb);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 16;
+  const g = c.getContext('2d')!;
+  const along = g.createLinearGradient(0, 0, 64, 0);
+  along.addColorStop(0, `rgba(${rgb},1)`);
+  along.addColorStop(0.08, `rgba(${rgb},1)`);
+  along.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = along;
+  g.fillRect(0, 0, 64, 16);
+  // Soft top and bottom edges.
+  g.globalCompositeOperation = 'destination-in';
+  const across = g.createLinearGradient(0, 0, 0, 16);
+  across.addColorStop(0, 'rgba(0,0,0,0)');
+  across.addColorStop(0.35, 'rgba(0,0,0,1)');
+  across.addColorStop(0.65, 'rgba(0,0,0,1)');
+  across.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = across;
+  g.fillRect(0, 0, 64, 16);
+  streaks.set(rgb, c);
+  return c;
+}
+
 /** Snow drifting, rain slanting, morning mist or falling petals, inside one globe. */
 function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
   const g = canvas.getContext('2d')!;
@@ -235,17 +263,12 @@ function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
         const y = (0.52 + b.y * 0.36 - near * 0.06) * h;
         const len = Math.max(w / 240, speed * w * 0.28);
         const tw = 0.75 + 0.25 * Math.sin(now / 300 + b.p * 7);
-        const tint = b.leaf ? '255,236,200' : b.p > 6 ? '255,90,70' : '255,190,110';
-        const streak = g.createLinearGradient(b.x * w, y, b.x * w + len, y);
-        streak.addColorStop(0, `rgba(${tint},${(0.35 + near * 0.55) * tw})`);
-        streak.addColorStop(1, `rgba(${tint},0)`);
-        g.strokeStyle = streak;
-        g.lineWidth = (0.6 + near * 2.4) * (w / 320);
-        g.lineCap = 'round';
-        g.beginPath();
-        g.moveTo(b.x * w, y);
-        g.lineTo(b.x * w + len, y);
-        g.stroke();
+        // Each streak a little fading bar drawn once per color and stretched into place (nothing made each frame).
+        const sprite = streakOf(b.leaf ? '255,236,200' : b.p > 6 ? '255,90,70' : '255,190,110');
+        const lw = (0.6 + near * 2.4) * (w / 320) * 1.6;
+        g.globalAlpha = Math.min(1, (0.35 + near * 0.55) * tw);
+        g.drawImage(sprite, b.x * w - lw * 0.3, y - lw / 2, len + lw * 0.3, lw);
+        g.globalAlpha = 1;
       } else {
         // Petals and the odd olive leaf, tumbling and side-slipping as they fall.
         b.y += dt * (0.045 + b.s * 0.035) * (1 - stir * 1.6);

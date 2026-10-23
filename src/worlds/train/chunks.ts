@@ -54,6 +54,8 @@ export interface Land {
   ground(u: number, z: number): number;
   pieces(): number;
   clock: ReturnType<typeof buildClock>;
+  /** Every material the land is drawn with, for compiling them all before they're first needed. */
+  materials: THREE.Material[];
 }
 
 /**
@@ -85,7 +87,7 @@ function halves(m: Mesher): THREE.BufferGeometry[] {
   });
 }
 
-export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; flapTexture: THREE.Texture }): Land {
+export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; flapTexture: THREE.Texture; detail?: number }): Land {
   const { journey, uniforms } = opts;
   const group = new THREE.Group();
   group.name = 'land';
@@ -296,6 +298,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       sweeps,
       fixtures,
       free,
+      detail: opts.detail ?? 1,
       mine(leg, u, salt) {
         if (u < u0 || u >= u1) return false;
         const w = weight(leg, u);
@@ -379,6 +382,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     group,
     clock,
     ground,
+    materials: [...Object.values(mats), flapMat, clockMat],
     update(s, camera, renderer, facing = 0) {
       const k0 = Math.floor((s - BEHIND) / CHUNK);
       const k1 = Math.floor((s + AHEAD) / CHUNK);

@@ -60,6 +60,8 @@ export interface Build {
   mine(leg: Leg, u: number, salt: number): boolean;
   /** Clear of the other lines at the junctions, by r meters? */
   free(u: number, z: number, r: number): boolean;
+  /** How much of what's far off to put in: 1, or less on a slower computer. */
+  detail: number;
 }
 
 const C = (hex: string) => new THREE.Color(hex);
@@ -141,11 +143,13 @@ function house(b: Build, u: number, z: number, opts: { w: number; d: number; h: 
     for (const floor of opts.h > 5 ? [1.4, 4.2] : [1.4]) {
       const lit = hash(i, Math.round(floor), opts.seed) < opts.lit;
       const along = (i - (n - 1) / 2) * 2.6;
-      const out = (opts.d / 2 + 0.03) * face;
+      // Off the wall by more the further it is from the line, so far off it doesn't flicker into the wall;
+      // a long way off, only the lit ones show, as lights.
+      const out = (opts.d / 2 + 0.03 + Math.abs(z) * 0.0012) * face;
       const wx = lx + along * cos + out * sin;
       const wz = z - along * sin + out * cos;
       const color = lit ? (hash(i, 7, opts.seed) < 0.15 ? LIT.tv : LIT.warm) : DARK.glass;
-      b.decor.add(SHAPES.quad, place(wx, y + 0.3 + floor, wz, 0.9, 1.2, 1, turn + (face < 0 ? Math.PI : 0)), DARK.glass, lit ? color : undefined);
+      if (Math.abs(z) < 450) b.decor.add(SHAPES.quad, place(wx, y + 0.3 + floor, wz, 0.9, 1.2, 1, turn + (face < 0 ? Math.PI : 0)), DARK.glass, lit ? color : undefined);
       if (lit && Math.abs(z) > 25) b.lights.push({ pos: new THREE.Vector3(wx, y + 0.3 + floor, wz), color: color.clone().multiplyScalar(0.16), size: 0.7 });
     }
   }
@@ -263,7 +267,7 @@ function scatter(b: Build, leg: Leg, cell: number, zFrom: number, zTo: number, s
       const u = leg.start + (i + hash(i, j, leg.seed + salt)) * cell;
       const z = (j + hash(j, i, leg.seed + salt * 3)) * cell;
       if (z < zFrom || z > zTo) continue;
-      if (Math.abs(z) > near && hash(i * 5, j * 3, leg.seed + salt * 11) > Math.pow(near / Math.abs(z), 1.25)) continue;
+      if (Math.abs(z) > near && hash(i * 5, j * 3, leg.seed + salt * 11) > Math.pow(near / Math.abs(z), 1.25) * b.detail) continue;
       if (!b.mine(leg, u, salt + i * 7 + j * 13) || !b.free(u, z, 5)) continue;
       put(u, z, hash(i * 3, j * 5, leg.seed + salt * 7), i, j);
     }
@@ -368,9 +372,15 @@ function crossing(b: Build, leg: Leg, c: number) {
       const ya = b.ground(c, za) + 0.06;
       const yb = b.ground(c, zb) + 0.06;
       const v = (u: number, y: number, z: number) => new THREE.Vector3(x(b, u), y, z);
-      b.decor.quad(v(c - 3.4, ya, za), v(c + 3.4, ya, za), v(c + 3.4, yb, zb), v(c - 3.4, yb, zb), COLORS.asphalt);
-      // A white line down the middle, broken.
-      if (i % 2 === 0) b.decor.quad(v(c - 0.06, ya + 0.01, za), v(c + 0.06, ya + 0.01, za), v(c + 0.06, yb + 0.01, zb), v(c - 0.06, yb + 0.01, zb), DARK.cream.clone().multiplyScalar(0.7));
+      // The road either side of a white line down the middle, broken: side by side, never one laid over
+      // another (that flickers from far off).
+      const mid = i % 2 === 0 ? DARK.cream.clone().multiplyScalar(0.7) : COLORS.asphalt;
+      for (const [a, e, col] of [
+        [c - 3.4, c - 0.06, COLORS.asphalt],
+        [c - 0.06, c + 0.06, mid],
+        [c + 0.06, c + 3.4, COLORS.asphalt],
+      ] as const)
+        b.decor.quad(v(a, ya, za), v(e, ya, za), v(e, yb, zb), v(a, yb, zb), col);
     }
     // Timber decking between the rails.
     b.decor.add(SHAPES.box, place(x(b, c), RAIL_TOP - 0.05, 0, 6.8, 0.1, 4.6), DARK.wood);

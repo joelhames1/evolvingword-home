@@ -34,7 +34,7 @@ export function nightUniforms(): DaylightUniforms {
     uRim: { value: new THREE.Color('#b9cdf5').multiplyScalar(1.1) },
     // Where the moon is, for the haze to glow round it.
     uMoonDir: { value: MOON_DIR.clone() },
-    uMoonGlow: { value: new THREE.Color('#6f84b4').multiplyScalar(0.26) },
+    uMoonGlow: { value: new THREE.Color('#6f84b4').multiplyScalar(0.18) },
     // How much of the moon and the sky reach the line: none deep in a tunnel.
     uMoonK: { value: 1 },
     // The platform lamps of the station near us: the world x of one of them, the stretch they run
@@ -192,7 +192,8 @@ const VERT = /* glsl */ `
     #endif
     vec4 w = modelMatrix * local;
     vWorld = w.xyz;
-    vNrm = normalize(mat3(modelMatrix) * nrm);
+    // (Made unit length in the fragment shader, safely: a zero normal mustn't become not-a-number.)
+    vNrm = mat3(modelMatrix) * nrm;
     vUv = uv;
     gl_Position = projectionMatrix * viewMatrix * w;
   }

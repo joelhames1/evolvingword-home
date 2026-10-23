@@ -120,7 +120,7 @@ export interface TrainBand extends Band {
 }
 
 /** How much louder the band plays than the shared buses would have it. */
-const BAND_GAIN = 1.9;
+const BAND_GAIN = 1.5;
 
 export function buildBand(): TrainBand {
   let kit: SoundKit | null = null;
@@ -513,7 +513,7 @@ export function buildBand(): TrainBand {
     const now = kit.ctx.currentTime;
     const v = Math.max(0, w.v);
     const sp = Math.min(1.2, v / 24);
-    roll.gain.setTargetAtTime(0.17 * sp * (1 + windowOpen * 0.7) * (1 - tunnel * 0.3), now, 0.3);
+    roll.gain.setTargetAtTime(0.14 * sp * (1 + windowOpen * 0.7) * (1 - tunnel * 0.3), now, 0.3);
     rollTone.frequency.setTargetAtTime(140 + v * 14 + windowOpen * 300, now, 0.3);
     wind.gain.setTargetAtTime(windowOpen * (0.05 + sp * 0.16) * (1 - tunnel * 0.4), now, 0.25);
     windTone.frequency.setTargetAtTime(500 + v * 30, now, 0.4);
@@ -714,7 +714,7 @@ export function buildBand(): TrainBand {
       const e = ECHOES[where];
       // Far up at the front: muffled, the high note then the low one.
       const out = ctx.createGain();
-      out.gain.value = where === 'tunnel' ? 0.32 : 0.2;
+      out.gain.value = where === 'tunnel' ? 0.24 : 0.18;
       const far = ctx.createBiquadFilter();
       far.type = 'lowpass';
       far.frequency.value = 1700;
