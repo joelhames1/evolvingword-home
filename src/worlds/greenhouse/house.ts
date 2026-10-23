@@ -226,9 +226,9 @@ export function buildHouse(quality: 'high' | 'low'): House {
   group.add(sill);
   const { door } = HOUSE;
   for (const [x, za, zb] of [
-    [x0, kneeOut, back],
-    [x1, kneeOut, door.z - door.half],
-    [x1, door.z + door.half, back],
+    [x1, kneeOut, back],
+    [x0, kneeOut, door.z - door.half],
+    [x0, door.z + door.half, back],
   ] as const) {
     const len = zb - za;
     const end = new THREE.Mesh(new THREE.BoxGeometry(0.3, knee - 0.05, len), endMat);
@@ -313,8 +313,8 @@ export function buildHouse(quality: 'high' | 'low'): House {
     return pts;
   };
   for (const [x, withDoor] of [
-    [x0, false],
-    [x1, true],
+    [x0, true],
+    [x1, false],
   ] as const) {
     const shape = new THREE.Shape(outline(withDoor));
     const g = new THREE.ShapeGeometry(shape).toNonIndexed();
@@ -398,7 +398,7 @@ export function buildHouse(quality: 'high' | 'low'): House {
   for (const x of [x0, x1]) {
     const into = v(x < 0 ? 1 : -1, 0, 0);
     for (let z = front + 0.6; z < back - 0.05; z += 0.6) {
-      if (x === x1 && Math.abs(z - door.z) < door.half + 0.03) continue;
+      if (x === x0 && Math.abs(z - door.z) < door.half + 0.03) continue;
       ironParts.push(beam(v(x, knee, z).addScaledVector(into, 0.02), v(x, roofAbove(z), z).addScaledVector(into, 0.02), 0.03, 0.04, into));
     }
     ironParts.push(beam(v(x, HOUSE.bend, front).addScaledVector(into, 0.025), v(x, HOUSE.bend, back).addScaledVector(into, 0.025), 0.05, 0.05, v(0, 1, 0)));
@@ -406,8 +406,8 @@ export function buildHouse(quality: 'high' | 'low'): House {
   // The door frame, and the door itself, open out into the garden.
   const dz0 = door.z - door.half;
   const dz1 = door.z + door.half;
-  for (const z of [dz0, dz1]) ironParts.push(beam(v(x1, 0, z), v(x1, door.h + 0.04, z), 0.08, 0.08, v(1, 0, 0)));
-  ironParts.push(beam(v(x1, door.h, dz0 - 0.04), v(x1, door.h, dz1 + 0.04), 0.08, 0.08, v(1, 0, 0)));
+  for (const z of [dz0, dz1]) ironParts.push(beam(v(x0, 0, z), v(x0, door.h + 0.04, z), 0.08, 0.08, v(1, 0, 0)));
+  ironParts.push(beam(v(x0, door.h, dz0 - 0.04), v(x0, door.h, dz1 + 0.04), 0.08, 0.08, v(1, 0, 0)));
   // Tie rods across the span at each rib, with a ring in the middle: what keeps the roof from spreading.
   for (let x = x0 + bay; x < x1 - 1e-6; x += bay) {
     const a = v(x, roofY0(), HOUSE.eave.z - 0.05);
@@ -431,8 +431,8 @@ export function buildHouse(quality: 'high' | 'low'): House {
 
   // The door, glazed, swung out to the garden on its hinges at the front side of the frame.
   const doorGroup = new THREE.Group();
-  doorGroup.position.set(x1 + 0.04, 0, dz0 + 0.02);
-  doorGroup.rotation.y = -1.25;
+  doorGroup.position.set(x0 - 0.04, 0, dz0 + 0.02);
+  doorGroup.rotation.y = 1.25;
   const dw = dz1 - dz0 - 0.04;
   const doorParts: THREE.BufferGeometry[] = [];
   for (const z of [0.03, dw - 0.03]) doorParts.push(beam(v(0, 0.02, z), v(0, door.h - 0.04, z), 0.05, 0.06, v(1, 0, 0)));
@@ -450,7 +450,7 @@ export function buildHouse(quality: 'high' | 'low'): House {
   doorGlass.renderOrder = 2;
   doorGroup.add(doorGlass);
   const knob = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 8), new THREE.MeshStandardMaterial({ color: '#b08a4a', metalness: 0.9, roughness: 0.3 }));
-  knob.position.set(0.04, 1.0, dw - 0.08);
+  knob.position.set(-0.04, 1.0, dw - 0.08);
   doorGroup.add(knob);
   group.add(doorGroup);
 

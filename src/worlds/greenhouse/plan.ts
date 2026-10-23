@@ -29,12 +29,12 @@ export const HOUSE = {
   wallTop: 4.3,
   /** Ribs every so far along the house. */
   bay: 1.2,
-  /** The door, in the right-hand end: its middle (z), half its width, its height. */
+  /** The door, in the left-hand end (toward the sun): its middle (z), half its width, its height. */
   door: { z: 0.55, half: 0.5, h: 2.2 },
 };
 
-/** Toward the sun: low over the garden, ahead and to the left of the desk. Golden hour. */
-export const SUN = v(-Math.sin(0.86) * Math.cos(0.25), Math.sin(0.25), -Math.cos(0.86) * Math.cos(0.25)).normalize();
+/** Toward the sun: low over the garden, off to the left of the desk, so its light rakes along the house. Golden hour. */
+export const SUN = v(-Math.sin(1.18) * Math.cos(0.27), Math.sin(0.27), -Math.cos(1.18) * Math.cos(0.27)).normalize();
 
 /** The control point of the curved eave (a quadratic, tangent to the upright glass and the roof). */
 const eaveControl = () => {
@@ -78,6 +78,8 @@ export const STAGING = {
 };
 /** Pots on the staging. */
 export const POTS = 16;
+/** The little round table the show plant stands on, by the prizes. */
+export const SHOW_STAND = { r: 0.2, h: 0.8 };
 /** Where each pot stands (its foot): 0..7 the front tier left to right, 8..15 the back; 16 a gift waiting on the potting bench; 17 the prize plant at the show. */
 export const POT_AT = [
   ...Array.from({ length: POTS }, (_, i) => {
@@ -85,12 +87,12 @@ export const POT_AT = [
     return v(tier.x + (i % 8) * STAGING.pitch, tier.y, (tier.z0 + tier.z1) / 2);
   }),
   v(-1.5, 0.76, -1.78),
-  v(4.75, 0.95, 2.28),
+  v(2.12, 0.8, 2.42),
 ];
 export const GIFT_POT = 16;
 export const SHOW_POT = 17;
 /** A pot: its height and the radius of its rim. */
-export const POT = { h: 0.15, r: 0.085 };
+export const POT = { h: 0.17, r: 0.098 };
 
 /** The bench across the aisle from the staging, for ferns, and the tree fern by the door. */
 export const FERNS = { x0: 2.3, x1: 5.85, z0: -2.1, z1: -1.2, y: 0.78 };
@@ -132,7 +134,7 @@ export const BLOCKS: [number, number, number, number, number, number][] = [
   [WALL.shelf - 0.8, 0, 2.45, WALL.shelf + 0.8, 2.15, 2.8],
   [WALL.drawers - 0.5, 0, 2.3, WALL.drawers + 0.5, 1.7, 2.8],
   [WALL.honors - 1.35, 1.25, 2.6, WALL.honors + 1.35, 2.15, 2.8],
-  [POT_AT[SHOW_POT].x - 0.35, 0, POT_AT[SHOW_POT].z - 0.35, POT_AT[SHOW_POT].x + 0.35, 1.75, 2.8],
+  [POT_AT[SHOW_POT].x - 0.3, 0, POT_AT[SHOW_POT].z - 0.3, POT_AT[SHOW_POT].x + 0.3, 1.85, 2.8],
 ];
 
 /** Hanging baskets under the roof: their middle and how far their trails reach. */
@@ -148,8 +150,8 @@ const inBox = (p: THREE.Vector3, b: (typeof BLOCKS)[number], pad = 0) => p.x > b
 /** In the house's own footprint (between its glass and its brick), give or take. */
 const underRoof = (p: THREE.Vector3, pad = 0) => p.x > HOUSE.x0 - pad && p.x < HOUSE.x1 + pad && p.z > HOUSE.front - pad && p.z < HOUSE.back + pad;
 
-/** The doorway in the right-hand end, give or take `pad`. */
-const inDoorway = (p: THREE.Vector3, pad = 0) => Math.abs(p.x - HOUSE.x1) < 0.6 && Math.abs(p.z - HOUSE.door.z) < HOUSE.door.half - pad && p.y < HOUSE.door.h - pad;
+/** The doorway in the left-hand end, give or take `pad`. */
+const inDoorway = (p: THREE.Vector3, pad = 0) => Math.abs(p.x - HOUSE.x0) < 0.6 && Math.abs(p.z - HOUSE.door.z) < HOUSE.door.half - pad && p.y < HOUSE.door.h - pad;
 
 /**
  * Is this point somewhere the camera mustn't be: in the glass or the brick, in
@@ -185,8 +187,8 @@ export function clear(a: THREE.Vector3, b: THREE.Vector3, via: THREE.Vector3[] =
 /** The aisle down the middle of the house: the line walks keep to, and its height. */
 export const AISLE = { z: 0.35, y: 1.6 };
 /** The doorway, just outside and just in. */
-export const DOOR_OUT = v(HOUSE.x1 + 1.4, 1.5, HOUSE.door.z);
-export const DOOR_IN = v(HOUSE.x1 - 0.9, 1.55, HOUSE.door.z);
+export const DOOR_OUT = v(HOUSE.x0 - 1.4, 1.5, HOUSE.door.z);
+export const DOOR_IN = v(HOUSE.x0 + 0.9, 1.55, HOUSE.door.z);
 
 /** In the open middle of the house, where a walk along the aisle can start. */
 const open = (p: THREE.Vector3) => underRoof(p, -0.3) && p.z > -0.95 && p.z < 1.75 && p.y > 0.9 && p.y < 2.6;
@@ -212,8 +214,8 @@ export function route(a: THREE.Vector3, b: THREE.Vector3): THREE.Vector3[] | und
   const via: THREE.Vector3[] = [];
   let from = a;
   if (outdoors(a)) {
-    // Round to the door and in, unless the far side of the house is nearer the door from here.
-    if (a.x < HOUSE.x1 + 0.5) via.push(v(HOUSE.x1 + 2.6, Math.max(1.5, Math.min(a.y, 3)), Math.min(a.z, -3.2)));
+    // Round to the door and in, from out in front if that's where we are.
+    if (a.x > HOUSE.x0 - 0.5) via.push(v(HOUSE.x0 - 2.6, Math.max(1.5, Math.min(a.y, 3)), Math.min(a.z, -3.2)));
     via.push(DOOR_OUT.clone(), DOOR_IN.clone());
     from = DOOR_IN;
   } else if (!open(a)) {
@@ -224,7 +226,7 @@ export function route(a: THREE.Vector3, b: THREE.Vector3): THREE.Vector3[] | und
     // Out by the door, the way in backwards.
     if (!clear(from, DOOR_IN, [], 0.06)) via.push(v(from.x, AISLE.y, AISLE.z), v(DOOR_IN.x, AISLE.y, AISLE.z));
     via.push(DOOR_IN.clone(), DOOR_OUT.clone());
-    if (b.x < HOUSE.x1 + 0.5) via.push(v(HOUSE.x1 + 2.6, Math.max(1.5, Math.min(b.y, 3)), Math.min(b.z, -3.2)));
+    if (b.x > HOUSE.x0 - 0.5) via.push(v(HOUSE.x0 - 2.6, Math.max(1.5, Math.min(b.y, 3)), Math.min(b.z, -3.2)));
     return tidy(via, a, b);
   }
   const into = open(b) ? [] : stepOut(b).reverse();

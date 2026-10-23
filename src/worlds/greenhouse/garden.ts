@@ -4,9 +4,9 @@
 // back from there is checked as if a stranger had written it, and anything odd
 // means a fresh start from the first seeds. Plain numbers, for the tests.
 import { cross, decode, encode, hash, seeded, STARTERS, WANTED, type Genome } from './genome';
+import { POTS } from './plan';
 
-/** Pots on the staging: two tiers of eight. */
-export const POTS = 16;
+export { POTS };
 /** Seed to full bloom, in milliseconds. */
 export const GROW_MS = 20_000;
 /** How long a plant goes happily without water, and how long after that until it's drooping as far as it ever will. */
@@ -38,6 +38,8 @@ export interface Garden {
   stamps: string[];
   /** Plants gone back to the soil, for the compost bin's card. */
   composted: number;
+  /** A gift that came while every pot was full: it waits on the potting bench for room. */
+  waiting: Plant | null;
 }
 
 /** The first visit: the starter flowers in bloom, spread along both tiers with room between to breed. */
@@ -45,7 +47,7 @@ export function starter(now: number): Garden {
   const pots: (Plant | null)[] = Array.from({ length: POTS }, () => null);
   const where = [1, 3, 5, 7, 8, 10, 12, 14];
   STARTERS.forEach((g, i) => (pots[where[i]] = { code: encode(g), born: now - GROW_MS * 4, watered: now, parents: null, gift: false }));
-  return { v: 1, pots, crosses: 0, stamps: [], composted: 0 };
+  return { v: 1, pots, crosses: 0, stamps: [], composted: 0, waiting: null };
 }
 
 /** The age of a plant, 0 (just sown) to 1 (in full bloom). */
@@ -61,6 +63,84 @@ export function seedFrom(garden: Garden, a: Genome, b: Genome): Genome {
 }
 
 export const emptyPot = (garden: Garden) => garden.pots.findIndex((p) => !p);
+
+/**
+ * Crosses the plants in pots a and b and sows the seed in the first empty pot.
+ * Returns the pot it went in and the seedling's genome, or null if the
+ * garden is full or either plant isn't there.
+ */
+export function sow(garden: Garden, a: number, b: number, now: number): { pot: number; genome: Genome } | null {
+  const pa = garden.pots[a];
+  const pb = garden.pots[b];
+  const ga = pa && decode(pa.code);
+  const gb = pb && decode(pb.code);
+  const pot = emptyPot(garden);
+  if (!pa || !pb || !ga || !gb || pot < 0) return null;
+  const genome = seedFrom(garden, ga, gb);
+  garden.crosses++;
+  garden.pots[pot] = { code: encode(genome), born: now, watered: now, parents: [pa.code, pb.code], gift: false };
+  return { pot, genome };
+}
+
+/** A drink: no more thirst for a good while. */
+export function water(garden: Garden, pot: number, now: number) {
+  const p = garden.pots[pot];
+  if (p) p.watered = now;
+  return !!p;
+}
+
+/** Cut back to its leaves: it comes into flower again from there, and it's watered while you're at it. */
+export function prune(garden: Garden, pot: number, now: number) {
+  const p = garden.pots[pot];
+  if (!p) return false;
+  const leafy = GROW_MS * 0.45;
+  p.born = Math.max(p.born, now - leafy);
+  p.watered = now;
+  return true;
+}
+
+/** Out of the pot and onto the heap. Then a waiting gift, if there is one, can have the pot. */
+export function compost(garden: Garden, pot: number) {
+  if (!garden.pots[pot]) return false;
+  garden.pots[pot] = null;
+  garden.composted = Math.min(1e6, garden.composted + 1);
+  settle(garden);
+  return true;
+}
+
+/** A gift waiting on the bench goes into a pot as soon as there's one free. */
+export function settle(garden: Garden) {
+  const pot = emptyPot(garden);
+  if (!garden.waiting || pot < 0) return -1;
+  garden.pots[pot] = garden.waiting;
+  garden.waiting = null;
+  return pot;
+}
+
+/**
+ * A flower from a friend's link: the code is checked as untrusted (see decode);
+ * anything that isn't one of ours is ignored. The same gift twice is only
+ * planted once. Returns the pot it's in (or -1 if it's waiting on the bench for
+ * room), or null for a code that isn't a flower.
+ */
+export function receive(garden: Garden, code: unknown, now: number): number | null {
+  if (!decode(code)) return null;
+  const c = code as string;
+  const already = garden.pots.findIndex((p) => p?.gift && p.code === c);
+  if (already >= 0) return already;
+  if (garden.waiting?.code === c) return -1;
+  const plant: Plant = { code: c, born: now, watered: now, parents: null, gift: true };
+  const pot = emptyPot(garden);
+  if (pot < 0) {
+    garden.waiting = plant;
+    return -1;
+  }
+  garden.pots[pot] = plant;
+  return pot;
+}
+
+/** The link that shares a flower. */
+export const shareLink = (origin: string, code: string) => `${origin}/?bloom=${code}`;
 
 /** The wanted flowers this one is, not yet stamped. */
 export const newStamps = (garden: Garden, g: Genome) => WANTED.filter((w) => !garden.stamps.includes(w.id) && w.test(g)).map((w) => w.id);
@@ -116,12 +196,14 @@ export function restore(raw: string | null | undefined, now: number): Garden {
   const stamps = own(data, 'stamps');
   const known = WANTED.map((w) => w.id);
   const kept = Array.isArray(stamps) ? known.filter((id) => stamps.includes(id)) : [];
-  return { v: 1, pots: out, crosses: count('crosses'), stamps: kept, composted: count('composted') };
+  const waiting = plantFrom(own(data, 'waiting') ?? null, now);
+  if (waiting === 'bad') return starter(now);
+  return { v: 1, pots: out, crosses: count('crosses'), stamps: kept, composted: count('composted'), waiting };
 }
 
 /** The garden as it's kept, or null if it somehow grew too big to keep. */
 export function serialize(garden: Garden): string | null {
-  const s = JSON.stringify({ v: 1, pots: garden.pots, crosses: garden.crosses, stamps: garden.stamps, composted: garden.composted });
+  const s = JSON.stringify({ v: 1, pots: garden.pots, crosses: garden.crosses, stamps: garden.stamps, composted: garden.composted, waiting: garden.waiting });
   return s.length <= MAX_SAVED ? s : null;
 }
 

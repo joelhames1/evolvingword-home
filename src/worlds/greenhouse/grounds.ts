@@ -63,15 +63,19 @@ const SKY_FRAG = /* glsl */ `
     vec3 d = normalize(vDir);
     float h = d.y;
     float toSun = max(dot(d, uSunDir), 0.0);
-    vec3 zenith = vec3(0.32, 0.46, 0.68);
-    vec3 mid = vec3(0.78, 0.74, 0.7);
-    vec3 horizon = vec3(1.0, 0.72, 0.42);
-    vec3 col = mix(horizon, mid, smoothstep(0.0, 0.18, h));
-    col = mix(col, zenith, smoothstep(0.12, 0.7, h));
+    // Toward the sun the low sky is gold; away from it, a rosy band under clear blue.
+    float sunSide = pow(max(dot(normalize(d.xz + 1e-4), normalize(uSunDir.xz)), 0.0), 1.5);
+    vec3 zenith = vec3(0.22, 0.38, 0.66);
+    vec3 high = vec3(0.42, 0.58, 0.82);
+    vec3 band = mix(vec3(0.92, 0.66, 0.62), vec3(1.15, 0.72, 0.36), sunSide);
+    vec3 horizon = mix(vec3(1.0, 0.76, 0.56), vec3(1.35, 0.86, 0.42), sunSide);
+    vec3 col = mix(horizon, band, smoothstep(0.0, 0.1, h));
+    col = mix(col, high, smoothstep(0.08, 0.32, h));
+    col = mix(col, zenith, smoothstep(0.3, 0.85, h));
     // Warmer all round the sun's side of the sky.
-    col += vec3(0.5, 0.26, 0.06) * pow(toSun, 3.0) * (1.0 - smoothstep(0.0, 0.5, h));
+    col += vec3(0.6, 0.3, 0.06) * pow(toSun, 3.0) * (1.0 - smoothstep(0.0, 0.5, h));
     // Below the horizon, the haze over the far country.
-    col = mix(col, vec3(0.86, 0.66, 0.46), smoothstep(0.0, -0.08, h));
+    col = mix(col, vec3(0.95, 0.72, 0.5), smoothstep(0.0, -0.08, h));
     // Long thin clouds, lit gold underneath on the sun's side.
     vec2 cp = d.xz / max(h + 0.12, 0.05);
     float c = fbm(cp * vec2(0.35, 1.4) + vec2(uTime * 0.004, 0.0));
@@ -184,13 +188,13 @@ const tinted = (g: THREE.BufferGeometry, c: THREE.Color) => {
 export function buildGrounds(quality: 'high' | 'low'): Grounds {
   const group = new THREE.Group();
   const high = quality === 'high';
-  const sunColor = new THREE.Color(2.1, 1.35, 0.68);
+  const sunColor = new THREE.Color(2.3, 1.45, 0.7);
   const daylight = daylightUniforms({
     sunDir: SUN.clone(),
     sunColor,
-    sky: new THREE.Color(0.3, 0.32, 0.42),
-    ground: new THREE.Color(0.3, 0.22, 0.1),
-    haze: new THREE.Color(0.98, 0.7, 0.42),
+    sky: new THREE.Color(0.42, 0.42, 0.5),
+    ground: new THREE.Color(0.4, 0.28, 0.14),
+    haze: new THREE.Color(1.0, 0.74, 0.48),
     hazeDensity: 0.0032,
     mist: 0.06,
     mistLevel: 0,
@@ -213,7 +217,7 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
   // --- the lawn and the walk --------------------------------------------------------------------------
   const lawn = new THREE.Mesh(
     new THREE.PlaneGeometry(1400, 1400, 1, 1),
-    new THREE.ShaderMaterial({ vertexShader: LAWN_VERT, fragmentShader: LAWN_FRAG, uniforms: { ...daylight, uWalk: { value: new THREE.Vector4(HOUSE.kneeOut - 1.2, HOUSE.kneeOut + 0.02, 9.5, HOUSE.x1 + 0.3) } } }),
+    new THREE.ShaderMaterial({ vertexShader: LAWN_VERT, fragmentShader: LAWN_FRAG, uniforms: { ...daylight, uWalk: { value: new THREE.Vector4(HOUSE.kneeOut - 1.2, HOUSE.kneeOut + 0.02, 9.5, HOUSE.x0 - 1.6) } } }),
   );
   lawn.rotation.x = -Math.PI / 2;
   lawn.position.y = -0.002;
@@ -236,58 +240,78 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
 
   // --- greenery: hedges, topiary, trees, the borders --------------------------------------------------
   const r = rng(808);
-  const leafy: THREE.BufferGeometry[] = [];
-  const put = (g: THREE.BufferGeometry, x: number, y: number, z: number, s = 1, color = '#ffffff') => {
-    g.scale(s, s, s);
+  const solidLeaf: THREE.BufferGeometry[] = [];
+  const wood: THREE.BufferGeometry[] = [];
+  const put = (list: THREE.BufferGeometry[], g: THREE.BufferGeometry, x: number, y: number, z: number, color = '#ffffff') => {
     g.translate(x, y, z);
-    leafy.push(tinted(plain(g), new THREE.Color(color)));
+    list.push(tinted(plain(g), new THREE.Color(color)));
   };
   // Clipped yew hedges down either side of the lawn.
   for (const s of [-1, 1]) {
-    const hedge = new THREE.BoxGeometry(1.4, 2.4, 20, 2, 4, 20);
+    const hedge = new THREE.BoxGeometry(1.4, 2.4, 20, 3, 6, 40);
     const hp = hedge.attributes.position;
-    for (let i = 0; i < hp.count; i++) hp.setXYZ(i, hp.getX(i) + Math.sin(hp.getZ(i) * 3.1) * 0.04, hp.getY(i), hp.getZ(i));
+    for (let i = 0; i < hp.count; i++) hp.setXYZ(i, hp.getX(i) + Math.sin(hp.getZ(i) * 3.1) * 0.04, hp.getY(i) + (hp.getY(i) > 1.1 ? Math.sin(hp.getZ(i) * 1.7) * 0.05 : 0), hp.getZ(i));
     hedge.computeVertexNormals();
-    put(hedge, s * 14.5, 1.2, -13.5, 1, '#3a5a2a');
+    put(solidLeaf, hedge, s * 14.5, 1.2, -13.5, '#2e4a22');
   }
   // Yew cones and balls along the walk.
   for (const x of [-8.6, -3.2, 3.2, 8.6]) {
-    put(new THREE.ConeGeometry(0.55, 1.9, 10, 3), x, 0.95, -4.35, 1, '#34522a');
-    put(clump(0.35, 7 + x * 3, 1), x, 0.25, -4.35, 1, '#34522a');
+    put(solidLeaf, new THREE.ConeGeometry(0.55, 1.9, 18, 6), x, 0.95, -4.35, '#2c4a22');
+    put(solidLeaf, clump(0.36, 7 + x * 3, 3), x, 0.25, -4.35, '#2c4a22');
   }
+  // Every tree's crown is a cloud of leafy blobs; the borders' plants are blobs too.
+  const blobs: { at: THREE.Vector3; s: THREE.Vector3; color: THREE.Color }[] = [];
+  const crown = (x: number, y: number, z: number, rad: number, height: number, color: string, n: number) => {
+    const base = new THREE.Color(color);
+    for (let i = 0; i < n; i++) {
+      // Spread through an egg shape, bigger blobs inside, small ones at the edge.
+      const d = v(r() - 0.5, r() - 0.5, r() - 0.5).normalize();
+      const k = Math.pow(r(), 0.6);
+      const at = v(x + d.x * rad * k, y + d.y * height * k * 0.5, z + d.z * rad * k);
+      const s = rad * (0.32 + (1 - k) * 0.3) * (0.8 + r() * 0.4);
+      blobs.push({ at, s: v(s, s * 0.85, s), color: base.clone().offsetHSL((r() - 0.5) * 0.03, 0, (r() - 0.5) * 0.06) });
+    }
+  };
   // Fruit trees on the lawn to the left, toward the sun.
   for (let i = 0; i < 5; i++) {
     const x = -10.5 + (i % 2) * 2.4 + r() * 0.6;
     const z = -6.5 - i * 2.6 + r();
-    put(trunk(1.4, 0.09), x, 0, z, 1, '#6a5a44');
-    put(clump(1.2 + r() * 0.3, i * 11, 2), x, 2.2, z, 1, ['#5c7a2e', '#6a8434', '#567028'][i % 3]);
+    put(wood, trunk(1.6, 0.09), x, 0, z, '#5a4a38');
+    crown(x, 2.3, z, 1.25 + r() * 0.3, 1.8, ['#5c7a2e', '#6a8434', '#567028'][i % 3], 22);
   }
-  // Tall trees beyond the wall behind the house, and beyond the bank across the lawn.
+  // Tall trees beyond the wall behind the house, and far off beyond the bank across the lawn.
   for (let i = 0; i < 14; i++) {
     const x = -26 + i * 4 + r() * 2;
     const z = 7 + r() * 6;
     const h = 5 + r() * 4;
-    put(trunk(h * 0.5, 0.25), x, 0, z, 1, '#5a4a3a');
-    put(clump(2.6 + r() * 1.2, 100 + i, 2), x, h, z, 1, ['#4a6a2a', '#56722e', '#3e5e26', '#627a32'][i % 4]);
+    put(wood, trunk(h * 0.6, 0.25), x, 0, z, '#4a3c30');
+    crown(x, h, z, 2.6 + r() * 1.2, 4.2 + r() * 1.5, ['#4a6a2a', '#56722e', '#3e5e26', '#627a32'][i % 4], 28);
   }
   for (let i = 0; i < 12; i++) {
     const x = -26 + i * 4.8 + r() * 2;
     const z = bankTop() - 9 - r() * 12;
     const h = 2.6 + r() * 2.5;
-    put(trunk(h * 0.6, 0.18), x, BANK.top, z, 1, '#5a4a3a');
-    put(clump(1.5 + r() * 1, 200 + i, 2), x, BANK.top + h, z, 1, ['#55722c', '#4a6828', '#64803a'][i % 3]);
+    put(wood, trunk(h * 0.6, 0.18), x, BANK.top, z, '#4a3c30');
+    crown(x, BANK.top + h, z, 1.5 + r(), 2.6, ['#55722c', '#4a6828', '#64803a'][i % 3], 18);
   }
   // The borders along the front of the house: mounds of green, flowering.
-  for (let x = -9; x <= 9; x += 0.32) {
+  for (let x = -9; x <= 9; x += 0.26) {
     if (Math.abs(x) < 0.55) continue;
-    const s = 0.22 + r() * 0.18;
-    const g = clump(s, Math.floor(x * 100), 1);
-    g.scale(1, 1.3 + r() * 0.6, 1);
-    put(g, x + (r() - 0.5) * 0.1, s * 0.9, HOUSE.kneeOut - 1.55 - r() * 0.5, 1, ['#3e5a26', '#4a6a2c', '#56702e'][Math.floor(r() * 3)]);
+    const s = 0.2 + r() * 0.16;
+    blobs.push({ at: v(x + (r() - 0.5) * 0.12, s * 0.7, HOUSE.kneeOut - 1.5 - r() * 0.55), s: v(s, s * (1.2 + r() * 0.7), s), color: new THREE.Color(['#3e5a26', '#4a6a2c', '#56702e'][Math.floor(r() * 3)]) });
   }
-  const leafMat = outdoor(daylight, { vertexColors: true });
-  const leaves = new THREE.Mesh(mergeGeometries(leafy), leafMat);
-  group.add(leaves);
+  const foliage = foliageMaterial(daylight);
+  group.add(new THREE.Mesh(mergeGeometries(solidLeaf), foliage));
+  group.add(new THREE.Mesh(mergeGeometries(wood), outdoor(daylight, { vertexColors: true })));
+  const blobGeo = new THREE.IcosahedronGeometry(1, 2);
+  const crowns = new THREE.InstancedMesh(blobGeo, foliage, blobs.length);
+  const m4 = new THREE.Matrix4();
+  blobs.forEach((b, i) => {
+    crowns.setMatrixAt(i, m4.compose(b.at, new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 3, r() * 3, r() * 3)), b.s));
+    crowns.setColorAt(i, b.color);
+  });
+  crowns.frustumCulled = false;
+  group.add(crowns);
 
   // Flowers in the borders and on the lawn's edge: points of color that stay a few pixels across.
   const blooms: { pos: THREE.Vector3; color: THREE.Color; size: number }[] = [];
@@ -385,6 +409,73 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
       (flowerPts.material as THREE.ShaderMaterial).uniforms.uScale.value = renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
     },
   };
+}
+
+/**
+ * Leaves in the low sun: a leafy dapple broken up by noise (so a box of yew or
+ * a ball of a crown reads as a mass of leaves, not a solid), the edges toward
+ * the sun catching it, and a glow through them with the sun behind.
+ */
+function foliageMaterial(u: DaylightUniforms) {
+  return new THREE.ShaderMaterial({
+    vertexShader: /* glsl */ `
+      varying vec3 vWorld;
+      varying vec3 vNrm;
+      varying vec3 vColor;
+      void main() {
+        vec4 local = vec4(position, 1.0);
+        vec3 nrm = normal;
+        vColor = vec3(1.0);
+        #ifdef USE_INSTANCING
+          local = instanceMatrix * local;
+          nrm = mat3(instanceMatrix) * nrm;
+        #endif
+        #ifdef USE_INSTANCING_COLOR
+          vColor *= instanceColor;
+        #endif
+        #ifdef USE_COLOR
+          vColor *= color;
+        #endif
+        vec4 w = modelMatrix * local;
+        vWorld = w.xyz;
+        vNrm = normalize(mat3(modelMatrix) * nrm);
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      ${DAYLIGHT}
+      varying vec3 vWorld;
+      varying vec3 vNrm;
+      varying vec3 vColor;
+      float h13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+      float vn(vec3 p) {
+        vec3 i = floor(p);
+        vec3 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(h13(i), h13(i + vec3(1, 0, 0)), f.x), mix(h13(i + vec3(0, 1, 0)), h13(i + vec3(1, 1, 0)), f.x), f.y),
+                   mix(mix(h13(i + vec3(0, 0, 1)), h13(i + vec3(1, 0, 1)), f.x), mix(h13(i + vec3(0, 1, 1)), h13(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+      }
+      void main() {
+        vec3 toEye = cameraPosition - vWorld;
+        vec3 v = normalize(toEye);
+        float far = smoothstep(15.0, 60.0, length(toEye));
+        float leaves = vn(vWorld * 9.0) * 0.55 + vn(vWorld * 23.0) * 0.45;
+        leaves = mix(leaves, 0.5, far * 0.7);
+        vec3 bump = vec3(vn(vWorld * 4.0 + 1.7), vn(vWorld * 4.0 + 4.1), vn(vWorld * 4.0 + 8.3)) - 0.5;
+        vec3 n = normalize(normalize(vNrm) + bump * 1.1);
+        vec3 albedo = vColor * (0.5 + 0.85 * leaves);
+        vec3 col = daylight(albedo, n, vWorld);
+        float lit = max(dot(n, uSunDir), 0.0);
+        col += uSunColor * albedo * pow(1.0 - max(dot(n, v), 0.0), 2.0) * lit * 0.7;
+        col += uSunColor * albedo * vec3(0.9, 1.0, 0.5) * pow(max(dot(-v, uSunDir), 0.0), 4.0) * 0.45;
+        // The hollows between clumps of leaves stay dark.
+        col *= 0.55 + 0.45 * smoothstep(0.2, 0.6, leaves);
+        gl_FragColor = vec4(fade(col, vWorld), 1.0);
+      }
+    `,
+    uniforms: { ...u },
+    vertexColors: true,
+  });
 }
 
 /** Flowers far enough off to be a few pixels: points that keep a size in meters, lit like the rest outside. */

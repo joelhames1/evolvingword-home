@@ -80,16 +80,16 @@ const FRAG = /* glsl */ `
 function flowerGeometry() {
   const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 5; i++) {
-    const petal = new THREE.CircleGeometry(0.026, 7);
+    const petal = new THREE.CircleGeometry(0.034, 7);
     petal.scale(0.85, 1, 1);
-    petal.translate(0, 0.024, 0);
+    petal.translate(0, 0.03, 0);
     petal.rotateX(-Math.PI / 2 + 0.45);
     petal.rotateY((i / 5) * Math.PI * 2);
-    petal.translate(0, 0.03, 0);
+    petal.translate(0, 0.045, 0);
     parts.push(petal);
   }
   const eye = new THREE.SphereGeometry(0.01, 6, 4);
-  eye.translate(0, 0.035, 0);
+  eye.translate(0, 0.05, 0);
   parts.push(eye.toNonIndexed());
   return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)).map((g) => (g.deleteAttribute('uv'), g)));
 }
@@ -169,7 +169,7 @@ export function buildBed(daylight: DaylightUniforms): Bed {
         const sc = 0.9 + r() * 0.25;
         m.compose(new THREE.Vector3(x, y, 0.035), q, new THREE.Vector3(sc, sc, sc));
         mounds.setMatrixAt(i, m);
-        m.compose(new THREE.Vector3(x, y, 0.06), q, new THREE.Vector3(sc, sc, sc));
+        m.compose(new THREE.Vector3(x, y, 0.075), q, new THREE.Vector3(sc, sc, sc));
         flowers.setMatrixAt(i, m);
       }
   const stateAttr = new THREE.InstancedBufferAttribute(state, 3);
@@ -177,8 +177,8 @@ export function buildBed(daylight: DaylightUniforms): Bed {
   mounds.geometry.setAttribute('aState', stateAttr);
   flowers.geometry.setAttribute('aState', stateAttr);
   const colors = {
-    uSilver: { value: new THREE.Color('#9aa6a0') },
-    uLeaf: { value: new THREE.Color('#2f4a1e') },
+    uSilver: { value: new THREE.Color('#7f8c86') },
+    uLeaf: { value: new THREE.Color('#2a4a1a') },
     uBud: { value: new THREE.Color('#7a8a3a') },
     uFlower: { value: new THREE.Color('#d8241e') },
   };
