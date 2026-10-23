@@ -4,7 +4,7 @@ import { ALPHABET, clean, MAX_PHRASE } from '../../src/evolve';
 import { WORLDS } from '../../src/worlds';
 import { MODULES, pad, PHRASES } from '../../src/worlds/train/board';
 import { bpmFor, BRANCHES, clackInterval, inStep, Journey, LANDS, LAYOUT, LEVER_LIT, LEVER_LOCK, RAIL, type Land, type TrainEvent } from '../../src/worlds/train/journey';
-import { CAR, clear, CORRIDOR, ROOM, route, solid, THROUGH, where, WINDOW } from '../../src/worlds/train/plan';
+import { CAR, clear, CORRIDOR, OPPOSITE, ROOM, route, solid, THROUGH, where, WINDOW } from '../../src/worlds/train/plan';
 import { CHORDS, ECHOES, MELODY } from '../../src/worlds/train/sound';
 import { fresh, MAX_HOLES, nextHole, parseTicket, SHAPES } from '../../src/worlds/train/ticket';
 
@@ -232,10 +232,9 @@ describe('the split-flap signs', () => {
 
 describe('the plan of the car', () => {
   it('knows open air from wall and furniture', () => {
-    // The middle of the compartment and of the corridor, out through the window, outside: open.
+    // The middle of the compartment and of the corridor, outside: open.
     expect(solid(v(0.3, 1.5, -0.3))).toBe(false);
     expect(solid(v(-2, 1.5, (CORRIDOR.z0 + CORRIDOR.z1) / 2))).toBe(false);
-    expect(solid(v((WINDOW.x0 + WINDOW.x1) / 2, 1.3, ROOM.z0 - 0.04))).toBe(false);
     expect(solid(v(0, 1.5, -10))).toBe(false);
     // The walls, the partition beside the door, the bunk, the table, the ceiling, the next car: solid.
     expect(solid(v(-1.0, 1.5, ROOM.z0 - 0.04))).toBe(true);
@@ -272,7 +271,23 @@ describe('the plan of the car', () => {
       }
   });
 
-  it('comes in from outside through our window', () => {
-    for (const to of [v(0.3, 1.5, 0.13), v(-2, 1.56, 1.2)]) expect(clear(THROUGH.far, to, route(THROUGH.far, to))).toBe(true);
+  it('comes in from outside over the glass let down across from our door, from either side, never through other glass', () => {
+    const outside = [THROUGH.farSide, v(-4.6, 0.55, 4.3), v(7, -10, 34), v(0.3, 1.4, -4.6), v(-6, 0.4, -4)];
+    for (const from of outside)
+      for (const to of [v(0.3, 1.5, 0.13), v(-2, 1.56, 1.2), v(-0.66, 1.58, -0.9)]) {
+        expect(clear(from, to, route(from, to)), `${from.toArray()} -> ${to.toArray()}`).toBe(true);
+        expect(clear(to, from, route(to, from)), `${to.toArray()} -> ${from.toArray()}`).toBe(true);
+      }
+  });
+
+  it('keeps the glass in every window but the one let down', () => {
+    // Our window, middle of the pane, glass up or down: never a way through.
+    expect(solid(v((WINDOW.x0 + WINDOW.x1) / 2, 1.3, ROOM.z0 - 0.04))).toBe(true);
+    expect(solid(v((WINDOW.x0 + WINDOW.x1) / 2, 1.65, ROOM.z0 - 0.04))).toBe(true);
+    // The corridor window across from our door: open over its lowered glass, not through the glass.
+    expect(solid(v(OPPOSITE, 1.55, CORRIDOR.z1 + 0.04))).toBe(false);
+    expect(solid(v(OPPOSITE, 1.1, CORRIDOR.z1 + 0.04))).toBe(true);
+    // The next corridor window along: its glass is up.
+    expect(solid(v(OPPOSITE - 1.95, 1.55, CORRIDOR.z1 + 0.04))).toBe(true);
   });
 });

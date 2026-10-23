@@ -14,6 +14,11 @@ export const CESS = -1.62;
 export const RAIL_TOP = -1.15;
 /** The platforms' top, a little below the car's floor, and how far out they start. */
 export const PLATFORM = { y: -0.45, edge: -1.72, back: -5.6 };
+/**
+ * The platform lamps: one every `step` m, `offset` m on from where our window stops (so the sign
+ * there stands between two), this high, this far out. (The night light lights what's round them.)
+ */
+export const STATION_LAMPS = { step: 12, offset: 6, y: PLATFORM.y + 3.25, z: -4.55 };
 /** The water in the gorge, and the lake's. */
 export const WATER = { gorge: -94.2, lake: -3.6 };
 
@@ -70,7 +75,7 @@ export function natural(land: Land, u: number, z: number, seed: number): number 
       // The valley on the window side: down and away, with peaks beyond it.
       const fall = -320 * Math.pow(smooth(4, 950, az), 0.8);
       const knolls = fbm(u / 160 + s, z / 160, 33) * 26 * smooth(20, 250, az);
-      const beyond = 600 * smooth(800, 1400, az) * (0.45 + ridged(u / 420 + s, z / 420, 34));
+      const beyond = 400 * smooth(700, 1380, az) * (0.45 + ridged(u / 420 + s, z / 420, 34));
       let h = -1.8 + fall + knolls + beyond;
       // Over the tunnel, the mountain comes right across the line.
       const t = LAYOUT.pass.tunnel!;

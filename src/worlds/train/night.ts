@@ -5,6 +5,7 @@
 // haze and the far-off lights match the rest of the site's outdoors.
 import * as THREE from 'three';
 import { DAYLIGHT, daylightUniforms, type DaylightUniforms } from '../outdoor';
+import { STATION_LAMPS } from './ground';
 import { CAR, COMPARTMENT_STEP, CORRIDOR_WINDOWS, WINDOW } from './plan';
 
 /** Toward the moon, as seen (low over the land on the window side, a little behind), and the way its light falls. */
@@ -17,9 +18,9 @@ export const TRAIN_SPAN = { back: CAR.back - 75, front: CAR.front + 25 };
 export function nightUniforms(): DaylightUniforms {
   const u = daylightUniforms({
     sunDir: MOONLIGHT,
-    sunColor: new THREE.Color('#8ea6d8').multiplyScalar(0.55),
-    sky: new THREE.Color('#1c2a4a').multiplyScalar(1.15),
-    ground: new THREE.Color('#0a0d14').multiplyScalar(0.9),
+    sunColor: new THREE.Color('#9db4e6').multiplyScalar(1.15),
+    sky: new THREE.Color('#2a3c62').multiplyScalar(1.1),
+    ground: new THREE.Color('#141a26'),
     haze: new THREE.Color('#0d1424'),
     hazeDensity: 0.0012,
     mist: 0.4,
@@ -27,6 +28,19 @@ export function nightUniforms(): DaylightUniforms {
   });
   return {
     ...u,
+    // The far side of the sky from the moon: a soft cool light, so what's turned away from it still reads.
+    uFill: { value: new THREE.Color('#5d76a8').multiplyScalar(0.42) },
+    // The moon catching the edges of things seen against it.
+    uRim: { value: new THREE.Color('#b9cdf5').multiplyScalar(1.1) },
+    // Where the moon is, for the haze to glow round it.
+    uMoonDir: { value: MOON_DIR.clone() },
+    uMoonGlow: { value: new THREE.Color('#6f84b4').multiplyScalar(0.3) },
+    // How much of the moon and the sky reach the line: none deep in a tunnel.
+    uMoonK: { value: 1 },
+    // The platform lamps of the station near us: the world x of one of them, the stretch they run
+    // along (x0, x1), and how bright (0: no station near). The light they give, warm or white.
+    uStation: { value: new THREE.Vector4(0, 0, 0, 0) },
+    uStationColor: { value: new THREE.Color('#ffc58a') },
     // How brightly the train's windows light the ground beside it (0 in a tunnel's dark, it's the tunnel walls they light).
     uSpill: { value: 1 },
     uSpillColor: { value: new THREE.Color('#ffb46a') },
@@ -46,8 +60,9 @@ const SPILL = /* glsl */ `
     if (uSpark.w <= 0.0) return vec3(0.0);
     // Along the train they're thrown back from the wheels, so the light runs out behind the bogie.
     vec3 d = world - uSpark.xyz;
+    d.z = abs(world.z) - uSpark.z;
     d.x = d.x > 0.0 ? d.x * 1.6 : d.x * 0.35;
-    return vec3(1.0, 0.5, 0.16) * uSpark.w * exp(-dot(d, d) * 0.22);
+    return vec3(1.0, 0.42, 0.12) * uSpark.w * exp(-dot(d, d) * 0.4);
   }
   float spillAt(vec3 world, vec3 n) {
     float side = world.z;
@@ -72,8 +87,76 @@ const SPILL = /* glsl */ `
     float lo = ${WINDOW.y0.toFixed(2)} - d * 0.45;
     float hi = ${WINDOW.y1.toFixed(2)} + d * 0.35;
     float band = smoothstep(lo - 0.3, lo + 0.1, world.y) * (1.0 - smoothstep(hi - 0.1, hi + 0.3, world.y));
-    float wall = clamp(toward, 0.0, 1.0) * band * 2.2;
-    return lit * max(ground, wall) * exp(-d3 * 0.55) * uSpill;
+    // (A wall close by, a tunnel's, takes it brightly; one further off, a platform's, more softly.)
+    float wall = clamp(toward, 0.0, 1.0) * band * 2.6 * exp(-max(d3 - 1.5, 0.0) * 0.45);
+    // And a little whichever way it faces: light scattered in the night air under the windows.
+    float wash = 0.4 * exp(-d3 * 0.55);
+    return (lit * max(ground, wall) * exp(-d3 * 0.55) + wash * (0.6 + 0.4 * lit)) * uSpill;
+  }
+`;
+
+/**
+ * The night's own light, over the shared uniforms: the moon as the key, wrapped a
+ * little so forms turn into shadow instead of going black; the sky overhead and a
+ * cool fill from the far side of it; a rim of moonlight on edges seen against the
+ * moon; the platform lamps of a station close by. And a haze that glows round the moon.
+ */
+const NIGHT = /* glsl */ `
+  uniform vec3 uFill;
+  uniform vec3 uRim;
+  uniform vec3 uMoonDir;
+  uniform vec3 uMoonGlow;
+  uniform vec4 uStation;
+  uniform vec3 uStationColor;
+  uniform float uMoonK;
+  vec3 moonlit(vec3 albedo, vec3 n, vec3 world) {
+    vec3 L = uSunDir;
+    float ndl = dot(n, L);
+    float key = clamp((ndl + 0.3) / 1.3, 0.0, 1.0);
+    key *= key;
+    vec3 amb = mix(uGround, uSky, n.y * 0.5 + 0.5);
+    vec3 F = normalize(vec3(-L.x, 0.5, -L.z));
+    float fill = clamp(dot(n, F) * 0.5 + 0.5, 0.0, 1.0);
+    vec3 toEye = cameraPosition - world;
+    vec3 V = toEye / max(length(toEye), 1e-3);
+    float edge = 1.0 - clamp(dot(n, V), 0.0, 1.0);
+    edge = edge * edge * edge;
+    float behind = clamp(0.5 - 0.5 * dot(V, uMoonDir), 0.0, 1.0);
+    float rim = edge * behind * behind * clamp(ndl + 0.6, 0.0, 1.0);
+    return albedo * (amb * (0.2 + 0.8 * uMoonK) + (uSunColor * key + uFill * (fill * fill) + uRim * rim) * uMoonK);
+  }
+  // The station's lamps, one every ${STATION_LAMPS.step} m along the back of the platform: the nearest two.
+  vec3 stationLit(vec3 albedo, vec3 n, vec3 world) {
+    if (uStation.w <= 0.0 || world.x < uStation.y - 8.0 || world.x > uStation.z + 8.0 || world.z < -40.0 || world.z > 4.0) return vec3(0.0);
+    float base = floor((world.x - uStation.x) / ${STATION_LAMPS.step.toFixed(1)});
+    vec3 sum = vec3(0.0);
+    for (int i = 0; i < 2; i++) {
+      float lx = uStation.x + (base + float(i)) * ${STATION_LAMPS.step.toFixed(1)};
+      float there = step(uStation.y - 0.5, lx) * step(lx, uStation.z + 0.5);
+      vec3 d = vec3(lx, ${STATION_LAMPS.y.toFixed(3)}, ${STATION_LAMPS.z.toFixed(3)}) - world;
+      float dd = max(dot(d, d), 1e-3);
+      float ndl = dot(n, d * inversesqrt(dd));
+      sum += there * clamp(ndl * 0.8 + 0.2, 0.0, 1.0) / (1.0 + dd * 0.28);
+    }
+    return albedo * uStationColor * sum * uStation.w;
+  }
+  vec3 moonHaze(vec3 dir) {
+    float s = max(dot(dir, uMoonDir), 0.0);
+    float s2 = s * s;
+    float s8 = s2 * s2;
+    s8 *= s8;
+    float s64 = s8 * s8;
+    s64 *= s64;
+    s64 *= s64;
+    return uHaze + uMoonGlow * (s8 * 0.6 + s64 * 1.2);
+  }
+  vec3 nightFade(vec3 col, vec3 world) {
+    vec3 toP = world - cameraPosition;
+    float d = length(toP);
+    float fog = 1.0 - exp(-d * uHazeDensity);
+    float low = exp(-max(world.y - uMistLevel, 0.0) / 14.0);
+    fog = max(fog, uMist * low * (1.0 - exp(-d / 700.0)));
+    return mix(col, moonHaze(toP / max(d, 1e-3)), clamp(fog, 0.0, 1.0));
   }
 `;
 
@@ -114,6 +197,7 @@ const VERT = /* glsl */ `
 const FRAG = /* glsl */ `
   ${DAYLIGHT}
   ${SPILL}
+  ${NIGHT}
   uniform vec3 uColor;
   uniform vec3 uGlow;
   uniform sampler2D uMap;
@@ -128,21 +212,31 @@ const FRAG = /* glsl */ `
   void main() {
     vec3 albedo = uColor * vColor;
     if (uUseMap > 0.5) albedo *= texture2D(uMap, vUv * uMapScale).rgb;
-    vec3 n = normalize(vNrm);
+    vec3 n = vNrm * inversesqrt(max(dot(vNrm, vNrm), 1e-8));
     if (!gl_FrontFacing) n = -n;
-    vec3 col = daylight(albedo, n, vWorld);
-    // A little moon sheen on snow, wet rock and rails.
-    if (uSheen > 0.0) {
-      vec3 view = normalize(cameraPosition - vWorld);
-      vec3 h = normalize(view + uSunDir);
-      col += uSunColor * pow(max(dot(n, h), 0.0), 40.0) * uSheen;
+    vec3 col = moonlit(albedo, n, vWorld);
+    // A little moon sheen on snow and ice (not on fields or leaves).
+    float shiny = uSheen * smoothstep(0.25, 0.6, dot(albedo, vec3(0.3, 0.5, 0.2)));
+    if (shiny > 0.0) {
+      vec3 toEye = cameraPosition - vWorld;
+      vec3 view = toEye / max(length(toEye), 1e-3);
+      vec3 hv = view + uSunDir;
+      vec3 h = hv * inversesqrt(max(dot(hv, hv), 1e-8));
+      float sp = clamp(dot(n, h), 0.0, 1.0);
+      float sp2 = sp * sp;
+      float sp8 = sp2 * sp2;
+      sp8 *= sp8;
+      float sp32 = sp8 * sp8;
+      sp32 *= sp32;
+      col += uSunColor * sp32 * sp8 * shiny;
     }
     col += albedo * uSpillColor * spillAt(vWorld, n) * 1.3;
     col += albedo * sparkAt(vWorld);
+    col += stationLit(albedo, n, vWorld);
     // The city's glow lights things a little from below the sky, everywhere.
     col += albedo * uGlow;
     col += vGlow;
-    gl_FragColor = vec4(fade(col, vWorld), 1.0);
+    gl_FragColor = vec4(nightFade(col, vWorld), 1.0);
   }
 `;
 
@@ -177,6 +271,7 @@ export function cityMaterial(u: DaylightUniforms) {
     fragmentShader: /* glsl */ `
       ${DAYLIGHT}
       ${SPILL}
+      ${NIGHT}
       uniform vec3 uGlow;
       varying vec3 vNrm;
       varying vec3 vWorld;
@@ -185,11 +280,14 @@ export function cityMaterial(u: DaylightUniforms) {
       varying vec2 vUv;
       float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
       void main() {
-        vec3 n = normalize(vNrm);
+        vec3 n = vNrm * inversesqrt(max(dot(vNrm, vNrm), 1e-8));
         if (!gl_FrontFacing) n = -n;
         vec3 albedo = vColor;
         vec3 lit = vec3(0.0);
-        float seed = vGlow.x;
+        // Each building's own number, as a whole number: taken straight from the interpolated attribute,
+        // its last few bits wander from pixel to pixel, and the hashes below turn that into static.
+        float seed = floor(vGlow.x * 997.0) + 0.5;
+        float share = floor(vGlow.y * 1000.0 + 0.5) / 1000.0;
         if (abs(n.y) < 0.5) {
           // A grid of windows: a floor every 3.2 m, a bay every 2.7 m, a sill and a lintel.
           vec2 g = vUv / vec2(2.7, 3.2);
@@ -204,20 +302,22 @@ export function cityMaterial(u: DaylightUniforms) {
           pane = mix(pane, 0.27, smoothstep(0.15, 0.45, max(fw.x, fw.y)));
           // No windows in the bottom meter or a half at the top (the parapet).
           pane *= step(1.2, vUv.y);
-          float h = hash(cell + seed * 97.0);
-          float on = step(h, vGlow.y);
-          float tv = step(0.86, hash(cell * 1.7 + seed * 31.0));
+          float h = hash(cell + seed * 0.0973);
+          float on = step(h, share);
+          float tv = step(0.86, hash(cell * 1.7 + seed * 0.0311));
           vec3 warm = mix(vec3(1.0, 0.72, 0.42), vec3(1.0, 0.85, 0.6), hash(cell + 3.1));
           vec3 glowCol = mix(warm, vec3(0.55, 0.7, 1.0), tv) * (0.7 + 0.6 * hash(cell * 2.3));
           // Dark glass catches a little of the sky.
           albedo = mix(albedo, vec3(0.05, 0.06, 0.08), pane * 0.85);
           lit = glowCol * pane * on;
-          // The ground floor: a lit shop window here and there.
-          float shop = step(vUv.y, 3.0) * step(0.08, f.x) * step(f.x, 0.92) * step(0.5, vUv.y);
-          lit += vec3(1.0, 0.8, 0.55) * 0.9 * shop * step(0.9, hash(vec2(cell.x, 9.0) + seed * 13.0));
+          // The ground floor: a lit shop window here and there (soft edged, and an average where it's tiny).
+          float shop = smoothstep(0.08 - fw.x, 0.08 + fw.x, f.x) * (1.0 - smoothstep(0.92 - fw.x, 0.92 + fw.x, f.x));
+          shop = mix(shop, 0.84, smoothstep(0.15, 0.45, fw.x));
+          shop *= smoothstep(0.45, 0.6, vUv.y) * (1.0 - smoothstep(2.9, 3.05, vUv.y));
+          lit += vec3(1.0, 0.72, 0.45) * 0.55 * shop * step(0.9, hash(vec2(cell.x, 9.0) + seed * 0.0131));
         }
-        vec3 col = daylight(albedo * 0.55, n, vWorld) + albedo * uGlow * 1.5 + lit;
-        gl_FragColor = vec4(fade(col, vWorld), 1.0);
+        vec3 col = moonlit(albedo * 0.55, n, vWorld) + albedo * uGlow * 1.5 + lit + stationLit(albedo, n, vWorld);
+        gl_FragColor = vec4(nightFade(col, vWorld), 1.0);
       }
     `,
     defines: { GLOWS: '' },
@@ -263,6 +363,7 @@ export function waterMaterial(u: DaylightUniforms) {
     fragmentShader: /* glsl */ `
       ${DAYLIGHT}
       ${SPILL}
+      ${NIGHT}
       uniform vec3 uMoon;
       varying vec3 vWorld;
       varying vec2 vUv;
@@ -290,7 +391,7 @@ export function waterMaterial(u: DaylightUniforms) {
         float m = max(dot(r, uMoon), 0.0);
         col += vec3(0.9, 0.92, 1.0) * (pow(m, 900.0) * 6.0 + pow(m, 120.0) * 0.6);
         col += uSpillColor * spillAt(vWorld, vec3(0.0, 1.0, 0.0)) * 0.5;
-        gl_FragColor = vec4(fade(col, vWorld), 1.0);
+        gl_FragColor = vec4(nightFade(col, vWorld), 1.0);
       }
     `,
     uniforms: { ...u, uMoon: { value: MOON_DIR.clone() } },

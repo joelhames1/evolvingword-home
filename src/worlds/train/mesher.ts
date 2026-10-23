@@ -98,6 +98,10 @@ export const SHAPES = {
   ),
   cone: flatTemplate(new THREE.ConeGeometry(0.5, 1, 6, 1, true).translate(0, 0.5, 0)),
   cylinder: template(new THREE.CylinderGeometry(0.5, 0.5, 1, 6, 1, true).translate(0, 0.5, 0)),
+  /** A closed one, for things seen end on (bales). */
+  drum: flatTemplate(new THREE.CylinderGeometry(0.5, 0.5, 1, 10, 1, false).translate(0, 0.5, 0)),
+  /** A ring, for the ironwork in the stations' canopy brackets: in the x-y plane, 1 across. */
+  ring: template(new THREE.TorusGeometry(0.44, 0.06, 4, 14)),
   blob: flatTemplate(new THREE.IcosahedronGeometry(0.5, 0)),
   rock: flatTemplate(new THREE.DodecahedronGeometry(0.5, 0)),
   /** A flat square facing +z, for lit windows and signs. */

@@ -9,7 +9,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvas, glow, texture } from '../../textures';
 import { carName, carpet, ceiling, dado, livery, panel, plaid, poster } from './paint';
-import { BUNK, CAR, ceilingAt, COMPARTMENT_STEP, CORRIDOR, CORRIDOR_WINDOWS, DOOR, PARTITION, ROOM, TABLE, WINDOW, WINDOW_X } from './plan';
+import { BUNK, CAR, ceilingAt, COMPARTMENT_STEP, CORRIDOR, CORRIDOR_WINDOWS, DOOR, LET_DOWN, OPPOSITE, PARTITION, ROOM, TABLE, WINDOW, WINDOW_X } from './plan';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
@@ -500,11 +500,17 @@ export function buildCar(): Car {
     fr.holes.push(roundRect(new THREE.Path(), -cx - cw.width / 2, cw.y0, -cx + cw.width / 2, cw.y1, 0.08));
     group.add(mesh(shaped(fr, (a, b) => v(-a, b, C.z1 - 0.004)), trim));
   }
-  // The corridor's glass, all in one.
-  const panes = corridorWindows.map((cx) => shaped(roundRect(new THREE.Shape(), -cx - cw.width / 2, cw.y0, -cx + cw.width / 2, cw.y1, 0.08), (a, b) => v(-a, b, C.z1 + 0.04)));
+  // The corridor's glass, all in one; the window across from our door let down, its glass slid
+  // down into the wall and the night coming in over it.
+  const panes = corridorWindows.map((cx) => {
+    const drop = Math.abs(cx - OPPOSITE) < 0.01 ? LET_DOWN : 0;
+    return shaped(roundRect(new THREE.Shape(), -cx - cw.width / 2, cw.y0 - drop, -cx + cw.width / 2, cw.y1 - drop, 0.08), (a, b) => v(-a, b, C.z1 + 0.04));
+  });
   const cGlass = mesh(mergeGeometries(panes)!, glass.material as THREE.Material, { receive: false });
   cGlass.renderOrder = 3;
   group.add(cGlass);
+  group.add(box(cw.width - 0.06, 0.035, 0.03, brass, OPPOSITE, cw.y1 - LET_DOWN - 0.02, C.z1 + 0.04));
+  group.add(box(0.045, 0.14, 0.008, leather, OPPOSITE, cw.y1 - LET_DOWN - 0.1, C.z1 + 0.02));
   // Lamps along the corridor ceiling, one at every door.
   const cLamps: THREE.Vector3[] = [];
   for (let k = 0; k < 8; k++) {

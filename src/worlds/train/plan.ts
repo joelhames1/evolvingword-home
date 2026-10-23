@@ -47,6 +47,12 @@ export const BUNK = { x0: ROOM.x0, x1: -0.74, z0: ROOM.z0, z1: ROOM.z1, top: 0.6
 export const SHELF = { z: -0.25, scale: 0.6 };
 /** Corridor windows: centers along the car, and their size. */
 export const CORRIDOR_WINDOWS = { first: -18.4, step: 1.95, count: 11, width: 1.3, y0: 0.86, y1: 1.76 };
+/**
+ * The corridor window across from our door is let down this far: the way the
+ * camera comes in from outside and goes back out, over its lowered glass. (Every
+ * other window, ours too, has its glass up: nothing goes through those.)
+ */
+export const LET_DOWN = 0.5;
 
 /** A box of furniture or wall: [x0, y0, z0, x1, y1, z1]. */
 type Box = [number, number, number, number, number, number];
@@ -93,6 +99,17 @@ export const CARS: [number, number][] = [
   [CAR.front + 26, CAR.front + 45],
 ];
 
+/** The middle of the corridor window nearest x. */
+export const corridorWindowAt = (x: number) => {
+  const w = CORRIDOR_WINDOWS;
+  const k = Math.round((x - w.first) / w.step);
+  return w.first + Math.max(0, Math.min(w.count - 1, k)) * w.step;
+};
+/** The corridor window across from our door: the one that's let down. */
+export const OPPOSITE = corridorWindowAt((DOOR.x0 + DOOR.x1) / 2);
+/** The open top of it, over the lowered glass. */
+export const OPENING = { x0: OPPOSITE - CORRIDOR_WINDOWS.width / 2, x1: OPPOSITE + CORRIDOR_WINDOWS.width / 2, y0: CORRIDOR_WINDOWS.y1 - LET_DOWN, y1: CORRIDOR_WINDOWS.y1 };
+
 const inBox = (p: THREE.Vector3, b: Box, m: number) => p.x > b[0] - m && p.x < b[3] + m && p.y > b[1] - m && p.y < b[4] + m && p.z > b[2] - m && p.z < b[5] + m;
 
 /** Inside the car body (its shell, not the rooms in it)? */
@@ -102,13 +119,6 @@ const inBody = (p: THREE.Vector3, m: number) => p.y > CAR.skirt - 0.8 - m && p.y
 export const ceilingAt = (z: number) => {
   const k = Math.min(1, Math.max(0, (Math.abs(z) - (CAR.half - 0.5)) / 0.5));
   return CAR.ceiling - (CAR.ceiling - CAR.eaves) * (1 - Math.sqrt(Math.max(0, 1 - k * k)));
-};
-
-/** The middle of the corridor window nearest x. */
-export const corridorWindowAt = (x: number) => {
-  const w = CORRIDOR_WINDOWS;
-  const k = Math.round((x - w.first) / w.step);
-  return w.first + Math.max(0, Math.min(w.count - 1, k)) * w.step;
 };
 
 /**
@@ -124,15 +134,12 @@ export function solid(p: THREE.Vector3, margin = 0): boolean {
   // In the car's shell. The rooms are hollow; the rest is car.
   if (p.y < m || p.y > ceilingAt(p.z) - m) return true;
   const z = p.z;
-  // Through the side walls only by the windows: ours, and the corridor's.
-  if (z < ROOM.z0 + m) {
-    const inWindow = p.x > WINDOW.x0 + m && p.x < WINDOW.x1 - m && p.y > WINDOW.y0 + m && p.y < WINDOW.y1 - m;
-    return !inWindow;
-  }
+  // Through the side walls only over the glass let down in the corridor window across from our door.
+  // (Our own window, up or down, isn't a way in or out: its glass is there.)
+  if (z < ROOM.z0 + m) return true;
   if (z > CORRIDOR.z1 - m) {
-    const w = CORRIDOR_WINDOWS;
-    const cx = corridorWindowAt(p.x);
-    const inWindow = Math.abs(p.x - cx) < w.width / 2 - m && p.y > w.y0 + m && p.y < w.y1 - m;
+    const o = OPENING;
+    const inWindow = p.x > o.x0 + m && p.x < o.x1 - m && p.y > o.y0 + m && p.y < o.y1 - m;
     return !inWindow;
   }
   if (z < ROOM.z1 + m) {
@@ -168,18 +175,15 @@ export const where = (p: THREE.Vector3): Where => {
   return p.z < ROOM.z1 + PARTITION / 2 ? 'room' : 'corridor';
 };
 
-/** The corridor window across from our door. */
-export const OPPOSITE = corridorWindowAt((DOOR.x0 + DOOR.x1) / 2);
-/** In and out through our window, through our door, and through the corridor window across from it. */
+/** The height the camera goes through the open top of that window. */
+const SILL_Y = (OPENING.y0 + OPENING.y1) / 2;
+/** Through our door, and in and out through the corridor window across from it. */
 export const THROUGH = {
-  far: v(WINDOW_X, 1.33, -4.6),
-  outside: v(WINDOW_X, 1.33, -2.4),
-  inside: v(WINDOW_X, 1.36, -0.55),
   room: v(0.98, 1.5, -0.2),
   corridor: v(0.98, 1.5, 0.95),
-  farSide: v(OPPOSITE, 1.31, 4.6),
-  outsideSide: v(OPPOSITE, 1.31, 2.5),
-  insideSide: v(OPPOSITE, 1.33, 1.25),
+  farSide: v(OPPOSITE, SILL_Y, 4.6),
+  outsideSide: v(OPPOSITE, SILL_Y, 2.5),
+  insideSide: v(OPPOSITE, SILL_Y, 1.25),
 };
 /** Where the camera can stand in the open middle of the compartment, and down the corridor. */
 export const MIDDLE = v(0.32, 1.5, -0.32);
@@ -212,13 +216,13 @@ export function route(a: THREE.Vector3, b: THREE.Vector3): THREE.Vector3[] | und
   const inRoom = (p: THREE.Vector3) => (clear(p, THROUGH.room) ? [] : [MIDDLE]);
   if (wa === 'room' && wb === 'corridor') return [...inRoom(a), THROUGH.room, ...toCorridor(b)];
   if (wa === 'corridor' && wb === 'room') return [...toCorridor(a).reverse(), THROUGH.room, ...inRoom(b)];
-  // From outside, in through the window (and on through the door, for the corridor); and back out.
-  // From the corridor's side, in through its window across from our door.
-  const fromWindow = (p: THREE.Vector3) =>
-    where(p) === 'corridor' ? [THROUGH.inside, ...inRoom(THROUGH.inside), THROUGH.room, ...toCorridor(p)] : clear(THROUGH.inside, p) ? [THROUGH.inside] : [THROUGH.inside, MIDDLE];
+  // From outside, in through the corridor window that's let down across from our door (from the
+  // window side, over the roof to it first), and on through the door to the compartment; and back out.
   const fromSide = (p: THREE.Vector3) => (where(p) === 'corridor' ? [THROUGH.insideSide, ...toCorridor(p)] : [THROUGH.insideSide, THROUGH.corridor, THROUGH.room, ...inRoom(p)]);
   const out = wa === 'out' ? a : b;
   const there = wa === 'out' ? b : a;
-  const way = out.z > 0 ? [THROUGH.farSide, THROUGH.outsideSide, ...fromSide(there)] : [THROUGH.far, THROUGH.outside, ...fromWindow(there)];
+  const over = (p: THREE.Vector3, side: number) => v(p.x, CAR.roof + 0.9, side * (CAR.outer + 0.6));
+  const round = out.z > 0 ? [] : [over(out, -1), over(THROUGH.farSide, 1)];
+  const way = [...round, THROUGH.farSide, THROUGH.outsideSide, ...fromSide(there)];
   return wa === 'out' ? way : way.reverse();
 }

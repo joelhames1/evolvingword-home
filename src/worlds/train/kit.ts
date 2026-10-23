@@ -17,13 +17,15 @@ import { buildLand } from './chunks';
 import type { Sweep } from './scenery';
 import { buildConsist } from './consist';
 import { BRAKE_AT, buildControls, LEVER_AT, type LeverState } from './controls';
-import { DWELL, Journey, LAYOUT, LEVER_LIT, LEVER_LOCK, NAMES, VIADUCT_LIMIT, type Land, type TrainEvent } from './journey';
+import { DWELL, FIRST_LEAD, Journey, LAYOUT, LEVER_LIT, LEVER_LOCK, NAMES, VIADUCT_LIMIT, type Land, type TrainEvent } from './journey';
+import { STATION_LAMPS } from './ground';
 import { smooth } from './mesher';
 import { nightUniforms } from './night';
 import { CORRIDOR, MIDDLE, ROOM, route, solid, TABLE, WINDOW, WINDOW_X, clear, where, THROUGH, BUNK } from './plan';
 import { buildRouteMap } from './routemap';
 import { buildSky } from './sky';
 import { buildBand } from './sound';
+import { buildSparks } from './sparks';
 import { buildTicket, MAX_HOLES } from './ticket';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -49,14 +51,15 @@ const GLASS_Z = -1.59;
 
 /** The air in each landscape: how thick the haze is, how much mist lies low, and its color. */
 const AIR: Record<Land, { haze: number; mist: number; color: THREE.Color }> = {
-  fields: { haze: 0.0013, mist: 0.5, color: new THREE.Color('#0d1424') },
-  gorge: { haze: 0.00095, mist: 0.25, color: new THREE.Color('#0d1424') },
-  pass: { haze: 0.00075, mist: 0.1, color: new THREE.Color('#101a2c') },
-  city: { haze: 0.0017, mist: 0.05, color: new THREE.Color('#1e1714') },
-  lake: { haze: 0.001, mist: 0.55, color: new THREE.Color('#0d1424') },
+  fields: { haze: 0.0013, mist: 0.5, color: new THREE.Color('#18223a') },
+  gorge: { haze: 0.00095, mist: 0.25, color: new THREE.Color('#172139') },
+  pass: { haze: 0.00075, mist: 0.1, color: new THREE.Color('#1b2843') },
+  city: { haze: 0.0017, mist: 0.05, color: new THREE.Color('#2a2019') },
+  lake: { haze: 0.001, mist: 0.55, color: new THREE.Color('#17223a') },
 };
 const hazeCol = new THREE.Color();
-const tint = new THREE.Color();
+const LAMP_WARM = new THREE.Color('#ffb874');
+const LAMP_WHITE = new THREE.Color('#ffe2bc');
 const signAt = new THREE.Vector3();
 
 export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
@@ -65,7 +68,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const uniforms = nightUniforms();
   // We join the train on the viaduct, over the gorge.
-  const journey = new Journey({ land: 'gorge', at: (LAYOUT.gorge.viaduct![0] + LAYOUT.gorge.viaduct![1]) / 2 - 60, speed: VIADUCT_LIMIT });
+  // (A longer first stretch than usual, so the first junction's lever lights up a little after you sit down.)
+  const journey = new Journey({ land: 'gorge', at: (LAYOUT.gorge.viaduct![0] + LAYOUT.gorge.viaduct![1]) / 2 - 60, speed: VIADUCT_LIMIT, lead: FIRST_LEAD });
   const board = buildBoard(1.32);
   board.group.position.set(WINDOW_X, 1.955, ROOM.z0 + 0.032);
   const car = buildCar();
@@ -86,45 +90,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   skyHolder.add(sky.group);
 
   // --- the brakes' sparks ------------------------------------------------------------------
-  const SPARKS = quality === 'high' ? 480 : 320;
-  const sparkPos = new Float32Array(SPARKS * 3);
-  const sparkVel = new Float32Array(SPARKS * 3);
-  const sparkLife = new Float32Array(SPARKS).fill(-1);
-  const sparkCol = new Float32Array(SPARKS * 3);
-  const sparkGeo = new THREE.BufferGeometry();
-  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
-  sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkCol, 3));
-  // (A shader of its own, like the stars': each spark a few pixels of glow, sized by distance.)
-  const sparkMat = new THREE.ShaderMaterial({
-    vertexShader: /* glsl */ `
-      attribute vec3 color;
-      uniform float uScale;
-      varying vec3 vColor;
-      void main() {
-        vColor = color;
-        vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = clamp(0.15 * uScale / max(-mv.z, 0.1), 2.0, 40.0) * step(0.001, color.r);
-        gl_Position = projectionMatrix * mv;
-      }
-    `,
-    fragmentShader: /* glsl */ `
-      varying vec3 vColor;
-      void main() {
-        float r = length(gl_PointCoord - 0.5) * 2.0;
-        float a = 1.0 - smoothstep(0.0, 1.0, r);
-        gl_FragColor = vec4(vColor * (a * a * 3.0 + smoothstep(0.35, 0.0, r) * 4.0), 1.0);
-      }
-    `,
-    uniforms: { uScale: { value: 500 } },
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const sparks = new THREE.Points(sparkGeo, sparkMat);
-  sparks.frustumCulled = false;
-  // Where they fly from: the wheels on the window side, ours and the cars either side.
-  const SPARK_FROM = [-0.95, 1.55, 6.45, 8.95, -16.05, -18.55, -22.4, -24.9];
-  let sparkNext = 0;
+  const sparks = buildSparks({ count: quality === 'high' ? 360 : 200, reduced });
 
   // --- the lamps in the glass ---------------------------------------------------------------
   // At night the window gives back the lamps. Each reflection sits where the lamp's mirror image
@@ -159,6 +125,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   let crickets = 0;
   let tunnelK = 0;
   let firstHorn = true;
+  /** Where we were when the brake was pulled, to go back to when the train moves off. */
+  let cameBack = '';
   let deskLamp: { spot: THREE.SpotLight; fill: THREE.PointLight; base: [number, number] } | null = null;
   let lastRenderer: THREE.WebGLRenderer | null = null;
   let lastCalls = 0;
@@ -244,9 +212,24 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     band.brakeOn();
     wiring?.sound.click();
     say('EMERGENCY STOP');
-    // Out to the line to watch the sparks, if we're in the compartment.
+    // Out by the line to watch the sparks, if we're in the compartment: out through the door and the
+    // corridor window that's let down. Unless there's no room out there (a tunnel, the sheds), when
+    // it's nose to the glass to see them light up the night under the window.
     const here = wiring?.current() ?? '';
-    if (wiring && where(SHOTS[here]?.pos ?? MIDDLE) === 'room') wiring.goTo('sparks');
+    if (wiring && where(SHOTS[here]?.pos ?? MIDDLE) === 'room') {
+      cameBack = here;
+      wiring.goTo(roomOutside(journey.s, journey.v) ? 'sparks' : 'window');
+    }
+    return true;
+  };
+  /** Room to stand beside the line from here until the train has stopped: no tunnel and no sheds along the way. */
+  const roomOutside = (s: number, v: number) => {
+    const a = s - 40;
+    const b = s + (v * v) / (2 * 1.4) + 60;
+    for (const l of journey.legs) {
+      const L = LAYOUT[l.land];
+      for (const [x0, x1] of [...(L.sheds ?? []), ...(L.tunnel ? [L.tunnel] : [])]) if (l.start + x1 + 20 > a && l.start + x0 - 20 < b) return false;
+    }
     return true;
   };
   const toggleWindow = () => {
@@ -324,6 +307,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       case 'release':
         controls.setBrake(false);
         band.release();
+        // Away again: back in out of the night before the line goes on.
+        if (wiring && wiring.current() === 'sparks') wiring.goTo(cameBack && SHOTS[cameBack] && cameBack !== 'sparks' ? cameBack : 'brake');
         break;
       case 'away':
         break;
@@ -340,7 +325,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const projectShot = (focus: THREE.Vector3): Shot => ({ pos: v(focus.x + 0.12, 1.6, CORRIDOR.z1 - 0.14), target: focus.clone().add(v(0, 0.02, 0)), fov: 48, lean: 0.02, shift: CARD });
 
   const kit: Kit = {
-    objects: [car.group, consist.group, controls.group, board.group, outside, skyHolder, sparks, signHit, routeMap.mesh, glints],
+    objects: [car.group, consist.group, controls.group, board.group, outside, skyHolder, sparks.group, signHit, routeMap.mesh, glints],
     board,
     shots: {
       // Down in the gorge on the far side, the train crossing the viaduct in front of the moon,
@@ -515,8 +500,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         ticket: { pos: ON_TABLE.ticket.clone().add(v(0.0, 0.3, 0.17)), target: ON_TABLE.ticket.clone().add(v(0, 0, -0.005)), fov: 30, lean: 0.008, near: 0.02, shift: CARD },
         lever: { pos: v(0.82, 1.64, -0.5), target: LEVER_AT.clone().add(v(0, 0.26, 0.05)), fov: 40, lean: 0.015, shift: CARD },
         brake: { pos: v(-0.66, 1.58, -0.9), target: BRAKE_AT.clone().add(v(0, 0, 0.05)), fov: 32, lean: 0.015, shift: CARD },
-        // Out by the line, low, just behind our wheels: the sparks fly at you.
-        sparks: { pos: v(-4.6, -0.15, -3.9), target: v(0.3, -1.0, -0.8), fov: 50, lean: 0.01 },
+        // Out by the line on the corridor's side, low, behind our wheels, looking along them: the sparks fly at you.
+        sparks: { pos: v(-5.2, 0.05, 4.9), target: v(0.6, -0.9, 0.6), fov: 46, lean: 0.01 },
         honors: { pos: v(-0.45, 1.52, -0.24), target: v(ROOM.x1, 1.32, -0.26), fov: 52, lean: 0.04 },
         medals: { pos: v(0.55, 1.62, -0.27), target: v(ROOM.x1 - 0.05, 1.6, -0.27), fov: 40, lean: 0.015, shift: CARD },
         library: { pos: v(0.22, 1.12, -0.25), target: v(ROOM.x1, 0.66, -0.25), fov: 50, lean: 0.03, shift: 0.1 },
@@ -591,27 +576,42 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       band.wheels(s, vNow);
 
       // The landscape we're in sets the haze, the glow and the stars.
-      let haze = 0;
-      let glowK = 0;
-      let mist = 0;
-      hazeCol.setRGB(0, 0, 0);
-      for (const { leg, w } of journey.weights(uWin)) {
-        const air = AIR[leg.land];
-        haze += air.haze * w;
-        if (leg.land === 'city') glowK += w;
-        mist += air.mist * w;
-        hazeCol.add(tint.copy(air.color).multiplyScalar(w));
-      }
+      const mix = journey.blend(uWin);
+      const airA = AIR[mix.a.land];
+      const airB = AIR[mix.b.land];
+      const kB = mix.b === mix.a ? 0 : mix.k;
+      const haze = airA.haze + (airB.haze - airA.haze) * kB;
+      const mist = airA.mist + (airB.mist - airA.mist) * kB;
+      const glowK = (mix.a.land === 'city' ? 1 - kB : 0) + (mix.b.land === 'city' ? kB : 0);
+      hazeCol.copy(airA.color).lerp(airB.color, kB);
       uniforms.uHazeDensity.value = haze;
       (uniforms.uHaze.value as THREE.Color).copy(hazeCol);
       uniforms.uMist.value = mist;
       (uniforms.uGlow.value as THREE.Color).setRGB(0.07, 0.04, 0.015).multiplyScalar(glowK);
       sky.setCity(glowK);
+      sky.setHaze(hazeCol);
+
+      // A station near us: its platform lamps light what's round them.
+      const stationLamps = uniforms.uStation.value as THREE.Vector4;
+      stationLamps.w = 0;
+      for (const l of journey.legs) {
+        const st = LAYOUT[l.land].station;
+        if (!st) continue;
+        const stop = l.start + st.at;
+        if (Math.abs(stop - s) > 1500) continue;
+        const w = stop + WINDOW_X + STATION_LAMPS.offset;
+        const step = STATION_LAMPS.step;
+        const first = Math.ceil((stop - 104 + 6 - w) / step) * step + w;
+        const last = Math.floor((stop + 54 - 4 - 1e-3 - w) / step) * step + w;
+        stationLamps.set(w - s, first - s, last - s, l.land === 'city' ? 0.75 : 0.65);
+        (uniforms.uStationColor.value as THREE.Color).copy(l.land === 'city' ? LAMP_WHITE : LAMP_WARM);
+      }
 
       // Tunnel, sheds and the moon through the window.
       tunnelK = tunnelAt(uWin);
       const open = openness(uWin);
       car.lights.moon.intensity = 0.35 * open;
+      uniforms.uMoonK.value = 1 - tunnelK;
       band.setTunnel(tunnelK);
 
       // The car rocks a little, more at speed; a jolt over the points; a lurch as the brakes bite.
@@ -681,43 +681,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       // The brakes: their sound follows the speed; sparks from the wheels while they bite.
       if (braking) band.brakeLevel(vNow);
       const sparkRate = braking ? Math.min(1, vNow / 6) : 0;
-      (uniforms.uSpark.value as THREE.Vector4).set(0.6, -1.25, -1.8, sparkRate * (2.4 + Math.random() * 1.6));
-      const ddt = Math.min(0.05, Math.max(0, dt));
-      if (sparkRate > 0) {
-        sparkNext += ddt * 900 * sparkRate;
-        for (let i = 0; i < SPARKS && sparkNext >= 1; i++) {
-          if (sparkLife[i] > 0) continue;
-          sparkNext -= 1;
-          const from = SPARK_FROM[Math.floor(Math.random() * SPARK_FROM.length)];
-          // Thrown off the wheel backward and out from under the car, some high enough to see from the window.
-          sparkLife[i] = 0.35 + Math.random() * 0.7;
-          sparkPos[i * 3] = from + (Math.random() - 0.5) * 0.2;
-          sparkPos[i * 3 + 1] = -1.12;
-          sparkPos[i * 3 + 2] = -0.74 - Math.random() * 0.05;
-          sparkVel[i * 3] = -(2 + Math.random() * (vNow * 0.6 + 2));
-          sparkVel[i * 3 + 1] = 0.6 + Math.random() * 3.2;
-          sparkVel[i * 3 + 2] = -(2.5 + Math.random() * 5);
-        }
-      }
-      sparkNext = Math.min(sparkNext, 50);
-      for (let i = 0; i < SPARKS; i++) {
-        if (sparkLife[i] <= 0) {
-          sparkCol[i * 3] = sparkCol[i * 3 + 1] = sparkCol[i * 3 + 2] = 0;
-          continue;
-        }
-        sparkLife[i] -= ddt;
-        sparkVel[i * 3 + 1] -= 9.8 * ddt;
-        sparkPos[i * 3] += sparkVel[i * 3] * ddt;
-        sparkPos[i * 3 + 1] = Math.max(-1.36, sparkPos[i * 3 + 1] + sparkVel[i * 3 + 1] * ddt);
-        sparkPos[i * 3 + 2] += sparkVel[i * 3 + 2] * ddt;
-        const k = Math.max(0, Math.min(1, sparkLife[i] * 3));
-        sparkCol[i * 3] = 2.6 * k;
-        sparkCol[i * 3 + 1] = 1.3 * k * k;
-        sparkCol[i * 3 + 2] = 0.35 * k * k * k;
-      }
-      sparkMat.uniforms.uScale.value = renderer.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
-      sparkGeo.attributes.position.needsUpdate = true;
-      sparkGeo.attributes.color.needsUpdate = true;
+      (uniforms.uSpark.value as THREE.Vector4).set(0.3, -1.2, 0.8, sparkRate * (1.1 + Math.random() * 1.3));
+      sparks.tick(sparkRate, vNow, dt, camera, renderer);
 
       // Stopped out in the country: crickets. At a station, the guard's whistle before we go.
       const still = journey.phase === 'still' || journey.phase === 'dwell';
@@ -822,7 +787,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       windowOpen: () => windowK,
       punch: () => punch(),
       horn: () => horn(),
-      state: () => ({ land: journey.current().land, phase: journey.phase, v: journey.v, s: journey.s, junction: journey.junction(), tunnel: tunnelK, window: windowAim }),
+      state: () => ({ land: journey.current().land, phase: journey.phase, v: journey.v, s: journey.s, junction: { ...journey.junction() }, tunnel: tunnelK, window: windowAim, shot: wiring?.current() ?? '' }),
+      /** Brake sparks flying right now. */
+      sparksLive: () => sparks.live(),
       /** Draw calls in the last whole frame (switches on counting the first time it's asked). */
       calls: () => {
         if (lastRenderer) lastRenderer.info.autoReset = false;

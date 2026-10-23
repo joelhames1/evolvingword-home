@@ -13,7 +13,7 @@ import { BALLAST, CESS, groundOf, paint, WATER } from './ground';
 import { hash, Mesher } from './mesher';
 import { cityMaterial, nightMaterial, poolMaterial, waterMaterial } from './night';
 import { branchZ, dress, points, track, type Build, type Fixture, type PointSpec, type Sweep } from './scenery';
-import { buildClock, nameBoard, stone } from './signs';
+import { buildClock, nameBoard, posterArt, stone } from './signs';
 
 export const CHUNK = 200;
 const BEHIND = 1050;
@@ -92,7 +92,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
   const mats = {
     terrain: nightMaterial(uniforms, { vertexColors: true, sheen: 0.18 }),
     decor: nightMaterial(uniforms, { vertexColors: true, glows: true }),
-    stone: nightMaterial(uniforms, { vertexColors: true, map: stone('ashlar'), mapScale: 0.42, side: THREE.DoubleSide }),
+    stone: nightMaterial(uniforms, { vertexColors: true, map: stone('ashlar'), mapScale: 0.3, side: THREE.DoubleSide }),
     brick: nightMaterial(uniforms, { vertexColors: true, map: stone('brick'), mapScale: 0.36, side: THREE.DoubleSide }),
     rock: nightMaterial(uniforms, { vertexColors: true, map: stone('rock'), mapScale: 0.2, side: THREE.DoubleSide }),
     city: cityMaterial(uniforms),
@@ -108,18 +108,26 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     if (!m) nameMats.set(name, (m = new THREE.MeshBasicMaterial({ map: nameBoard(name), color: new THREE.Color(0.62, 0.62, 0.66) })));
     return m;
   };
+  const posterMat = (name: string) => {
+    let m = nameMats.get(`poster:${name}`);
+    if (!m) nameMats.set(`poster:${name}`, (m = new THREE.MeshBasicMaterial({ map: posterArt(name), color: new THREE.Color(0.5, 0.48, 0.45) })));
+    return m;
+  };
 
+  const same = (a: Leg, b: Leg) => a.start === b.start && a.land === b.land;
   // How much a stretch shapes the land at u.
   const weight = (leg: Leg, u: number) => {
-    for (const { leg: l, w } of journey.weights(u)) if (l.start === leg.start && l.land === leg.land) return w;
-    return 0;
+    const { a, b, k } = journey.blend(u);
+    if (a === b) return same(a, leg) ? 1 : 0;
+    return (same(a, leg) ? 1 - k : 0) + (same(b, leg) ? k : 0);
   };
 
   /** The ground at u, z: the stretches there blended. */
   const base = (u: number, z: number) => {
-    let h = 0;
-    for (const { leg, w } of journey.weights(u)) h += groundOf(leg, u, z) * w;
-    return h;
+    const { a, b, k } = journey.blend(u);
+    if (a === b || k <= 0) return groundOf(a, u, z);
+    if (k >= 1) return groundOf(b, u, z);
+    return groundOf(a, u, z) * (1 - k) + groundOf(b, u, z) * k;
   };
   /** How far past each junction its other line runs: until the land gets too rough to lay it (a gorge, a lake). */
   const ends = new Map<number, number>();
@@ -183,7 +191,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     const n = new THREE.Vector3();
     for (let i = 1; i <= nCols; i++) {
       const u = u0 + (i - 1) * STEP;
-      const ws = journey.weights(u);
+      const { a: legA, b: legB, k: kB } = journey.blend(u);
       for (let j = 0; j < rows; j++) {
         const z = ZS[j];
         const h = H[i * rows + j];
@@ -200,12 +208,10 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
         nrm[k + 1] = n.y;
         nrm[k + 2] = n.z;
         const slope = Math.min(2, Math.hypot(dhu, dhz));
-        tmpC.setRGB(0, 0, 0);
-        for (const { leg, w } of ws) {
-          paint(tmpD, leg, u, z, h, slope);
-          tmpC.r += tmpD.r * w;
-          tmpC.g += tmpD.g * w;
-          tmpC.b += tmpD.b * w;
+        paint(tmpC, legA, u, z, h, slope);
+        if (legB !== legA && kB > 0) {
+          paint(tmpD, legB, u, z, h, slope);
+          tmpC.lerp(tmpD, kB);
         }
         col[k] = tmpC.r;
         col[k + 1] = tmpC.g;
@@ -331,7 +337,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     const signs: THREE.Object3D[] = [];
     for (const f of fixtures) {
       const geo = f.kind === 'clock' ? new THREE.CircleGeometry(f.w / 2, 32) : new THREE.PlaneGeometry(f.w, f.h);
-      const mesh = new THREE.Mesh(geo, f.kind === 'flap' ? flapMat : f.kind === 'clock' ? clockMat : nameMat(f.name ?? ''));
+      const mesh = new THREE.Mesh(geo, f.kind === 'flap' ? flapMat : f.kind === 'clock' ? clockMat : f.kind === 'poster' ? posterMat(f.name ?? '') : nameMat(f.name ?? ''));
       mesh.position.set(f.u - u0, f.y, f.z);
       out.add(mesh);
       if (f.kind === 'flap') signs.push(mesh);
@@ -365,6 +371,9 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     pool.push({ u0: NaN, group: g, dirty: false, built: false, lights: [], sweeps: [], signs: [] });
   }
   let first = true;
+  // Handed out each frame, filled again each time (nothing new made).
+  const sweepList: Sweep[] = [];
+  const signList: THREE.Object3D[] = [];
 
   return {
     group,
@@ -373,23 +382,30 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     update(s, camera, renderer, facing = 0) {
       const k0 = Math.floor((s - BEHIND) / CHUNK);
       const k1 = Math.floor((s + AHEAD) / CHUNK);
-      const want = new Set<number>();
-      for (let k = k0; k <= k1; k++) want.add(k * CHUNK);
       // Pieces no longer wanted are free; wanted starts without a piece take one.
-      for (const p of pool) if (!want.has(p.u0)) p.u0 = NaN;
-      const have = new Set(pool.filter((p) => !Number.isNaN(p.u0)).map((p) => p.u0));
-      for (const u0 of want) {
-        if (have.has(u0)) continue;
-        const p = pool.find((q) => Number.isNaN(q.u0));
-        if (!p) break;
-        p.u0 = u0;
-        p.built = false;
-        p.dirty = true;
-        p.group.visible = false;
+      for (const p of pool) if (!(p.u0 >= k0 * CHUNK && p.u0 <= k1 * CHUNK)) p.u0 = NaN;
+      for (let k = k0; k <= k1; k++) {
+        const u0 = k * CHUNK;
+        let had = false;
+        let free: Piece | null = null;
+        for (const p of pool) {
+          if (p.u0 === u0) had = true;
+          else if (!free && Number.isNaN(p.u0)) free = p;
+        }
+        if (had || !free) continue;
+        free.u0 = u0;
+        free.built = false;
+        free.dirty = true;
+        free.group.visible = false;
       }
       // Build what's needed: everything at once the first time, then one piece a frame, nearest first.
-      const todo = pool.filter((p) => !Number.isNaN(p.u0) && p.dirty).sort((a, b) => Math.abs(a.u0 + CHUNK / 2 - s) - Math.abs(b.u0 + CHUNK / 2 - s));
-      for (const p of first ? todo : todo.slice(0, 1)) build(p);
+      for (;;) {
+        let next: Piece | null = null;
+        for (const p of pool) if (!Number.isNaN(p.u0) && p.dirty && (!next || Math.abs(p.u0 + CHUNK / 2 - s) < Math.abs(next.u0 + CHUNK / 2 - s))) next = p;
+        if (!next) break;
+        build(next);
+        if (!first) break;
+      }
       first = false;
       for (const p of pool) {
         const live = !Number.isNaN(p.u0) && p.built;
@@ -406,14 +422,14 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       if (now) first = true;
     },
     sweeps() {
-      const out: Sweep[] = [];
-      for (const p of pool) if (p.built && !Number.isNaN(p.u0)) out.push(...p.sweeps);
-      return out;
+      sweepList.length = 0;
+      for (const p of pool) if (p.built && !Number.isNaN(p.u0)) for (const sw of p.sweeps) sweepList.push(sw);
+      return sweepList;
     },
     signs() {
-      const out: THREE.Object3D[] = [];
-      for (const p of pool) if (p.built && !Number.isNaN(p.u0)) out.push(...p.signs);
-      return out;
+      signList.length = 0;
+      for (const p of pool) if (p.built && !Number.isNaN(p.u0)) for (const m of p.signs) signList.push(m);
+      return signList;
     },
     pieces: () => pool.filter((p) => p.built && !Number.isNaN(p.u0)).length,
   };

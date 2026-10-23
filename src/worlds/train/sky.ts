@@ -12,6 +12,8 @@ export interface Sky {
   group: THREE.Group;
   /** How much of the sky the city's lights wash out, 0..1. */
   setCity(k: number): void;
+  /** The haze the land fades into: the sky low down matches it. */
+  setHaze(c: THREE.Color): void;
   tick(t: number, camera: THREE.Camera): void;
   stars: number;
 }
@@ -76,6 +78,7 @@ export function buildSky(quality: Quality): Sky {
       fragmentShader: /* glsl */ `
         uniform vec3 uMoon;
         uniform float uCity;
+        uniform vec3 uHaze;
         varying vec3 vDir;
         float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
         float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -84,12 +87,13 @@ export function buildSky(quality: Quality): Sky {
           vec3 d = normalize(vDir);
           float up = clamp(d.y, -0.2, 1.0);
           // (Linear light: these are darker than they look written down.)
-          vec3 zenith = vec3(0.0012, 0.0018, 0.0048);
-          vec3 horizon = vec3(0.007, 0.011, 0.024);
+          vec3 zenith = vec3(0.0016, 0.0024, 0.0062);
+          // Low down, the same haze the land fades into, so the far hills melt into the sky.
+          vec3 horizon = uHaze;
           vec3 col = mix(horizon, zenith, pow(clamp(up, 0.0, 1.0), 0.45));
           // The moon's glow, wide and soft, and a tighter halo.
           float m = max(dot(d, uMoon), 0.0);
-          col += vec3(0.05, 0.06, 0.085) * pow(m, 14.0) * 0.6 + vec3(0.12, 0.13, 0.15) * pow(m, 400.0) * 0.5;
+          col += vec3(0.05, 0.06, 0.085) * pow(m, 8.0) * 0.6 + vec3(0.12, 0.13, 0.15) * pow(m, 400.0) * 0.5;
           // A faint Milky Way: a band across the sky, mottled.
           vec3 axis = normalize(vec3(0.45, 0.35, 0.82));
           float band = exp(-pow(dot(d, axis) / 0.16, 2.0));
@@ -98,11 +102,11 @@ export function buildSky(quality: Quality): Sky {
           // The city's sodium glow, low down all round.
           col += vec3(0.09, 0.042, 0.015) * uCity * exp(-max(up, 0.0) * 9.0) * 0.55;
           // Below the horizon (seen only past the edge of things), the haze.
-          col = mix(col, horizon * (1.0 + uCity * 2.0), smoothstep(0.02, -0.08, d.y));
+          col = mix(col, horizon, smoothstep(0.02, -0.08, d.y));
           gl_FragColor = vec4(col, 1.0);
         }
       `,
-      uniforms: { uMoon: { value: MOON_DIR.clone() }, uCity: city },
+      uniforms: { uMoon: { value: MOON_DIR.clone() }, uCity: city, uHaze: { value: new THREE.Color(0.007, 0.011, 0.024) } },
       side: THREE.BackSide,
       depthWrite: false,
     }),
@@ -193,6 +197,9 @@ export function buildSky(quality: Quality): Sky {
     stars: count,
     setCity(k) {
       city.value = k;
+    },
+    setHaze(c) {
+      ((dome.material as THREE.ShaderMaterial).uniforms.uHaze.value as THREE.Color).copy(c);
     },
     tick(t, camera) {
       group.position.copy(camera.position);

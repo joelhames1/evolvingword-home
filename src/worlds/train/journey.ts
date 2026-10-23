@@ -74,6 +74,16 @@ export interface Leg {
   seed: number;
 }
 
+export interface Junction {
+  at: number;
+  from: Land;
+  to: [Land, Land];
+  set: 0 | 1;
+  by: 'train' | 'you';
+  live: boolean;
+  left: number;
+}
+
 export type Phase = 'running' | 'stopping' | 'dwell' | 'braking' | 'still' | 'easing';
 
 export type TrainEvent =
@@ -99,8 +109,14 @@ export const EASE = 2.6;
 const EMERGENCY = 1.55;
 const PULL_AWAY = 0.38;
 const SLOW = 0.6;
-/** Over the viaduct, slowly (still fast enough for the band to keep time with the wheels). */
-export const VIADUCT_LIMIT = 15;
+/** Over the viaduct, slowly (still clearly fast enough for the band to keep time with the wheels). */
+export const VIADUCT_LIMIT = 16;
+/**
+ * The first stretch runs this much longer than its landscape usually does, so
+ * the first junction is still a little way off when you sit down at the table
+ * and you see the lever light up.
+ */
+export const FIRST_LEAD = 700;
 
 export class Journey {
   /** Where the train is along the line (meters), and how fast it's going. */
@@ -122,16 +138,19 @@ export class Journey {
   private stop: { at: number; name: string } | null = null;
   private rand: () => number;
 
-  constructor(opts: { rand?: () => number; land?: Land; at?: number; speed?: number } = {}) {
+  constructor(opts: { rand?: () => number; land?: Land; at?: number; speed?: number; lead?: number } = {}) {
     this.rand = opts.rand ?? Math.random;
     this.s = 0;
-    this.reset(opts.land ?? 'gorge', opts.at ?? 0, opts.speed);
+    this.reset(opts.land ?? 'gorge', opts.at ?? 0, opts.speed, opts.lead);
   }
 
-  /** Puts the train somewhere new: `at` meters into a stretch of `land` that starts where the line's got to (so the land behind is forgotten). */
-  reset(land: Land, at: number, speed?: number) {
+  /**
+   * Puts the train somewhere new: `at` meters into a stretch of `land` that starts where the line's got to (so the land behind is forgotten).
+   * `lead` makes that stretch longer than usual, past its landscape's last feature.
+   */
+  reset(land: Land, at: number, speed?: number, lead = 0) {
     const start = Math.ceil((this.s + 4000) / 1000) * 1000;
-    this.legs = [this.leg(land, start)];
+    this.legs = [this.leg(land, start, Math.max(0, lead))];
     this.cur = 0;
     this.s = start + at;
     this.v = speed ?? LAYOUT[land].limit;
@@ -146,8 +165,8 @@ export class Journey {
     this.changedFrom = -Infinity;
   }
 
-  private leg(land: Land, start: number): Leg {
-    return { land, start, end: start + LAYOUT[land].length, set: this.rand() < 0.5 ? 0 : 1, by: 'train', seed: Math.floor(this.rand() * 1e6) };
+  private leg(land: Land, start: number, lead = 0): Leg {
+    return { land, start, end: start + LAYOUT[land].length + lead, set: this.rand() < 0.5 ? 0 : 1, by: 'train', seed: Math.floor(this.rand() * 1e6) };
   }
 
   /** Keeps the line laid well ahead, each stretch the one its junction is set for. */
@@ -180,31 +199,68 @@ export class Journey {
 
   /** The stretches shaping the land at u, and how much each does: one, or two where one turns into the next. */
   weights(u: number): { leg: Leg; w: number }[] {
-    const i = this.legs.findIndex((l) => u >= l.start && u < l.end);
-    if (i < 0) return [{ leg: u < this.legs[0].start ? this.legs[0] : this.legs[this.legs.length - 1], w: 1 }];
-    const l = this.legs[i];
-    if (i > 0 && u < l.start + BLEND) {
-      const k = smooth((u - (l.start - BLEND)) / (2 * BLEND));
-      return [
-        { leg: this.legs[i - 1], w: 1 - k },
-        { leg: l, w: k },
-      ];
-    }
-    if (i < this.legs.length - 1 && u > l.end - BLEND) {
-      const k = smooth((u - (l.end - BLEND)) / (2 * BLEND));
-      return [
-        { leg: l, w: 1 - k },
-        { leg: this.legs[i + 1], w: k },
-      ];
-    }
-    return [{ leg: l, w: 1 }];
+    const b = this.blend(u);
+    return b.b === b.a ? [{ leg: b.a, w: 1 }] : [
+      { leg: b.a, w: 1 - b.k },
+      { leg: b.b, w: b.k },
+    ];
   }
 
-  /** The junction at the end of this stretch: where it can send us, which way it's set, and whether the lever can change it. */
-  junction() {
+  private mix = { a: null as unknown as Leg, b: null as unknown as Leg, k: 0 };
+  /**
+   * The same without making anything (it's asked thousands of times a frame
+   * while the land is built): the stretch at u, the next one if it's turning into
+   * it, and how far (0..1). One object, filled in again each time: read it at once.
+   */
+  blend(u: number): { a: Leg; b: Leg; k: number } {
+    const m = this.mix;
+    const legs = this.legs;
+    let i = -1;
+    for (let q = 0; q < legs.length; q++)
+      if (u >= legs[q].start && u < legs[q].end) {
+        i = q;
+        break;
+      }
+    if (i < 0) {
+      m.a = m.b = u < legs[0].start ? legs[0] : legs[legs.length - 1];
+      m.k = 0;
+      return m;
+    }
+    const l = legs[i];
+    if (i > 0 && u < l.start + BLEND) {
+      m.a = legs[i - 1];
+      m.b = l;
+      m.k = smooth((u - (l.start - BLEND)) / (2 * BLEND));
+      return m;
+    }
+    if (i < legs.length - 1 && u > l.end - BLEND) {
+      m.a = l;
+      m.b = legs[i + 1];
+      m.k = smooth((u - (l.end - BLEND)) / (2 * BLEND));
+      return m;
+    }
+    m.a = m.b = l;
+    m.k = 0;
+    return m;
+  }
+
+  private jn: Junction = { at: 0, from: 'gorge', to: BRANCHES.gorge, set: 0, by: 'train', live: false, left: 0 };
+  /**
+   * The junction at the end of this stretch: where it can send us, which way it's set, and whether the lever can change it.
+   * (One object, filled in again each time it's asked: copy what you want to keep.)
+   */
+  junction(): Readonly<Junction> {
     const l = this.current();
+    const j = this.jn;
     const left = l.end - this.s;
-    return { at: l.end, from: l.land, to: BRANCHES[l.land], set: l.set, by: l.by, live: left <= LEVER_LIT && left > LEVER_LOCK, left };
+    j.at = l.end;
+    j.from = l.land;
+    j.to = BRANCHES[l.land];
+    j.set = l.set;
+    j.by = l.by;
+    j.live = left <= LEVER_LIT && left > LEVER_LOCK;
+    j.left = left;
+    return j;
   }
 
   /** Throws the lever: the junction ahead is set for its other branch, and the line beyond is laid again. False if it can't be thrown now. */
