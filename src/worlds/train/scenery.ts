@@ -523,7 +523,7 @@ function viaduct(b: Build, a: number, end: number) {
       lo.absarc(x(b, mid), lowSpring, (p1 - p0 - 5.2) / 2, 0, Math.PI, false);
       const lg = new THREE.ExtrudeGeometry(lo, { depth: 4.2, bevelEnabled: false, curveSegments: 12 });
       lg.translate(0, 0, -2.1);
-      addGeometry(b.stone, lg, stoneColor.clone().multiplyScalar(0.92));
+      addGeometry(b.stone, lg, stoneColor.clone().multiplyScalar(0.72));
     }
   }
 }

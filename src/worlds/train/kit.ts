@@ -516,7 +516,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         lever: { pos: v(0.9, 1.64, -0.52), target: LEVER_AT.clone().add(v(0, 0.26, 0.05)), fov: 40, lean: 0.015, shift: CARD },
         brake: { pos: v(-0.66, 1.58, -0.9), target: BRAKE_AT.clone().add(v(0, 0, 0.05)), fov: 32, lean: 0.015, shift: CARD },
         // Out by the line on the corridor's side, low, behind our wheels, looking along them: the sparks fly at you.
-        sparks: { pos: v(-5.2, 0.05, 4.9), target: v(0.6, -0.9, 0.6), fov: 46, lean: 0.01 },
+        sparks: { pos: v(-5.2, 0.05, 4.9), target: v(0.6, -0.9, 0.6), fov: 46, lean: 0.01, shift: CARD },
         honors: { pos: v(-0.45, 1.52, -0.24), target: v(ROOM.x1, 1.32, -0.26), fov: 52, lean: 0.04 },
         medals: { pos: v(0.55, 1.62, -0.27), target: v(ROOM.x1 - 0.05, 1.6, -0.27), fov: 40, lean: 0.015, shift: CARD },
         library: { pos: v(0.22, 1.12, -0.25), target: v(ROOM.x1, 0.66, -0.25), fov: 50, lean: 0.03, shift: 0.1 },

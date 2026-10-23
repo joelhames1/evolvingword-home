@@ -77,10 +77,11 @@ export function natural(land: Land, u: number, z: number, seed: number): number 
       const knolls = fbm(u / 160 + s, z / 160, 33) * 26 * smooth(20, 250, az);
       const beyond = 400 * smooth(700, 1380, az) * (0.45 + ridged(u / 420 + s, z / 420, 34));
       let h = -1.8 + fall + knolls + beyond;
-      // Over the tunnel, the mountain comes right across the line.
+      // Over the tunnel, a spur of the mountain comes right across the line, falling away into the
+      // valley (not a wall that goes on rising out across it).
       const t = LAYOUT.pass.tunnel!;
-      const over = smooth(t[0] - 50, t[0] + 10, u) * (1 - smooth(t[1] - 10, t[1] + 50, u));
-      if (over > 0) h = h + (Math.max(h, 30 + az * 0.6 + fbm(u / 80, z / 80 + s, 35) * 12) - h) * over;
+      const over = smooth(t[0] - 50, t[0] + 10, u) * (1 - smooth(t[1] - 10, t[1] + 50, u)) * (1 - smooth(140, 420, az));
+      if (over > 0) h = h + (Math.max(h, 30 + Math.min(az, 110) * 0.6 + fbm(u / 80, z / 80 + s, 35) * 12) - h) * over;
       return h;
     }
     case 'city': {

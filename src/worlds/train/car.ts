@@ -668,7 +668,8 @@ export function buildCar(): Car {
     windowHit,
     setWindow(k) {
       paneDrop = k;
-      pane.position.y = -0.44 * k;
+      // Down below the sill line, so the glass top and its rail are out of the way of a face at the window.
+      pane.position.y = -0.62 * k;
     },
     setLamps(k) {
       ceilingLight.intensity = lampBase.ceiling * k;
