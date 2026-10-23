@@ -37,6 +37,7 @@ const KITS: Record<WorldId, () => Promise<KitModule>> = {
   cell: () => import('./worlds/cell/kit'),
   heavens: () => import('./worlds/heavens/kit'),
   library: () => import('./worlds/library/kit'),
+  greenhouse: () => import('./worlds/greenhouse/kit'),
 };
 
 const CONTACT = 'studio@evolvingword.com';

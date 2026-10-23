@@ -53,10 +53,10 @@ const fillScreen = (globe: HTMLElement) => {
 /** The weather running in each globe, stopped once a world takes over. */
 const skies: { stop(): void }[] = [];
 
-/** Snow drifting, rain slanting, morning mist or falling petals, inside one globe. */
+/** Snow drifting, rain slanting, morning mist, falling petals or golden pollen, inside one globe. */
 function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
   const g = canvas.getContext('2d')!;
-  const n = { snow: 70, rain: 90, mist: 46, petals: 34, motes: 30, stars: 130, dust: 60 }[kind];
+  const n = { snow: 70, rain: 90, mist: 46, petals: 34, motes: 30, stars: 130, dust: 60, pollen: 48 }[kind];
   const bits = Array.from({ length: n }, (_, i) => ({ x: Math.random(), y: Math.random(), s: 0.4 + Math.random() * 0.8, p: Math.random() * 6.28, spin: Math.random() * 6.28, leaf: i % 3 === 0 }));
   let stir = 0;
   let last = performance.now();
@@ -211,6 +211,67 @@ function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
           g.fillStyle = `rgba(${b.leaf ? '255,226,190' : b.s > 1 ? '205,218,255' : '255,255,255'},${0.3 + tw * 0.65})`;
           g.beginPath();
           g.arc(b.x * w, b.y * h, (0.5 + b.s * 1.1) * (w / 320), 0, Math.PI * 2);
+          g.fill();
+        }
+      } else if (kind === 'pollen') {
+        // Pollen in warm light: soft gold motes drifting up and sideways, each
+        // with its own slow twinkle. The first bit is a bee instead: now and then
+        // it crosses the glass, wings a blur, wandering as it goes. A shake whirls them.
+        if (b === bits[0]) {
+          b.spin -= dt * (1 + stir * 2);
+          const k = -b.spin / 3.2;
+          if (k > 1) {
+            b.spin = 6 + Math.random() * 8;
+            b.p = Math.random() * 6.28;
+          } else if (k > 0) {
+            const dir = Math.sin(b.p * 7) > 0 ? 1 : -1;
+            const x = (dir > 0 ? -0.08 + k * 1.16 : 1.08 - k * 1.16) * w;
+            const y = (0.35 + 0.3 * ((b.p * 1.7) % 1) + Math.sin(k * 9 + b.p) * 0.05 + Math.sin(k * 23) * 0.012) * h;
+            const s = w / 160;
+            g.save();
+            g.translate(x, y);
+            g.scale(dir, 1);
+            // Wings, a beating blur above the body.
+            const beat = Math.abs(Math.sin(now / 18));
+            g.fillStyle = 'rgba(235,245,255,0.55)';
+            g.beginPath();
+            g.ellipse(-s * 0.6, -s * (1.1 + beat * 0.3), s * 1.2, s * (0.5 + beat * 0.3), -0.5, 0, Math.PI * 2);
+            g.ellipse(s * 0.4, -s * (1.0 + beat * 0.25), s * 1.0, s * (0.45 + beat * 0.25), 0.4, 0, Math.PI * 2);
+            g.fill();
+            // A round furry body in gold and brown bands.
+            g.fillStyle = '#e8b13a';
+            g.beginPath();
+            g.ellipse(0, 0, s * 1.6, s * 1.05, 0, 0, Math.PI * 2);
+            g.fill();
+            g.fillStyle = '#3a2a14';
+            for (const bx of [-0.5, 0.35]) {
+              g.beginPath();
+              g.ellipse(s * bx, 0, s * 0.28, s * 1.0, 0, 0, Math.PI * 2);
+              g.fill();
+            }
+            g.beginPath();
+            g.arc(s * 1.5, -s * 0.1, s * 0.62, 0, Math.PI * 2);
+            g.fill();
+            g.restore();
+          }
+        } else {
+          b.y -= dt * (0.008 + b.s * 0.012) * (1 - stir * 1.4);
+          b.x += dt * (Math.sin(now / 1800 + b.p) * 0.012 + 0.006 + stir * Math.cos(b.p + now / 320) * 0.45);
+          b.y += dt * stir * Math.sin(b.p + now / 330) * 0.45;
+          const tw = 0.55 + 0.45 * Math.sin(now / (500 + b.s * 400) + b.p * 4);
+          const r = (0.8 + b.s * 1.6) * (w / 380);
+          const x = b.x * w;
+          const y = b.y * h;
+          const halo = g.createRadialGradient(x, y, 0, x, y, r * 3);
+          halo.addColorStop(0, `rgba(255,214,120,${0.35 * tw})`);
+          halo.addColorStop(1, 'rgba(255,200,100,0)');
+          g.fillStyle = halo;
+          g.beginPath();
+          g.arc(x, y, r * 3, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = `rgba(255,${222 + Math.round(b.s * 25)},${140 + Math.round(b.s * 50)},${0.45 + 0.5 * tw})`;
+          g.beginPath();
+          g.arc(x, y, r, 0, Math.PI * 2);
           g.fill();
         }
       } else {
