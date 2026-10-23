@@ -37,18 +37,21 @@ export interface Layout {
 }
 
 export const LAYOUT: Record<Land, Layout> = {
-  fields: { length: 2200, limit: 25, crossing: 1000 },
-  gorge: { length: 2000, limit: 21, viaduct: [760, 1120] },
-  pass: { length: 2600, limit: 19, sheds: [[360, 520], [880, 1020]], tunnel: [1380, 1820], station: { at: 2160, name: 'HIGH PASS' } },
-  city: { length: 2200, limit: 17, station: { at: 1150, name: 'CENTRAL' } },
-  lake: { length: 2200, limit: 23, station: { at: 1250, name: 'LAKESIDE' } },
+  fields: { length: 1900, limit: 25, crossing: 820 },
+  gorge: { length: 1800, limit: 21, viaduct: [600, 990] },
+  pass: { length: 2500, limit: 19, sheds: [[300, 450], [700, 830]], tunnel: [1080, 1480], station: { at: 2000, name: 'HIGH PASS' } },
+  city: { length: 2000, limit: 16, station: { at: 1050, name: 'CENTRAL' } },
+  lake: { length: 2000, limit: 23, station: { at: 1100, name: 'LAKESIDE' } },
 };
 
 /** Half the length of the stretch where one landscape turns into the next, around the points. */
 export const BLEND = 160;
-/** The lever lights up this far before the points, and locks this far before them. */
-export const LEVER_LIT = 1100;
-export const LEVER_LOCK = 350;
+/**
+ * The lever lights up this far before the points, and locks this far before
+ * them: far enough out that the land it changes is still lost in the haze.
+ */
+export const LEVER_LIT = 1350;
+export const LEVER_LOCK = 560;
 
 /** The length of a rail: the wheels clack once over each joint between two. */
 export const RAIL = 22.5;
