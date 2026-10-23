@@ -450,10 +450,8 @@ const visibility = (page: Page, slots: number[], extra: number[][] = []) =>
       const r = shown ? card.getBoundingClientRect() : null;
       const at = w.camera.position.clone();
       const pts: [string, unknown][] = [
-        ...slots.map((i): [string, unknown] => {
-          const m = w.flowers.pick[i];
-          return [`pot ${i + 1}`, at.clone().set(m.position.x, m.position.y - m.scale.y / 2 + 0.09, m.position.z)];
-        }),
+        // (Halfway up the pot.)
+        ...slots.map((i): [string, unknown] => [`pot ${i + 1}`, w.potAt(i).add(at.clone().set(0, 0.09, 0))]),
         ...extra.map((p, k): [string, unknown] => [`point ${k}`, at.clone().set(p[0], p[1], p[2])]),
       ];
       const out: string[] = [];

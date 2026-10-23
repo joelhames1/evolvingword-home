@@ -941,6 +941,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       shareLink: (i: number) => (garden.pots[i] ? shareLink(location.origin, garden.pots[i]!.code) : null),
       /** The pot the next seed goes into (-1 if every pot is full), and the one being watched as it comes up. */
       nextPot: () => emptyPot(garden),
+      /** Where a pot stands (its foot). */
+      potAt: (i: number) => POT_AT[i].clone(),
       growing: () => growing,
       /** Make it rain (true), clear (false), or let the weather do as it likes (null); `now` skips the easing. */
       shower: (on: boolean | null, now = false) => {
