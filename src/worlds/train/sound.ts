@@ -117,8 +117,13 @@ export interface TrainBand extends Band {
   release(): void;
 }
 
+/** How much louder the band plays than the shared buses would have it. */
+const BAND_GAIN = 1.9;
+
 export function buildBand(): TrainBand {
   let kit: SoundKit | null = null;
+  // The band's own buses, a little louder than the shared ones: it has the wheels to play over.
+  let bandKit: SoundKit | null = null;
   // The train as last seen: where, how fast, and when (on the audio clock).
   const w = { s: 0, v: 0, at: 0, last: NaN };
   let windowOpen = 0;
@@ -132,7 +137,7 @@ export function buildBand(): TrainBand {
   let windTone: BiquadFilterNode | null = null;
   let roar: GainNode | null = null;
   let crickets = 0;
-  let bells = { level: 0, pan: 0, closing: 0 };
+  const bells = { level: 0, pan: 0, closing: 0 };
   let screech: { out: GainNode; tones: OscillatorNode[]; hiss: AudioBufferSourceNode; grind: AudioBufferSourceNode; nodes: AudioNode[] } | null = null;
   let timer = 0;
   let nextCricket = 0;
@@ -505,7 +510,7 @@ export function buildBand(): TrainBand {
     const now = kit.ctx.currentTime;
     const v = Math.max(0, w.v);
     const sp = Math.min(1.2, v / 24);
-    roll.gain.setTargetAtTime(0.32 * sp * (1 + windowOpen * 0.7) * (1 - tunnel * 0.3), now, 0.3);
+    roll.gain.setTargetAtTime(0.17 * sp * (1 + windowOpen * 0.7) * (1 - tunnel * 0.3), now, 0.3);
     rollTone.frequency.setTargetAtTime(140 + v * 14 + windowOpen * 300, now, 0.3);
     wind.gain.setTargetAtTime(windowOpen * (0.05 + sp * 0.16) * (1 - tunnel * 0.4), now, 0.25);
     windTone.frequency.setTargetAtTime(500 + v * 30, now, 0.4);
@@ -527,6 +532,13 @@ export function buildBand(): TrainBand {
       brown = buffer(k.ctx, 6, true);
       white = buffer(k.ctx, 4, false);
       beds(k);
+      const up = (to: AudioNode) => {
+        const g = k.ctx.createGain();
+        g.gain.value = BAND_GAIN;
+        g.connect(to);
+        return g;
+      };
+      bandKit = { ...k, music: up(k.music), verb: up(k.verb), echo: up(k.echo) };
       w.at = k.ctx.currentTime;
       timer = window.setInterval(() => {
         schedule();
@@ -534,7 +546,8 @@ export function buildBand(): TrainBand {
       }, 25);
       void timer;
     },
-    play(k, at, step, bar, sixteenth) {
+    play(shared, at, step, bar, sixteenth) {
+      const k = bandKit ?? shared;
       const block = Math.floor(bar / 2) % CHORDS.length;
       const half = bar % 2;
       const chord = CHORDS[block];
@@ -583,7 +596,9 @@ export function buildBand(): TrainBand {
       tunnel = k;
     },
     setBells(level, pan, closing) {
-      bells = { level, pan, closing };
+      bells.level = level;
+      bells.pan = pan;
+      bells.closing = closing;
     },
     setCrickets(k) {
       crickets = k;
@@ -658,12 +673,11 @@ export function buildBand(): TrainBand {
       const now = kit.ctx.currentTime;
       const s = screech;
       screech = null;
-      s.out.gain.cancelScheduledValues(now);
-      s.out.gain.setValueAtTime(s.out.gain.value, now);
-      s.out.gain.linearRampToValueAtTime(0, now + 0.7);
-      for (const o of s.tones) o.stop(now + 0.8);
-      s.hiss.stop(now + 0.8);
-      s.grind.stop(now + 0.8);
+      // Down to nothing from wherever it's got to (no need to know where that is), then stop.
+      s.out.gain.setTargetAtTime(0, now, 0.12);
+      for (const o of s.tones) o.stop(now + 1.2);
+      s.hiss.stop(now + 1.2);
+      s.grind.stop(now + 1.2);
       // The last jolt as it stops.
       if (!muted()) thump(kit, kit.ambience, now + 0.05, 80, 40, 0.25, 0.35);
     },

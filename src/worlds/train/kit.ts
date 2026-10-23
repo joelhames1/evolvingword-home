@@ -14,6 +14,7 @@ import type { Kit, KitModule, Studio, Wall, Wiring } from '../kit';
 import { buildBoard } from './board';
 import { buildCar } from './car';
 import { buildLand } from './chunks';
+import type { Sweep } from './scenery';
 import { buildConsist } from './consist';
 import { BRAKE_AT, buildControls, LEVER_AT, type LeverState } from './controls';
 import { DWELL, Journey, LAYOUT, LEVER_LIT, LEVER_LOCK, NAMES, VIADUCT_LIMIT, type Land, type TrainEvent } from './journey';
@@ -645,18 +646,19 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       glintRead.material.opacity = 0.2 * dark * flicker * (1 - windowK);
 
       // A lamp outside going by: its light sweeps across the compartment.
-      let best: { k: number; x: number; y: number; z: number; color: THREE.Color } | null = null;
+      let bestK = 0;
+      let best: Sweep | null = null;
       for (const sw of land.sweeps()) {
         const du = sw.u - uWin;
         if (Math.abs(du) > 16 || sw.z > 0) continue;
         const k = sw.power * Math.exp(-(du * du) / 30);
-        if (!best || k > best.k) best = { k, x: sw.u - s, y: sw.y, z: sw.z, color: sw.color };
+        if (k > bestK) ((bestK = k), (best = sw));
       }
       const sweep = car.lights.sweep;
       if (best) {
-        sweep.position.set(best.x, best.y, best.z);
+        sweep.position.set(best.u - s, best.y, best.z);
         sweep.color.copy(best.color);
-        sweep.intensity = best.k * 1.4;
+        sweep.intensity = bestK * 1.4;
       } else sweep.intensity = 0;
 
       // The window: down or up, slowly; the wind for the curtains.
@@ -685,8 +687,12 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
           const from = SPARK_FROM[Math.floor(Math.random() * SPARK_FROM.length)];
           // Thrown off the wheel backward and out from under the car, some high enough to see from the window.
           sparkLife[i] = 0.35 + Math.random() * 0.7;
-          sparkPos.set([from + (Math.random() - 0.5) * 0.2, -1.12, -0.74 - Math.random() * 0.05], i * 3);
-          sparkVel.set([-(2 + Math.random() * (vNow * 0.6 + 2)), 0.6 + Math.random() * 3.2, -(2.5 + Math.random() * 5)], i * 3);
+          sparkPos[i * 3] = from + (Math.random() - 0.5) * 0.2;
+          sparkPos[i * 3 + 1] = -1.12;
+          sparkPos[i * 3 + 2] = -0.74 - Math.random() * 0.05;
+          sparkVel[i * 3] = -(2 + Math.random() * (vNow * 0.6 + 2));
+          sparkVel[i * 3 + 1] = 0.6 + Math.random() * 3.2;
+          sparkVel[i * 3 + 2] = -(2.5 + Math.random() * 5);
         }
       }
       sparkNext = Math.min(sparkNext, 50);
