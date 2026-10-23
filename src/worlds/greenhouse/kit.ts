@@ -169,7 +169,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   let nextShower = 70 + Math.random() * 50;
   let showerEnd = 0;
   let beeNext = 0;
-  let notesKey = '';
+  /** The notes of the flowers in bloom, gathered each frame (the same array every time), and a sum to tell when they change. */
+  const notes: number[] = [];
+  let notesKey = -1;
   const say = (text: string) => wiring?.say(text);
   const card: Wiring['card'] = (kicker, title, body, actions) => wiring?.card(kicker, title, body, actions);
 
@@ -212,7 +214,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       [
         'Click a flower, then another, and the bee carries the pollen from one to the other. The seed goes into an empty pot and grows in about twenty seconds.',
         'Children take after both parents, with now and then a surprise.',
-        { note: `${plural(c.inFlower, 'flower', 'flowers')} in bloom · ${c.young ? `${c.young} growing · ` : ''}${plural(c.empty, 'empty pot', 'empty pots')}${c.dry ? ` · ${plural(c.dry, 'plant', 'plants')} thirsty` : ''}` },
+        { note: `${plural(c.inFlower, 'flower', 'flowers')} in bloom · ${c.young ? `${c.young} growing · ` : ''}${c.empty ? plural(c.empty, 'empty pot', 'empty pots') : 'no empty pots (compost one to make room)'}${c.dry ? ` · ${plural(c.dry, 'plant', 'plants')} thirsty` : ''}` },
       ],
       [
         ...(c.dry ? [{ label: 'Water them all', run: () => void waterAll() }] : []),
@@ -237,7 +239,16 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const parentage = (p: Plant) => (p.gift ? 'A gift from a friend.' : p.parents ? `Seed of ${nameOf(p.parents[0])} and ${nameOf(p.parents[1])}.` : 'One of the first seeds in the house.');
   const emptyCard = () =>
     card('On the staging', 'An empty pot', ['Fresh soil, waiting. Pick two flowers and the bee brings their seed to the first empty pot.'], [{ label: 'The seed catalog', quiet: true, run: () => wiring?.goTo('catalog') }]);
-  const fullCard = () => card('On the staging', 'Every pot is full', ['There’s nowhere for the seed to go. Compost one you can spare first: click it, then the compost bin (or its Compost button).'], []);
+  const fullCard = () =>
+    card('On the staging', 'Every pot is full', ['There’s nowhere for the seed to go. Compost one you can spare first: click it, then the compost bin (or its Compost button).'], [
+      { label: 'Never mind', quiet: true, run: () => putBack() },
+    ]);
+  /** Lets go of a picked flower: back to the staging's card. */
+  const putBack = () => {
+    selected = -1;
+    if (atFlowers()) stagingCard();
+  };
+  const atFlowers = () => ['staging', 'bloom'].includes(wiring?.current() ?? '');
   const plantCard = (i: number) => {
     const p = garden.pots[i];
     const g = genomeIn(i);
@@ -254,6 +265,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         { label: 'Share this flower', run: () => void share(i) },
         { label: 'Cut it back', quiet: true, run: () => void prunePot(i) },
         { label: 'Compost it', quiet: true, run: () => void compostPot(i) },
+        { label: 'Never mind', quiet: true, run: () => putBack() },
       ],
     );
   };
@@ -361,13 +373,17 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   };
   /** The bee carries pollen from a to b, then a seed to an empty pot. */
   const cross = async (a: number, b: number) => {
+    if (busy) return null;
     if (emptyPot(garden) < 0) return fullCard();
     busy = true;
     selected = -1;
+    // (A garden started over while the bee's on its way is a different garden: the seed is lost.)
+    const mine = garden;
+    const here = (show: () => void) => garden === mine && atFlowers() && show();
     const nameA = nameOf(garden.pots[a]?.code);
     const nameB = nameOf(garden.pots[b]?.code);
     say(`POLLEN FROM ${nameA.toUpperCase()} TO ${nameB.toUpperCase()}`);
-    card('The bee', 'Off it goes', [`From ${nameA} to ${nameB} with the pollen, then a seed to an empty pot.`], []);
+    here(() => card('The bee', 'Off it goes', [`From ${nameA} to ${nameB} with the pollen, then a seed to an empty pot.`], []));
     try {
       const A = landing(a);
       const B = landing(b);
@@ -376,17 +392,20 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       await bee.fly([A.clone().lerp(B, 0.5).add(v(0, 0.22, 0.12)), B], reduced ? 0.3 : 1.4 + A.distanceTo(B) * 0.6, { pollen: true });
       if (!reduced) await wait(0.6);
       const pot = emptyPot(garden);
-      if (pot < 0) return fullCard();
+      if (garden !== mine) return null;
+      if (pot < 0) return here(fullCard), null;
       const above = POT_AT[pot].clone().add(v(0, POT.h + 0.22, 0));
       await bee.fly([B.clone().lerp(above, 0.5).add(v(0, 0.18, 0.1)), above], reduced ? 0.3 : 1.2 + B.distanceTo(above) * 0.6, { seed: true });
       bee.drop();
       await wait(0.22);
       band.plop();
+      if (garden !== mine) return null;
       const sown = sow(garden, a, b, Date.now());
-      if (!sown) return fullCard();
+      if (!sown) return here(fullCard), null;
       keep(garden);
       sync();
-      card('On the staging', 'A seed is in', [`From ${nameA} and ${nameB}, in pot ${sown.pot + 1}. In about twenty seconds you’ll see what it is.`, { note: 'Pick two more whenever you like.' }], []);
+      say(`A SEED IN POT ${sown.pot + 1} · ABOUT TWENTY SECONDS`);
+      here(() => card('On the staging', 'A seed is in', [`From ${nameA} and ${nameB}, in pot ${sown.pot + 1}. In about twenty seconds you’ll see what it is.`, { note: 'Pick two more whenever you like.' }], [{ label: 'Back to the staging', quiet: true, run: () => stagingCard() }]));
       // Then off to rest on a flower.
       window.setTimeout(() => {
         const open = [...Array(POTS).keys()].filter((i) => blooming(i));
@@ -451,10 +470,18 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       // No clipboard here (or not allowed): the link is on the card to copy by hand.
     }
     const g = decode(p.code)!;
+    /** Selects the link on the card, ready to copy by hand. */
+    const selectLink = () => {
+      const note = document.querySelector('#card-body .note');
+      const sel = window.getSelection();
+      if (note && sel) sel.selectAllChildren(note);
+    };
     card('Share this flower', gardenName(g), [copied ? 'The link is copied. Send it to a friend and the flower grows in a pot in their greenhouse.' : 'Copy this link and send it to a friend; the flower grows in a pot in their greenhouse.', { note: link }], [
+      ...(copied ? [] : [{ label: 'Select the link', run: selectLink }]),
       { label: 'Back to the flower', quiet: true, run: () => plantCard(i) },
     ]);
     if (copied) say('LINK COPIED · SEND IT TO A FRIEND');
+    else selectLink();
   };
   const clickPot = (i: number) => {
     if (i === SHOW_POT) {
@@ -471,7 +498,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     const p = garden.pots[i];
     if (!p) return emptyCard();
     if (!blooming(i)) return seedlingCard(i);
-    if (busy) return;
+    if (busy) return say('THE BEE IS BUSY · A MOMENT');
     if (here === 'bloom') {
       if (lensOn !== i) closer(i);
       return;
@@ -483,6 +510,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
 
   // --- the kit ---------------------------------------------------------------------------------------
   let line: Studio['line'] | null = null;
+  /** The little things on the bench: a few pixels from out on the lawn, so not drawn until the camera's in the house. */
+  let trinkets: THREE.Object3D[] = [];
   let dressing: ReturnType<typeof arrangeStudio> | null = null;
   const walls = [
     { id: 'desk', name: 'The potting bench' },
@@ -505,8 +534,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       vista: { pos: v(-1.6, 2.7, -6.9), target: v(0.4, 1.65, 1.0), fov: 50, lean: 0.25 },
       // Nose to the front glass over the bench, looking out toward the sun.
       window: { pos: v(1.15, 1.6, -1.55), target: v(-1.2, 1.5, -14), fov: 54, lean: 0.04 },
-      // The bedding on the bank across the lawn.
-      board: { pos: v(0.95, 1.72, -1.35), target: BANK.center.clone().add(v(0, 0.05, 0)), fov: 26, lean: 0.03 },
+      // The bedding on the bank across the lawn: close to the glass between two bars, so none crosses
+      // the letters, and wide enough for all sixteen beds.
+      board: { pos: v(0.9, 1.7, -1.95), target: BANK.center.clone().add(v(0, 0.05, 0)), fov: 34, lean: 0.01 },
     },
     // Along the front of the house to the open door at the sunny end, in, and back along the aisle to the bench.
     intro: { via: [v(-4.8, 2.3, -5.6), v(-8.3, 1.8, -3.0), v(HOUSE.x0 - 1.5, 1.55, HOUSE.door.z), v(HOUSE.x0 + 0.9, 1.55, HOUSE.door.z), v(-2.5, 1.5, 0.95)], duration: 11, lines: ['EVOLVING WORD', 'A LITTLE STUDIO UNDER GLASS', 'WHERE WE MAKE THINGS TOGETHER'] },
@@ -517,6 +547,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
 
     arrange(s: Studio) {
       line = s.line;
+      trinkets = [s.watch.group, s.pad.group, s.treats.group, s.rolodex.group];
       dressing = arrangeStudio(s, house.materials);
       extras.add(dressing.group);
       // The sun is the light in here: the desk lamp still lights, but leaves the shadows to the sun.
@@ -538,7 +569,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       return {
         staging: { pos: v(-3.35, 2.0, 1.0), target: v(-3.5, 1.05, -1.55), fov: 52, lean: 0.04, shift: CARD },
         bloom: bloomShot(Math.max(0, first)),
-        catalog: { pos: CATALOG.at.clone().add(v(0, 0.55, -0.62)), target: CATALOG.at.clone().add(v(0, 0.02, 0)), fov: 36, near: 0.03, lean: 0.01, shift: CARD },
+        catalog: { pos: CATALOG.at.clone().add(v(0, 0.6, -0.68)), target: CATALOG.at.clone().add(v(0, 0.02, 0)), fov: 36, near: 0.03, lean: 0.01, shift: CARD },
         honors: { pos: v(3.45, 1.66, 0.45), target: v(3.45, 1.7, HOUSE.back), fov: 44, lean: 0.04 },
         library: { pos: v(0.62, 1.5, 0.25), target: v(0.62, 1.12, HOUSE.back), fov: 54, lean: 0.04, shift: 0.1 },
         places: { pos: v(-3.7, 1.62, -0.25), target: v(-3.7, 1.42, HOUSE.back), fov: 62, lean: 0.05 },
@@ -552,6 +583,23 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
 
     wire(w) {
       wiring = w;
+      // Keys before the studio's own: Esc first lets go of a picked flower (then steps back as usual),
+      // and the arrows turn the catalog's pages when you're reading it.
+      window.addEventListener(
+        'keydown',
+        (e) => {
+          if (e.metaKey || e.ctrlKey || e.altKey || document.getElementById('reader')?.hidden === false) return;
+          const here = w.current();
+          if (e.key === 'Escape' && here === 'staging' && selected >= 0 && !busy) {
+            putBack();
+            w.sound.click();
+          } else if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && here === 'catalog' && !w.moving()) turnPage(e.key === 'ArrowRight' ? 1 : -1);
+          else return;
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        },
+        true,
+      );
       flowers.pick.forEach((object, i) =>
         w.touch({
           object,
@@ -625,19 +673,22 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       const now = Date.now();
       sync();
       // Each plant: its age, a spring for its droop (so water brings it up with a little bounce), a glow when picked or pointed at.
-      const notes: number[] = [];
+      notes.length = 0;
+      let key = 0;
       for (let i = 0; i < SLOTS; i++) {
         const p = plantIn(i);
         const g = p ? growth(p, now, speed) : 0;
         const aim = p && i !== SHOW_POT ? thirst(p, now) * 0.85 : 0;
         droopV[i] += ((aim - droop[i]) * 36 - droopV[i] * 4.5) * dt;
         droop[i] = THREE.MathUtils.clamp(droop[i] + droopV[i] * dt, -0.3, 1);
-        const glow = (i === selected ? 0.55 + 0.3 * Math.sin(t * 4) : 0) + (i === hoverSlot && t - hoverAt < 0.15 ? 0.45 : 0);
+        // (Not under the lens: there it's the only flower you're looking at.)
+      const glow = (i === selected && shot !== 'bloom' ? 0.6 + 0.25 * Math.sin(t * 2.6) : 0) + (i === hoverSlot && t - hoverAt < 0.15 && shot !== 'bloom' ? 0.45 : 0);
         flowers.state(i, g, droop[i], glow);
         if (!p || g < 0.86) continue;
         const genome = genomeOf(p.code);
         if (!genome) continue;
         notes.push(genome.note);
+        key = (Math.imul(key, 31) + genome.note + 1) | 0;
         // A flower opening: its note, and if it's one the catalog wants, a rosette.
         if (!opened[i]) {
           opened[i] = 1;
@@ -653,7 +704,6 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
           }
         }
       }
-      const key = notes.join(',');
       if (key !== notesKey) {
         notesKey = key;
         band.setNotes(notes);
@@ -700,7 +750,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
           toCam.copy(camera.position).sub(b.at).normalize();
           side.crossVectors(toCam, UP).normalize();
           // The lens held beside the bloom, low and to the right, a little toward the eye.
-          tools.hold(b.at.clone().addScaledVector(toCam, 0.1).addScaledVector(side, -(b.size * 0.95 + 0.04)).add(v(0, -b.size * 0.45, 0)), camera.position.clone());
+          tools.hold(b.at.clone().addScaledVector(toCam, 0.1).addScaledVector(side, -(b.size * 0.85 + 0.03)).add(v(0, -b.size * 0.5, 0)), camera.position.clone());
           lensCard(lensOn);
         }
       }
@@ -732,6 +782,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       light.tick(t, rain);
       band.rain(rain);
 
+      const indoors = kit.outside(camera) < 1;
+      for (const o of trinkets) o.visible = indoors;
       tools.tick(t, dt);
       catalog.tick(t, dt);
       // (The scent's motes keep their size in meters whatever the lens.)

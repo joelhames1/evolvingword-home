@@ -324,7 +324,7 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     const z = bankTop() - 9 - r() * 12;
     const h = 2.6 + r() * 2.5;
     put(wood, trunk(h * 0.6, 0.18), x, BANK.top, z, '#3e3228');
-    crown(x, BANK.top + h, z, 1.9 + r() * 1.3, 2.6 + r() * 1.2, ['#4a6a28', '#3e5c24', '#56722e', '#44622a'][i % 4], high ? 48 : 32);
+    crown(x, BANK.top + h * 0.85, z, 1.9 + r() * 1.3, 2.6 + r() * 1.2, ['#4a6a28', '#3e5c24', '#56722e', '#44622a'][i % 4], high ? 48 : 32);
   }
   // The borders along the front of the house: mounds of green, flowering.
   const mounds: Blob[] = [];
@@ -577,7 +577,9 @@ function foliageMaterial(u: DaylightUniforms) {
         vec3 col = albedo * (amb * heart + uSunColor * lit * mix(1.0, heart, 0.5));
         // Gold on the edges toward the sun, and a glow through the leaves with the sun behind.
         col += uSunColor * albedo * pow(1.0 - max(dot(n, v), 0.0), 2.0) * lit * 0.9;
-        col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * pow(max(dot(-v, uSunDir), 0.0), 4.0) * 0.5 * heart;
+        // With the sun behind it, a glow through the leaves, brightest round the crown's edge.
+        float back = max(dot(-v, uSunDir), 0.0);
+        col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * (pow(back, 4.0) * 0.5 * heart + pow(1.0 - abs(dot(n, v)), 2.0) * back * back * 0.8 * inCrown);
         // The hollows between clumps of leaves stay dark.
         col *= 0.55 + 0.45 * smoothstep(0.2, 0.6, leaves);
         gl_FragColor = vec4(fade(col, vWorld), 1.0);
@@ -752,8 +754,9 @@ function leafCards(list: { m: THREE.Matrix4; color: THREE.Color; crown: THREE.Ve
         vec3 amb = mix(uGround, uSky, n.y * 0.5 + 0.5) * vec3(0.8, 0.88, 0.8);
         vec3 col = albedo * (amb * heart + uSunColor * lit * mix(1.0, heart, 0.6));
         col += uSunColor * albedo * pow(1.0 - max(dot(n, v), 0.0), 2.0) * lit * 0.8;
-        // The sun through the leaves, from behind.
-        col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * pow(max(dot(-v, uSunDir), 0.0), 4.0) * 0.6 * heart;
+        // The sun through the leaves from behind, brightest round the crown's edge.
+        float back = max(dot(-v, uSunDir), 0.0);
+        col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * (pow(back, 4.0) * 0.6 * heart + pow(1.0 - abs(dot(n, v)), 2.0) * back * back * 1.1);
         gl_FragColor = vec4(fade(col, vWorld), 1.0);
       }
     `,

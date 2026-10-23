@@ -238,6 +238,8 @@ export function buildTools(woodLike: THREE.MeshStandardMaterial): Tools {
   group.add(drops);
   let pouring = 0;
   let pourStop = 0;
+  /** Any drop still falling. */
+  let wet = false;
 
   // --- moving things about -------------------------------------------------------------------------
   const moves: Move[] = [];
@@ -335,7 +337,9 @@ export function buildTools(woodLike: THREE.MeshStandardMaterial): Tools {
       lidOpen += (lidAim - lidOpen) * (1 - Math.exp(-dt * (lidAim > lidOpen ? 6 : 14)));
       lid.rotation.x = -lidOpen * 1.2;
       // Water from the rose while pouring.
+      if (!pouring && !wet) return;
       const rosePos = rose.getWorldPosition(scratch);
+      wet = false;
       for (let i = 0; i < DROPS; i++) {
         dropLife[i] += dt;
         if (pouring && t < pourStop && dropLife[i] > 0.9 && Math.random() < dt * 30) {
@@ -348,6 +352,7 @@ export function buildTools(woodLike: THREE.MeshStandardMaterial): Tools {
           dropVel[i * 3 + 2] = (Math.random() - 0.5) * 0.25;
         }
         if (dropLife[i] < 0.9) {
+          wet = true;
           dropVel[i * 3 + 1] -= 9.8 * dt;
           dropPos[i * 3] += dropVel[i * 3] * dt;
           dropPos[i * 3 + 1] += dropVel[i * 3 + 1] * dt;
@@ -355,8 +360,10 @@ export function buildTools(woodLike: THREE.MeshStandardMaterial): Tools {
         }
       }
       if (t >= pourStop) pouring = 0;
+      // (Uploaded only while there's water in the air, and once more as the last drop goes.)
       dropGeo.attributes.position.needsUpdate = true;
       dropGeo.attributes.aLife.needsUpdate = true;
+      if (!wet && !pouring) for (let i = 0; i < DROPS; i++) dropLife[i] = 9;
     },
   };
 }

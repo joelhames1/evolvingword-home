@@ -456,7 +456,8 @@ function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
           vec3 gTint = diffuseColor.rgb * mix(vec3(1.0), diffuseColor.rgb * 1.8, 0.45);
           totalEmissiveRadiance += gTint * directionalLights[0].color * gSun * (0.55 * gBack + 0.9 * gAhead * (0.35 + gBack)) * gThin;
         #endif
-        totalEmissiveRadiance += vec3(0.16, 0.1, 0.03) * vGlow;
+        // Picked or pointed at: a warm light round its edges (not a wash over it, which would flatten a dark flower).
+        totalEmissiveRadiance += vec3(0.5, 0.32, 0.1) * vGlow * (0.04 + pow(1.0 - abs(dot(normal, geometryViewDir)), 3.0));
       `,
       );
   };

@@ -219,6 +219,31 @@ function herbBundle(kind: number, seed: number) {
   return geo;
 }
 
+/**
+ * A geometry's faces put in order of material, one group per material, so a
+ * box with the same material on several sides is drawn once for them all.
+ */
+export function regroup(geo: THREE.BufferGeometry, materials: THREE.Material[]) {
+  const index = geo.index;
+  if (!index || geo.groups.length < 2) return;
+  // Groups that use the same material object, under one index.
+  const first = (k: number) => materials.indexOf(materials[k]);
+  const byMat = new Map<number, number[]>();
+  for (const g of geo.groups) {
+    const k = first(g.materialIndex ?? 0);
+    if (!byMat.has(k)) byMat.set(k, []);
+    const list = byMat.get(k)!;
+    for (let i = g.start; i < g.start + g.count; i++) list.push(index.getX(i));
+  }
+  const order: number[] = [];
+  geo.clearGroups();
+  for (const [k, list] of [...byMat].sort((a, b) => a[0] - b[0])) {
+    geo.addGroup(order.length, list.length, k);
+    for (const x of list) order.push(x);
+  }
+  geo.setIndex(order);
+}
+
 export interface Dressing {
   group: THREE.Group;
   /** The rosettes on the show board, to stir a little. */
@@ -292,7 +317,7 @@ export function arrangeStudio(s: Studio, mats: { wood: THREE.MeshStandardMateria
   for (const [i, color, light, place, x, y] of [
     [0, '#b8262a', '#e8d070', '1st', 2.2, 1.95],
     [1, '#2a4ea0', '#e8e0d0', '2nd', 2.24, 1.66],
-    [2, '#d8a828', '#f4ecd8', '3rd', 4.82, 1.86],
+    [2, '#d8a828', '#f4ecd8', '3rd', 4.68, 1.86],
   ] as const) {
     const rosette = new THREE.Group();
     const face = new THREE.Mesh(rosetteGeo, new THREE.MeshStandardMaterial({ map: rosetteTexture(color, light, place), roughness: 0.7, side: THREE.DoubleSide }));
@@ -416,6 +441,12 @@ export function arrangeStudio(s: Studio, mats: { wood: THREE.MeshStandardMateria
   // --- the bookshelf, the seed drawers and the catalog ----------------------------------------------
   s.shelf.group.position.set(WALL.shelf, 0, BACK);
   s.shelf.group.rotation.y = Math.PI;
+  // Each book's faces sorted by material: three draws a book, not six (the shelf is in the view in from the lawn).
+  for (const { mesh } of s.shelf.books)
+    mesh.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && Array.isArray(m.material)) regroup(m.geometry, m.material);
+    });
   const cab = new THREE.Group();
   const cabWood = new THREE.MeshStandardMaterial({ color: '#6a4428', roughness: 0.6 });
   // Its drawers face the room (the box's −z side).

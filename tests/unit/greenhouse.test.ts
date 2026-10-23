@@ -1,7 +1,10 @@
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { ALPHABET, clean, MAX_PHRASE } from '../../src/evolve';
 import { WORLDS } from '../../src/worlds';
 import { PHRASES } from '../../src/worlds/greenhouse/bed';
+import { daisyGeometry, spireGeometry } from '../../src/worlds/greenhouse/grounds';
+import { regroup } from '../../src/worlds/greenhouse/studio';
 import { DRONE, SCALE } from '../../src/worlds/greenhouse/sound';
 import { FONT } from '../../src/worlds/tower/board';
 import { compost, emptyPot, GROW_MS, growth, inBloom, MAX_SAVED, POTS, prune, receive, restore, seedFrom, serialize, settle, shareLink, sow, starter, thirst, water } from '../../src/worlds/greenhouse/garden';
@@ -401,3 +404,54 @@ describe('the greenhouse', () => {
   });
 });
 
+
+describe('the garden outside', () => {
+  /** Every vertex with a normal that is a number and a unit long: nothing for a shader to turn into a flicker. */
+  const sound = (g: THREE.BufferGeometry) => {
+    const n = g.attributes.normal;
+    const p = g.attributes.position;
+    expect(n.count).toBe(p.count);
+    for (let i = 0; i < n.count; i++) {
+      const len = Math.hypot(n.getX(i), n.getY(i), n.getZ(i));
+      expect(Number.isFinite(len) && Math.abs(len - 1) < 1e-3, `normal ${i}`).toBe(true);
+      expect([p.getX(i), p.getY(i), p.getZ(i)].every(Number.isFinite), `vertex ${i}`).toBe(true);
+    }
+    const c = g.attributes.color;
+    for (let i = 0; i < c.count; i++) expect(Math.min(c.getX(i), c.getY(i), c.getZ(i)), `shade ${i}`).toBeGreaterThanOrEqual(0);
+  };
+
+  it('grows its border spires and flowers with a sound normal at every vertex', () => {
+    for (const high of [true, false]) sound(spireGeometry(high));
+    sound(daisyGeometry());
+  });
+
+  it('builds a spire as florets up a stalk: a meter tall, narrow, smaller toward the tip', () => {
+    const g = spireGeometry(true);
+    g.computeBoundingBox();
+    const box = g.boundingBox!;
+    expect(box.min.y).toBeGreaterThanOrEqual(-0.05);
+    expect(box.max.y).toBeLessThan(1.1);
+    expect(box.max.y).toBeGreaterThan(0.9);
+    expect(box.max.x - box.min.x).toBeLessThan(0.2);
+  });
+
+  it('draws a book once for each material, not once for each side', () => {
+    const a = new THREE.MeshBasicMaterial();
+    const b = new THREE.MeshBasicMaterial();
+    const c = new THREE.MeshBasicMaterial();
+    const geo = new THREE.BoxGeometry(1, 2, 3);
+    const before = geo.index!.count;
+    const tris = (gg: THREE.BufferGeometry, mats: THREE.Material[]) => {
+      const out: string[] = [];
+      for (const grp of gg.groups) for (let i = grp.start; i < grp.start + grp.count; i += 3) out.push(`${mats.indexOf(mats[grp.materialIndex!])}:${[0, 1, 2].map((k) => gg.index!.getX(i + k)).join(',')}`);
+      return out.sort();
+    };
+    const mats = [a, a, b, b, c, b];
+    const was = tris(geo, mats);
+    regroup(geo, mats);
+    expect(geo.groups.length).toBe(3);
+    expect(geo.index!.count).toBe(before);
+    // The same triangles, each with the same material as before.
+    expect(tris(geo, mats)).toEqual(was);
+  });
+});

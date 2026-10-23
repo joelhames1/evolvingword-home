@@ -155,6 +155,7 @@ export function buildBee(): Bee {
   let pollen = false;
   let speed = 0;
   let trailNext = 0;
+  let trailLive = false;
   const pos = new THREE.Vector3(-2.6, 1.4, -1.4);
   const last = pos.clone();
   const look = new THREE.Vector3(0, 0, 1);
@@ -176,7 +177,8 @@ export function buildBee(): Bee {
     },
     at: (out) => (out ? out.copy(pos) : pos.clone()),
     flying: () => !!path,
-    buzz: () => (path ? 1 : 0.15),
+    // On the wing it buzzes; resting on a flower it's quiet.
+    buzz: () => (path ? 1 : 0),
     drop() {
       if (!seed.visible) return null;
       seed.visible = false;
@@ -210,16 +212,24 @@ export function buildBee(): Bee {
       // Wings: a blur in flight, folded and still at rest.
       const beat = path || speed > 0.05 ? Math.sin(t * 140) : 0;
       for (const w of wings) w.rotation.z = (w.userData.side as number) * (path || speed > 0.05 ? 0.35 + beat * 0.65 : 0.15);
-      // The pollen trail.
-      for (let i = 0; i < TRAIL; i++) trailAge[i] += dt;
+      // The pollen trail (uploaded only while some of it is still in the air).
+      let glowing = false;
+      for (let i = 0; i < TRAIL; i++) {
+        trailAge[i] = Math.min(9, trailAge[i] + dt);
+        glowing ||= trailAge[i] < 1.5;
+      }
       if (pollen && path && t > trailNext) {
         trailNext = t + 0.05;
         const i = Math.floor(t * 20) % TRAIL;
         pos.toArray(trailPos, i * 3);
         trailAge[i] = 0;
+        glowing = true;
       }
-      trailGeo.attributes.position.needsUpdate = true;
-      trailGeo.attributes.aAge.needsUpdate = true;
+      if (glowing || trailLive) {
+        trailGeo.attributes.position.needsUpdate = true;
+        trailGeo.attributes.aAge.needsUpdate = true;
+      }
+      trailLive = glowing;
       if (seed.visible && !falling) seed.position.copy(pos).add(below);
       if (falling) {
         // A short drop into the soil.

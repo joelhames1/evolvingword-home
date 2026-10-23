@@ -73,14 +73,14 @@ function drawSpread(g: CanvasRenderingContext2D, i: number, stamped: boolean) {
   g.fillStyle = '#2a2018';
   g.font = '600 64px "EB Garamond", serif';
   wrap(g, w.name, x, 240, right - x, 70);
-  g.font = 'italic 400 40px "EB Garamond", serif';
+  g.font = 'italic 400 48px "EB Garamond", serif';
   g.fillStyle = '#3a3024';
-  const below = wrap(g, w.line, x, 400, right - x, 50);
-  g.font = '400 30px "EB Garamond", serif';
+  const below = wrap(g, w.line, x, 410, right - x, 58);
+  g.font = '400 36px "EB Garamond", serif';
   g.fillStyle = '#5a4a34';
-  g.fillText(`${GRADE[w.difficulty]}  ${'✦'.repeat(w.difficulty)}${'·'.repeat(3 - w.difficulty)}`, x, below + 40);
-  g.font = 'italic 400 30px "EB Garamond", serif';
-  wrap(g, `“${w.hint}”`, x, below + 110, right - x, 40);
+  g.fillText(`${GRADE[w.difficulty]}  ${'✦'.repeat(w.difficulty)}${'·'.repeat(3 - w.difficulty)}`, x, below + 64);
+  g.font = 'italic 400 36px "EB Garamond", serif';
+  wrap(g, `“${w.hint}”`, x, below + 150, right - x, 48);
   // A rule, and the catalog's promise at the foot of the page.
   g.strokeStyle = '#8a7050';
   g.lineWidth = 1.5;
@@ -88,9 +88,9 @@ function drawSpread(g: CanvasRenderingContext2D, i: number, stamped: boolean) {
   g.moveTo(x, H - 170);
   g.lineTo(right, H - 170);
   g.stroke();
-  g.font = '400 24px "EB Garamond", serif';
+  g.font = '400 27px "EB Garamond", serif';
   g.fillStyle = '#6a5a44';
-  g.fillText('Raise it under glass and the house will award its rosette.', x, H - 130);
+  wrap(g, 'Raise it under glass and the house will award its rosette.', x, H - 128, right - x, 34);
   if (stamped) stampOn(g, x + (right - x) * 0.62, H - 330);
 }
 

@@ -587,6 +587,7 @@ export function buildHouse(quality: 'high' | 'low'): House {
   cap.castShadow = true;
   group.add(cap);
 
+  combine(group);
   return {
     group,
     glass,
@@ -596,6 +597,35 @@ export function buildHouse(quality: 'high' | 'low'): House {
       glass.uniforms.uRain.value = rain;
     },
   };
+}
+
+/**
+ * The house's still pieces that share a material, merged into one mesh each
+ * (the stone copings, the brick ends and piers, the iron and the door's frame):
+ * a draw apiece instead of one per piece, here and in the sun's shadow pass.
+ * The glass and anything see-through keep their own.
+ */
+function combine(group: THREE.Group) {
+  group.updateMatrixWorld(true);
+  const toGroup = group.matrixWorld.clone().invert();
+  const buckets = new Map<THREE.Material, THREE.Mesh[]>();
+  group.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || Array.isArray(m.material)) return;
+    const mat = m.material as THREE.Material;
+    if ((mat as THREE.ShaderMaterial).isShaderMaterial || mat.transparent || mat.alphaTest > 0) return;
+    if (!buckets.has(mat)) buckets.set(mat, []);
+    buckets.get(mat)!.push(m);
+  });
+  for (const [mat, list] of buckets) {
+    if (list.length < 2) continue;
+    const geos = list.map((m) => plain(m.geometry.clone()).applyMatrix4(toGroup.clone().multiply(m.matrixWorld)));
+    const merged = new THREE.Mesh(mergeGeometries(geos), mat);
+    merged.castShadow = list.some((m) => m.castShadow);
+    merged.receiveShadow = list.some((m) => m.receiveShadow);
+    for (const m of list) m.removeFromParent();
+    group.add(merged);
+  }
 }
 
 /** Pea gravel, grey and buff, for the fern bench's tray. */

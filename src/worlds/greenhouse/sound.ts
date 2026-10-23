@@ -49,6 +49,8 @@ export function buildBand(): GreenhouseBand {
   let beeOsc: OscillatorNode | null = null;
   let beePan: StereoPannerNode | null = null;
   let raining = 0;
+  /** What the bee's voice was last set to, so the frame only touches it when it changes. */
+  const beeSet = { level: -1, pan: 2, pitch: -1 };
 
   /** A note of the glass harmonium: sines on a few partials, slow in, slow out. */
   const glass = (k: SoundKit, at: number, midi: number, len: number, vel: number) => {
@@ -305,15 +307,23 @@ export function buildBand(): GreenhouseBand {
       notes = n.slice(0, 32);
     },
     rain(level) {
-      raining = Math.min(1, Math.max(0, level));
+      const k0 = Math.min(1, Math.max(0, Number.isFinite(level) ? level : 0));
+      const k = k0 < 0.002 ? 0 : k0;
+      // (Called every frame: only a change worth hearing goes to the graph, and the last of a shower always does.)
+      if (Math.abs(k - raining) < 0.002 && !(k === 0 && raining !== 0)) return;
+      raining = k;
       if (kit && rainBus) rainBus.gain.setTargetAtTime(raining * 0.5, kit.ctx.currentTime, 0.6);
     },
     bee(level, near, pan) {
       if (!kit || !beeGain || !beePan || !beeOsc) return;
+      const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(x) ? x : 0));
       const now = kit.ctx.currentTime;
-      beeGain.gain.setTargetAtTime(kit.sound.muted ? 0 : Math.min(1, Math.max(0, level)) * Math.min(1, Math.max(0, near)) * 0.03, now, 0.08);
-      beePan.pan.setTargetAtTime(Math.min(1, Math.max(-1, pan)), now, 0.1);
-      beeOsc.frequency.setTargetAtTime(170 + level * 50, now, 0.2);
+      const loud = kit.sound.muted ? 0 : clamp(level, 0, 1) * clamp(near, 0, 1) * 0.03;
+      const where = clamp(pan, -1, 1);
+      const pitch = 170 + clamp(level, 0, 1) * 50;
+      if (Math.abs(loud - beeSet.level) > 0.0005) beeGain.gain.setTargetAtTime((beeSet.level = loud), now, 0.08);
+      if (Math.abs(where - beeSet.pan) > 0.02) beePan.pan.setTargetAtTime((beeSet.pan = where), now, 0.1);
+      if (Math.abs(pitch - beeSet.pitch) > 0.5) beeOsc.frequency.setTargetAtTime((beeSet.pitch = pitch), now, 0.2);
     },
     bloom(note) {
       if (!kit || kit.sound.muted) return;
