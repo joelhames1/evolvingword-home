@@ -51,10 +51,14 @@ function tube(a: THREE.Vector3, b: THREE.Vector3, r0: number, r1 = r0, sides = 1
   return geo;
 }
 
-export function buildTools(wood: THREE.Material): Tools {
+export function buildTools(woodLike: THREE.MeshStandardMaterial): Tools {
   const group = new THREE.Group();
+  // Each tool its own materials, so pointing at one warms only it (see interact.ts).
+  const wood = woodLike.clone();
+  const binWood = woodLike.clone();
   const zinc = new THREE.MeshStandardMaterial({ color: '#a7aeaa', metalness: 0.75, roughness: 0.42 });
   const brass = new THREE.MeshStandardMaterial({ color: '#c39a52', metalness: 0.9, roughness: 0.3 });
+  const lensBrass = brass.clone();
   const steel = new THREE.MeshStandardMaterial({ color: '#c8ccd0', metalness: 0.9, roughness: 0.25 });
   const handleWood = new THREE.MeshStandardMaterial({ color: '#8a5a32', roughness: 0.55 });
 
@@ -124,11 +128,11 @@ export function buildTools(wood: THREE.Material): Tools {
 
   // The hand lens: a brass ring with its glass, on a turned handle. Built facing +z.
   const lens = new THREE.Group();
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 8, 32), brass);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 8, 32), lensBrass);
   lens.add(ring);
   const glass = new THREE.Mesh(new THREE.CircleGeometry(0.044, 32), new THREE.MeshStandardMaterial({ color: '#dfeef0', transparent: true, opacity: 0.16, roughness: 0.05, metalness: 0.2, depthWrite: false }));
   lens.add(glass);
-  const handle = new THREE.Mesh(tube(v(0, -0.05, 0), v(0, -0.14, 0), 0.008, 0.01), handleWood);
+  const handle = new THREE.Mesh(tube(v(0, -0.05, 0), v(0, -0.14, 0), 0.008, 0.01), handleWood.clone());
   lens.add(handle);
   lens.traverse((o) => (o.castShadow = o !== glass));
   const lensHome = { p: RACK.clone().add(v(0.09, 1.3, -0.1)), q: new THREE.Quaternion().setFromAxisAngle(v(0, 1, 0), Math.PI / 2) };
@@ -155,7 +159,7 @@ export function buildTools(wood: THREE.Material): Tools {
     [-w / 2, d / 2],
     [w / 2, d / 2],
   ]) slats.push(new THREE.BoxGeometry(0.045, h, 0.045).translate(x, h / 2, z));
-  const binMesh = new THREE.Mesh(mergeGeometries(slats.map(plain)), wood);
+  const binMesh = new THREE.Mesh(mergeGeometries(slats.map(plain)), binWood);
   binMesh.castShadow = true;
   binMesh.receiveShadow = true;
   bin.add(binMesh);
@@ -164,7 +168,7 @@ export function buildTools(wood: THREE.Material): Tools {
   heap.position.y = h * 0.6;
   bin.add(heap);
   const lid = new THREE.Group();
-  const lidBoard = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, 0.025, d + 0.04), wood);
+  const lidBoard = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, 0.025, d + 0.04), binWood);
   lidBoard.position.set(0, 0, d / 2 + 0.02);
   lidBoard.castShadow = true;
   lid.add(lidBoard);

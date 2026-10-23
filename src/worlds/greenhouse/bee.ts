@@ -9,8 +9,8 @@ export interface Bee {
   group: THREE.Group;
   /** Flies through these points over `seconds`; resolves on arrival (or when another flight takes over). */
   fly(points: THREE.Vector3[], seconds: number, opts?: { pollen?: boolean; seed?: boolean }): Promise<boolean>;
-  /** Where it is, and whether it's on the wing. */
-  at(): THREE.Vector3;
+  /** Where it is (into `out`, if given), and whether it's on the wing. */
+  at(out?: THREE.Vector3): THREE.Vector3;
   flying(): boolean;
   /** How hard its wings are going (0..1), for the buzz. */
   buzz(): number;
@@ -174,7 +174,7 @@ export function buildBee(): Bee {
       seed.visible = !!opts.seed;
       return new Promise((resolve) => (done = resolve));
     },
-    at: () => pos.clone(),
+    at: (out) => (out ? out.copy(pos) : pos.clone()),
     flying: () => !!path,
     buzz: () => (path ? 1 : 0.15),
     drop() {

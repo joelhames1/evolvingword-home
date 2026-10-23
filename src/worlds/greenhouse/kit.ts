@@ -92,13 +92,22 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     giftAt = receive(garden, asked.slice(0, 32), Date.now());
     if (giftAt !== null) keep(garden);
   }
+  // Genomes by code, worked out once (the frame asks every frame).
+  const known = new Map<string, Genome | null>();
+  const genomeOf = (code: string | null | undefined): Genome | null => {
+    if (!code) return null;
+    let g = known.get(code);
+    if (g === undefined) {
+      g = decode(code);
+      if (known.size > 500) known.clear();
+      known.set(code, g);
+    }
+    return g;
+  };
   const showPlant: Plant = { code: encode(SHOW.example), born: 0, watered: Date.now(), parents: null, gift: false };
   /** What's in each slot: the staging's pots, the gift waiting on the bench, the show plant. */
   const plantIn = (i: number): Plant | null => (i < POTS ? garden.pots[i] : i === GIFT_POT ? garden.waiting : showPlant);
-  const genomeIn = (i: number): Genome | null => {
-    const p = plantIn(i);
-    return p ? decode(p.code) : null;
-  };
+  const genomeIn = (i: number): Genome | null => genomeOf(plantIn(i)?.code);
   /** How fast things grow (the tests speed it up). */
   let speed = 1;
   const grown = (i: number, now = Date.now()) => {
@@ -107,7 +116,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   };
   const blooming = (i: number, now = Date.now()) => grown(i, now) >= 0.86;
   const nameOf = (code: string | null | undefined) => {
-    const g = code ? decode(code) : null;
+    const g = genomeOf(code);
     return g ? gardenName(g) : 'a flower';
   };
 
@@ -131,7 +140,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       const code = p?.code ?? null;
       if (code !== shown[i]) {
         shown[i] = code;
-        flowers.set(i, code ? decode(code) : null, code ? hash(`${code}${i}`) : 0);
+        flowers.set(i, genomeOf(code), code ? hash(`${code}${i}`) : 0);
         // Already in flower when it arrived: no bell for it.
         opened[i] = p && inBloom(p, now, speed) ? 1 : 0;
       }
@@ -205,11 +214,24 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       ],
       [
         ...(c.dry ? [{ label: 'Water them all', run: () => void waterAll() }] : []),
+        { label: 'Pick a flower by name', run: () => pickCard() },
         { label: 'The seed catalog', run: () => wiring?.goTo('catalog') },
         { label: 'Start the garden over', quiet: true, run: () => startOverCard() },
       ],
     );
   };
+  /** The flowers in bloom, as buttons: for picking one without pointing at it. */
+  const inFlower = (except = -1) => garden.pots.map((p, i) => (p && i !== except && blooming(i) ? i : -1)).filter((i) => i >= 0);
+  const pickCard = () =>
+    card('The staging', 'Pick a flower', [{ note: 'The flowers in bloom, by name and pot.' }], [
+      ...inFlower().map((i) => ({ label: `${nameOf(garden.pots[i]?.code)} · ${i + 1}`, run: () => select(i) })),
+      { label: 'Back', quiet: true, run: () => stagingCard() },
+    ]);
+  const crossCard = (a: number) =>
+    card(`Cross ${nameOf(garden.pots[a]?.code)} with`, 'Which flower?', [{ note: 'The bee takes the pollen to it, and a seed to an empty pot.' }], [
+      ...inFlower(a).map((b) => ({ label: `${nameOf(garden.pots[b]?.code)} · ${b + 1}`, run: () => void cross(a, b) })),
+      { label: 'Back', quiet: true, run: () => plantCard(a) },
+    ]);
   const parentage = (p: Plant) => (p.gift ? 'A gift from a friend.' : p.parents ? `Seed of ${nameOf(p.parents[0])} and ${nameOf(p.parents[1])}.` : 'One of the first seeds in the house.');
   const emptyCard = () =>
     card('On the staging', 'An empty pot', ['Fresh soil, waiting. Pick two flowers and the bee brings their seed to the first empty pot.'], [{ label: 'The seed catalog', quiet: true, run: () => wiring?.goTo('catalog') }]);
@@ -224,6 +246,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       gardenName(g),
       [describe(g), { note: `${latinName(g)}. ${p.gift ? 'A gift from a friend. ' : ''}${dry ? 'It’s thirsty. ' : ''}Now click another flower to cross them.` }],
       [
+        { label: 'Cross it with…', run: () => crossCard(i) },
         { label: 'Look through the lens', run: () => closer(i) },
         { label: 'Water it', run: () => void waterPot(i) },
         { label: 'Share this flower', run: () => void share(i) },
@@ -278,7 +301,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     let best = -1;
     let score = -1;
     garden.pots.forEach((p, i) => {
-      const g = p && blooming(i) ? decode(p.code) : null;
+      const g = p && blooming(i) ? genomeOf(p.code) : null;
       if (g && w.near(g) > score) {
         score = w.near(g);
         best = i;
@@ -605,7 +628,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         const glow = (i === selected ? 0.55 + 0.3 * Math.sin(t * 4) : 0) + (i === hoverSlot && t - hoverAt < 0.15 ? 0.45 : 0);
         flowers.state(i, g, droop[i], glow);
         if (!p || g < 0.86) continue;
-        const genome = decode(p.code);
+        const genome = genomeOf(p.code);
         if (!genome) continue;
         notes.push(genome.note);
         // A flower opening: its note, and if it's one the catalog wants, a rosette.
@@ -640,7 +663,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       }
       bee.tick(t, dt);
       right.set(1, 0, 0).applyQuaternion(camera.quaternion);
-      toBee.copy(bee.at()).sub(camera.position);
+      bee.at(toBee).sub(camera.position);
       const dist = toBee.length();
       band.bee(bee.buzz(), THREE.MathUtils.clamp(1 - dist / 4, 0, 1), toBee.normalize().dot(right));
 
