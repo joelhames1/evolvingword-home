@@ -337,14 +337,14 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     const s = 0.2 + r() * 0.16;
     const at = v(x + (r() - 0.5) * 0.12, s * 0.7, HOUSE.kneeOut - 1.5 - r() * 0.55);
     const tall = 1.1 + r() * 0.5;
-    const mound = { at, s: v(s, s * tall, s), color: new THREE.Color(['#33501f', '#3e5a24', '#4a6428'][Math.floor(r() * 3)]), crown: new THREE.Vector4(at.x, at.y - s * 0.3, at.z, s * tall) };
+    // A dark heart of leaves, and over it sprays of leaves on every side, so the shrub reads as leaves, not a ball.
+    const mound = { at, s: v(s, s * tall, s).multiplyScalar(0.82), color: new THREE.Color(['#33501f', '#3e5a24', '#4a6428'][Math.floor(r() * 3)]), crown: new THREE.Vector4(at.x, at.y - s * 0.3, at.z, s * tall) };
     mounds.push(mound);
-    // Sprays of leaves standing out of it, so its outline is leafy, not round.
-    for (let k = 0; k < (high ? 6 : 4); k++) {
-      const d = v(r() - 0.5, 0.15 + r() * 0.7, r() - 0.5).normalize();
-      const p = at.clone().add(v(d.x * s, d.y * s * tall, d.z * s).multiplyScalar(0.85));
+    for (let k = 0; k < (high ? 15 : 8); k++) {
+      const d = v(r() - 0.5, -0.25 + r(), r() - 0.5).normalize();
+      const p = at.clone().add(v(d.x * s, d.y * s * tall, d.z * s).multiplyScalar(0.8));
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 6.28, r() * 6.28, r() * 6.28));
-      const size = s * (0.9 + r() * 0.5);
+      const size = s * (1.0 + r() * 0.6);
       sprays.push({ m: new THREE.Matrix4().compose(p, q, v(size, size, size)), color: mound.color.clone().offsetHSL(0, (r() - 0.5) * 0.1, (r() - 0.5) * 0.06), crown: mound.crown });
     }
   }
@@ -371,7 +371,7 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
   // The near clumps (the borders) rounder than the far ones.
   leafy(
     new THREE.IcosahedronGeometry(1, 2),
-    mounds.map((b) => ({ m: m4.clone().compose(b.at, turned(), b.s), color: b.color, crown: b.crown })),
+    mounds.map((b) => ({ m: m4.clone().compose(b.at, turned(), b.s), color: b.color.clone().multiplyScalar(0.72), crown: b.crown })),
   );
   leafy(
     new THREE.IcosahedronGeometry(1, 1),
@@ -402,7 +402,7 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
     for (let k = 0, n = high ? 5 : 3; k < n; k++) {
       // On the upper side of the mound, facing out of it (and up, toward the light).
       const d = v(r() - 0.5, 0.45 + r() * 0.6, r() - 0.65).normalize();
-      const at = b.at.clone().add(v(d.x * b.s.x, d.y * b.s.y, d.z * b.s.z).multiplyScalar(0.97));
+      const at = b.at.clone().add(v(d.x * b.s.x, d.y * b.s.y, d.z * b.s.z).multiplyScalar(1.12));
       const face = d.clone().add(v(0, 0.6, 0)).normalize();
       const q = new THREE.Quaternion().setFromUnitVectors(v(0, 1, 0), face).multiply(new THREE.Quaternion().setFromAxisAngle(v(0, 1, 0), r() * 6.28));
       const sc = 0.8 + r() * 0.5;
@@ -585,7 +585,7 @@ function foliageMaterial(u: DaylightUniforms) {
         vec3 outward = reach > 1e-4 ? fromMid / reach : nb;
         vec3 n = normalize(mix(nb, outward, mix(0.62 * inCrown, 1.0, spray)) + bump * mix(mix(1.1, 0.75, inCrown), 0.0, spray));
         float heart = mix(1.0, mix(0.32, 1.0, smoothstep(0.25, 0.95, reach / max(reachOf, 1e-3))), inCrown);
-        vec3 albedo = vColor * mix(vec3(0.5 + 0.8 * leaves), painted.rgb, spray);
+        vec3 albedo = vColor * mix(vec3(0.58 + 0.66 * leaves), painted.rgb, spray);
         float lit = max(dot(n, uSunDir), 0.0);
         // The shade side stays green and deep: less of the sky's blue in it than on open ground.
         vec3 amb = mix(uGround, uSky, n.y * 0.5 + 0.5) * vec3(0.8, 0.88, 0.8);
@@ -595,7 +595,7 @@ function foliageMaterial(u: DaylightUniforms) {
         float back = max(dot(-v, uSunDir), 0.0);
         col += uSunColor * albedo * vec3(0.95, 1.0, 0.45) * (pow(back, 4.0) * 0.55 * heart + pow(1.0 - abs(dot(n, v)), 2.0) * back * back * mix(0.8 * inCrown, 1.1, spray));
         // The hollows between clumps of leaves stay dark.
-        col *= mix(0.55 + 0.45 * smoothstep(0.2, 0.6, leaves), 1.0, spray);
+        col *= mix(0.62 + 0.38 * smoothstep(0.2, 0.6, leaves), 1.0, spray);
         gl_FragColor = vec4(fade(col, vWorld), 1.0);
       }
     `,

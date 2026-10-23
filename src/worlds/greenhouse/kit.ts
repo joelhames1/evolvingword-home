@@ -541,7 +541,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       window: { pos: v(1.15, 1.6, -1.55), target: v(-1.2, 1.5, -14), fov: 54, lean: 0.04 },
       // The bedding on the bank across the lawn: close to the glass between two bars, so none crosses
       // the letters, and wide enough for all sixteen beds.
-      board: { pos: v(0.9, 1.7, -1.95), target: BANK.center.clone().add(v(0, 0.05, 0)), fov: 34, lean: 0.01 },
+      board: { pos: v(0.9, 1.7, -1.95), target: BANK.center.clone().add(v(0.25, 0.05, 0)), fov: 38, lean: 0.01 },
     },
     // Along the front of the house to the open door at the sunny end, in, and back along the aisle to the bench.
     intro: { via: [v(-4.8, 2.3, -5.6), v(-8.3, 1.8, -3.0), v(HOUSE.x0 - 1.5, 1.55, HOUSE.door.z), v(HOUSE.x0 + 0.9, 1.55, HOUSE.door.z), v(-2.5, 1.5, 0.95)], duration: 11, lines: ['EVOLVING WORD', 'A LITTLE STUDIO UNDER GLASS', 'WHERE WE MAKE THINGS TOGETHER'] },
