@@ -56,7 +56,7 @@ const skies: { stop(): void }[] = [];
 /** Snow drifting, rain slanting, morning mist or falling petals, inside one globe. */
 function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
   const g = canvas.getContext('2d')!;
-  const n = { snow: 70, rain: 90, mist: 46, petals: 34, motes: 30, stars: 130, dust: 60 }[kind];
+  const n = { snow: 70, rain: 90, mist: 46, petals: 34, motes: 30, stars: 130, dust: 60, lamps: 34 }[kind];
   const bits = Array.from({ length: n }, (_, i) => ({ x: Math.random(), y: Math.random(), s: 0.4 + Math.random() * 0.8, p: Math.random() * 6.28, spin: Math.random() * 6.28, leaf: i % 3 === 0 }));
   let stir = 0;
   let last = performance.now();
@@ -213,6 +213,39 @@ function weather(canvas: HTMLCanvasElement, kind: WorldInfo['weather']) {
           g.arc(b.x * w, b.y * h, (0.5 + b.s * 1.1) * (w / 320), 0, Math.PI * 2);
           g.fill();
         }
+      } else if (kind === 'lamps') {
+        // Lights going by, as from a train window at night: near ones fast and
+        // smeared sideways, far ones slow, a dark line of hills sliding past
+        // behind them. A shake and they rush.
+        if (b === bits[0]) {
+          const off = now / 14000;
+          g.fillStyle = 'rgba(8,12,26,0.6)';
+          g.beginPath();
+          g.moveTo(0, h);
+          for (let x = 0; x <= w; x += w / 40) {
+            const k = x / w + off;
+            g.lineTo(x, h * (0.6 - 0.045 * Math.sin(k * 8.7) - 0.025 * Math.sin(k * 21.3 + 1)));
+          }
+          g.lineTo(w, h);
+          g.fill();
+        }
+        const near = b.s * b.s;
+        const speed = (0.025 + near * 0.32) * (1 + stir * 3);
+        b.x -= dt * speed;
+        const y = (0.52 + b.y * 0.36 - near * 0.06) * h;
+        const len = Math.max(w / 240, speed * w * 0.28);
+        const tw = 0.75 + 0.25 * Math.sin(now / 300 + b.p * 7);
+        const tint = b.leaf ? '255,236,200' : b.p > 6 ? '255,90,70' : '255,190,110';
+        const streak = g.createLinearGradient(b.x * w, y, b.x * w + len, y);
+        streak.addColorStop(0, `rgba(${tint},${(0.35 + near * 0.55) * tw})`);
+        streak.addColorStop(1, `rgba(${tint},0)`);
+        g.strokeStyle = streak;
+        g.lineWidth = (0.6 + near * 2.4) * (w / 320);
+        g.lineCap = 'round';
+        g.beginPath();
+        g.moveTo(b.x * w, y);
+        g.lineTo(b.x * w + len, y);
+        g.stroke();
       } else {
         // Petals and the odd olive leaf, tumbling and side-slipping as they fall.
         b.y += dt * (0.045 + b.s * 0.035) * (1 - stir * 1.6);

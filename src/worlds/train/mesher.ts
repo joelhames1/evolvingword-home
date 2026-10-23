@@ -96,9 +96,9 @@ export const SHAPES = {
       return new THREE.ExtrudeGeometry(s, { depth: 1, bevelEnabled: false }).translate(0, 0, -0.5).rotateY(Math.PI / 2);
     })(),
   ),
-  cone: flatTemplate(new THREE.ConeGeometry(0.5, 1, 7, 1).translate(0, 0.5, 0)),
-  cylinder: template(new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1).translate(0, 0.5, 0)),
-  blob: flatTemplate(new THREE.IcosahedronGeometry(0.5, 1)),
+  cone: flatTemplate(new THREE.ConeGeometry(0.5, 1, 6, 1, true).translate(0, 0.5, 0)),
+  cylinder: template(new THREE.CylinderGeometry(0.5, 0.5, 1, 6, 1, true).translate(0, 0.5, 0)),
+  blob: flatTemplate(new THREE.IcosahedronGeometry(0.5, 0)),
   rock: flatTemplate(new THREE.DodecahedronGeometry(0.5, 0)),
   /** A flat square facing +z, for lit windows and signs. */
   quad: template(new THREE.PlaneGeometry(1, 1)),

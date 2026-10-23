@@ -52,6 +52,29 @@ export interface Land {
   clock: ReturnType<typeof buildClock>;
 }
 
+/**
+ * A mesher's triangles in up to three meshes: the window side, the line itself,
+ * and the corridor side, so whichever side is behind the camera isn't drawn.
+ */
+function halves(m: Mesher): THREE.BufferGeometry[] {
+  if (m.empty) return [];
+  const parts = [new Mesher(), new Mesher(), new Mesher()];
+  const n = m.pos.length / 9;
+  for (let t = 0; t < n; t++) {
+    const z = (m.pos[t * 9 + 2] + m.pos[t * 9 + 5] + m.pos[t * 9 + 8]) / 3;
+    const into = parts[z < -6 ? 0 : z > 6 ? 2 : 1];
+    for (let k = 0; k < 3; k++) {
+      const i = t * 3 + k;
+      into.pos.push(m.pos[i * 3], m.pos[i * 3 + 1], m.pos[i * 3 + 2]);
+      into.nrm.push(m.nrm[i * 3], m.nrm[i * 3 + 1], m.nrm[i * 3 + 2]);
+      into.col.push(m.col[i * 3], m.col[i * 3 + 1], m.col[i * 3 + 2]);
+      into.glow.push(m.glow[i * 3], m.glow[i * 3 + 1], m.glow[i * 3 + 2]);
+      into.uv.push(m.uv[i * 2], m.uv[i * 2 + 1]);
+    }
+  }
+  return parts.filter((p) => !p.empty).map((p) => p.geometry());
+}
+
 export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; flapTexture: THREE.Texture }): Land {
   const { journey, uniforms } = opts;
   const group = new THREE.Group();
@@ -179,20 +202,41 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
         col[k + 2] = tmpC.b;
       }
     }
-    const index: number[] = [];
-    for (let i = 0; i < nCols - 1; i++)
-      for (let j = 0; j < rows - 1; j++) {
-        const a = i * rows + j;
-        const b = (i + 1) * rows + j;
-        index.push(a, a + 1, b, b, a + 1, b + 1);
-      }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    geo.setIndex(index);
-    geo.computeBoundingSphere();
-    return new THREE.Mesh(geo, mats.terrain);
+    // Two meshes, one each side of the line (sharing the row under it), so the side behind the camera isn't drawn.
+    const mid = ZS.indexOf(0);
+    return [
+      [0, mid],
+      [mid, rows - 1],
+    ].map(([j0, j1]) => {
+      const n = j1 - j0 + 1;
+      const p2 = new Float32Array(nCols * n * 3);
+      const n2 = new Float32Array(nCols * n * 3);
+      const c2 = new Float32Array(nCols * n * 3);
+      for (let i = 0; i < nCols; i++)
+        for (let j = j0; j <= j1; j++) {
+          const from = (i * rows + j) * 3;
+          const to = (i * n + (j - j0)) * 3;
+          for (let q = 0; q < 3; q++) {
+            p2[to + q] = pos[from + q];
+            n2[to + q] = nrm[from + q];
+            c2[to + q] = col[from + q];
+          }
+        }
+      const index: number[] = [];
+      for (let i = 0; i < nCols - 1; i++)
+        for (let j = 0; j < n - 1; j++) {
+          const a = i * n + j;
+          const b = (i + 1) * n + j;
+          index.push(a, a + 1, b, b, a + 1, b + 1);
+        }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(p2, 3));
+      geo.setAttribute('normal', new THREE.BufferAttribute(n2, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(c2, 3));
+      geo.setIndex(index);
+      geo.computeBoundingSphere();
+      return new THREE.Mesh(geo, mats.terrain);
+    });
   }
 
   /** A sheet of water across the piece at a stretch's water level, its uvs where it is along the land. */
@@ -240,7 +284,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
         return hash(Math.floor(u * 3.7), salt, leg.seed) < w;
       },
     };
-    out.add(terrain(u0));
+    out.add(...terrain(u0));
     // Every stretch that reaches this piece dresses its part of it.
     const legs = journey.legs.filter((l) => l.end > u0 - 200 && l.start < u1 + 200);
     for (const leg of legs) dress(b, leg);
@@ -255,8 +299,8 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       [b.city, mats.city],
       [b.pools, mats.pools],
     ] as const)
-      if (!m.empty) {
-        const mesh = new THREE.Mesh(m.geometry(), mat);
+      for (const geo of halves(m)) {
+        const mesh = new THREE.Mesh(geo, mat);
         if (m === b.pools) mesh.renderOrder = 2;
         out.add(mesh);
       }
@@ -265,7 +309,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       const w0 = weight(leg, u0);
       const w1 = weight(leg, u1 - 1);
       if (Math.max(w0, w1) < 0.02) continue;
-      if (leg.land === 'gorge') out.add(water(u0, WATER.gorge, -1400, 1400));
+      if (leg.land === 'gorge') out.add(water(u0, WATER.gorge, -1400, 0), water(u0, WATER.gorge, 0, 1400));
       if (leg.land === 'lake') out.add(water(u0, WATER.lake, -1400, -4));
     }
     // The stations' signs and clocks.

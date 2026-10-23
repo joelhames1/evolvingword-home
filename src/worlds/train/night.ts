@@ -32,6 +32,8 @@ export function nightUniforms(): DaylightUniforms {
     uSpillColor: { value: new THREE.Color('#ffb46a') },
     // A wash of light from below the haze: the city's glow, a little sodium orange.
     uGlow: { value: new THREE.Color('#000000') },
+    // The brakes' sparks, lighting the ballast round the wheels: where, and how brightly.
+    uSpark: { value: new THREE.Vector4(0, -1.15, -0.8, 0) },
   };
 }
 
@@ -39,19 +41,29 @@ export function nightUniforms(): DaylightUniforms {
 const SPILL = /* glsl */ `
   uniform float uSpill;
   uniform vec3 uSpillColor;
+  uniform vec4 uSpark;
+  vec3 sparkAt(vec3 world) {
+    if (uSpark.w <= 0.0) return vec3(0.0);
+    // Along the train they're thrown back from the wheels, so the light runs out behind the bogie.
+    vec3 d = world - uSpark.xyz;
+    d.x = d.x > 0.0 ? d.x * 1.6 : d.x * 0.35;
+    return vec3(1.0, 0.5, 0.16) * uSpark.w * exp(-dot(d, d) * 0.5);
+  }
   float spillAt(vec3 world, vec3 n) {
     float side = world.z;
     float d = abs(side) - ${CAR.outer.toFixed(3)};
-    if (d < 0.0 || d > 9.0 || uSpill <= 0.0) return 0.0;
+    // How far it is from the windows, counting how far below them it is too.
+    float d3 = length(vec2(d, max(0.0, 0.84 - world.y) * 0.8));
+    if (d < 0.0 || d3 > 9.0 || uSpill <= 0.0) return 0.0;
     if (world.x < ${TRAIN_SPAN.back.toFixed(1)} || world.x > ${TRAIN_SPAN.front.toFixed(1)}) return 0.0;
     // Compartment windows on the −z side, the corridor's on the +z side: a square of light
     // for each, spreading and fading as it falls further out.
-    float step = side < 0.0 ? ${COMPARTMENT_STEP.toFixed(3)} : ${CORRIDOR_WINDOWS.step.toFixed(3)};
-    float half = side < 0.0 ? ${((WINDOW.x1 - WINDOW.x0) / 2).toFixed(3)} : ${(CORRIDOR_WINDOWS.width / 2).toFixed(3)};
+    float pitch = side < 0.0 ? ${COMPARTMENT_STEP.toFixed(3)} : ${CORRIDOR_WINDOWS.step.toFixed(3)};
+    float halfW = side < 0.0 ? ${((WINDOW.x1 - WINDOW.x0) / 2).toFixed(3)} : ${(CORRIDOR_WINDOWS.width / 2).toFixed(3)};
     float mid = side < 0.0 ? ${((WINDOW.x0 + WINDOW.x1) / 2).toFixed(3)} : ${CORRIDOR_WINDOWS.first.toFixed(3)};
     float k = world.x - mid;
-    float cell = k - step * floor(k / step + 0.5);
-    float spread = half + d * 0.3;
+    float cell = k - pitch * floor(k / pitch + 0.5);
+    float spread = halfW + d * 0.3;
     float lit = 1.0 - smoothstep(spread - 0.1 - d * 0.1, spread + 0.15 + d * 0.15, abs(cell));
     // On the ground it falls below the sill; on a wall facing the train (a tunnel,
     // a platform's fittings) it makes a band at the windows' height.
@@ -61,7 +73,7 @@ const SPILL = /* glsl */ `
     float hi = ${WINDOW.y1.toFixed(2)} + d * 0.35;
     float band = smoothstep(lo - 0.3, lo + 0.1, world.y) * (1.0 - smoothstep(hi - 0.1, hi + 0.3, world.y));
     float wall = clamp(toward, 0.0, 1.0) * band;
-    return lit * max(ground, wall) * exp(-d * 0.38) * uSpill;
+    return lit * max(ground, wall) * exp(-d3 * 0.55) * uSpill;
   }
 `;
 
@@ -125,7 +137,8 @@ const FRAG = /* glsl */ `
       vec3 h = normalize(view + uSunDir);
       col += uSunColor * pow(max(dot(n, h), 0.0), 40.0) * uSheen;
     }
-    col += albedo * uSpillColor * spillAt(vWorld, n) * 1.6;
+    col += albedo * uSpillColor * spillAt(vWorld, n) * 0.9;
+    col += albedo * sparkAt(vWorld);
     // The city's glow lights things a little from below the sky, everywhere.
     col += albedo * uGlow;
     col += vGlow;

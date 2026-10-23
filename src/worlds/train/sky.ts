@@ -83,19 +83,20 @@ export function buildSky(quality: Quality): Sky {
         void main() {
           vec3 d = normalize(vDir);
           float up = clamp(d.y, -0.2, 1.0);
-          vec3 zenith = vec3(0.006, 0.009, 0.022);
-          vec3 horizon = vec3(0.03, 0.045, 0.085);
+          // (Linear light: these are darker than they look written down.)
+          vec3 zenith = vec3(0.0012, 0.0018, 0.0048);
+          vec3 horizon = vec3(0.007, 0.011, 0.024);
           vec3 col = mix(horizon, zenith, pow(clamp(up, 0.0, 1.0), 0.45));
           // The moon's glow, wide and soft, and a tighter halo.
           float m = max(dot(d, uMoon), 0.0);
-          col += vec3(0.16, 0.19, 0.26) * pow(m, 18.0) * 0.6 + vec3(0.25, 0.27, 0.3) * pow(m, 400.0) * 0.5;
+          col += vec3(0.05, 0.06, 0.085) * pow(m, 14.0) * 0.6 + vec3(0.12, 0.13, 0.15) * pow(m, 400.0) * 0.5;
           // A faint Milky Way: a band across the sky, mottled.
           vec3 axis = normalize(vec3(0.45, 0.35, 0.82));
           float band = exp(-pow(dot(d, axis) / 0.16, 2.0));
           float dust = noise(d.xz * 9.0 + d.y * 4.0) * 0.6 + noise(d.xy * 23.0) * 0.4;
-          col += vec3(0.05, 0.055, 0.07) * band * (0.4 + dust) * (1.0 - uCity) * smoothstep(0.0, 0.3, up);
+          col += vec3(0.012, 0.013, 0.017) * band * (0.4 + dust) * (1.0 - uCity) * smoothstep(0.0, 0.3, up);
           // The city's sodium glow, low down all round.
-          col += vec3(0.32, 0.16, 0.06) * uCity * exp(-max(up, 0.0) * 9.0) * 0.55;
+          col += vec3(0.09, 0.042, 0.015) * uCity * exp(-max(up, 0.0) * 9.0) * 0.55;
           // Below the horizon (seen only past the edge of things), the haze.
           col = mix(col, horizon * (1.0 + uCity * 2.0), smoothstep(0.02, -0.08, d.y));
           gl_FragColor = vec4(col, 1.0);
@@ -181,8 +182,8 @@ export function buildSky(quality: Quality): Sky {
   moon.lookAt(0, 0, 0);
   moon.renderOrder = -8;
   group.add(moon);
-  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow('rgba(190,205,240,1)', 128), color: '#9fb2dc', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.55 }));
-  halo.scale.setScalar(moonSize * 9);
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow('rgba(190,205,240,1)', 128), color: '#9fb2dc', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.32 }));
+  halo.scale.setScalar(moonSize * 5);
   halo.position.copy(moon.position);
   halo.renderOrder = -7;
   group.add(halo);

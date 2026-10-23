@@ -143,7 +143,7 @@ export function buildCar(): Car {
   const carpetMat = new THREE.MeshStandardMaterial({ map: carpet('room'), roughness: 0.95 });
   const runnerMat = new THREE.MeshStandardMaterial({ map: carpet('runner'), roughness: 0.95 });
   const corridorFloor = new THREE.MeshStandardMaterial({ color: '#3a2216', roughness: 0.6 });
-  const sheet = new THREE.MeshStandardMaterial({ color: '#efeae0', roughness: 0.9 });
+  const sheet = new THREE.MeshStandardMaterial({ color: '#d6cfc2', roughness: 0.92 });
   const blanket = new THREE.MeshStandardMaterial({ map: plaid(), roughness: 0.95 });
   const velvet = new THREE.MeshStandardMaterial({ color: '#5c1622', roughness: 0.82, side: THREE.DoubleSide });
   const leather = new THREE.MeshStandardMaterial({ color: '#5a3018', roughness: 0.6 });
@@ -244,7 +244,9 @@ export function buildCar(): Car {
   const glassShape = roundRect(new THREE.Shape(), W.x0 + 0.01, W.y0 + 0.01, W.x1 - 0.01, W.y1 - 0.01, R - 0.01);
   const glass = mesh(
     shaped(glassShape, (a, b) => v(a, b, -1.59)),
-    new THREE.MeshStandardMaterial({ color: '#a8b8c8', transparent: true, opacity: 0.1, roughness: 0.04, metalness: 0.1, depthWrite: false }),
+    // Dark, and unlit: lit like a surface, glass greys out the whole night behind it. It only darkens the
+    // view a little; the lamps' reflections in it are placed behind it (see the kit).
+    new THREE.MeshBasicMaterial({ color: '#0a0e14', transparent: true, opacity: 0.14, depthWrite: false }),
     { receive: false },
   );
   glass.renderOrder = 3;
@@ -252,9 +254,9 @@ export function buildCar(): Car {
   const rail = box(W.x1 - W.x0 - 0.06, 0.035, 0.03, brass, WINDOW_X, W.y1 - 0.028, -1.585);
   pane.add(rail);
   // The leather strap, to pull it down by.
-  const strap = box(0.05, 0.42, 0.008, leather, WINDOW_X, W.y1 - 0.24, -1.565);
+  const strap = box(0.045, 0.15, 0.008, leather, WINDOW_X, W.y1 - 0.11, -1.565);
   pane.add(strap);
-  const buckle = box(0.06, 0.03, 0.012, brass, WINDOW_X, W.y1 - 0.43, -1.562);
+  const buckle = box(0.055, 0.025, 0.012, brass, WINDOW_X, W.y1 - 0.18, -1.562);
   pane.add(buckle);
   group.add(pane);
   // Something generous to click: the whole opening.
@@ -271,10 +273,14 @@ export function buildCar(): Car {
     const g = curtainGeo(0.3, 1.04);
     const p = g.attributes.position;
     // Gathered folds, deeper toward the bottom where they hang free below the tie-back.
+    // Gathered in at the tie-back (a little below the middle), falling in folds above and below it.
+    const tieY = 1.14 - (W.y1 - 0.47);
     for (let i = 0; i < p.count; i++) {
       const px = p.getX(i);
       const py = p.getY(i);
-      p.setZ(i, Math.sin(px * 42) * 0.022 + Math.sin(px * 17 + 1) * 0.01 + (py < -0.1 ? 0 : 0));
+      const pinch = 1 - 0.55 * Math.exp(-Math.pow((py - tieY) / 0.16, 2));
+      const x = px * pinch + side * (1 - pinch) * 0.04;
+      p.setXYZ(i, x, py, Math.sin(px * 42) * 0.022 * pinch + Math.sin(px * 17 + 1) * 0.01 + (1 - pinch) * 0.03);
     }
     g.computeVertexNormals();
     const m = mesh(g, velvet, { cast: false });
@@ -282,10 +288,10 @@ export function buildCar(): Car {
     group.add(m);
     curtains.push({ mesh: m, base: Float32Array.from(p.array as Float32Array), side });
     // The tie-back: a gold rope round the gathered curtain.
-    const tie = mesh(new THREE.TorusGeometry(0.075, 0.012, 8, 20), gold);
-    tie.position.set(m.position.x, 1.14, z0 + 0.07);
+    const tie = mesh(new THREE.TorusGeometry(0.07, 0.011, 8, 20), gold);
+    tie.position.set(m.position.x + side * 0.04, 1.14, z0 + 0.09);
     tie.rotation.x = Math.PI / 2;
-    tie.scale.set(1.6, 0.7, 1);
+    tie.scale.set(1.05, 0.62, 1);
     group.add(tie);
   }
 

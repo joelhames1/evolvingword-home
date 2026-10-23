@@ -130,13 +130,11 @@ export function ceiling(): THREE.CanvasTexture {
     g.fillStyle = `rgba(${r() < 0.5 ? '255,250,235' : '160,140,110'},${r() * 0.05})`;
     g.fillRect(r() * 256, r() * 256, 3, 3);
   }
-  g.strokeStyle = 'rgba(170,135,80,0.35)';
+  g.strokeStyle = 'rgba(170,135,80,0.08)';
   g.lineWidth = 2;
-  for (let k = 0; k < 4; k++) {
-    g.beginPath();
-    g.arc(128, 128, 40 + k * 18, 0, Math.PI * 2);
-    g.stroke();
-  }
+  g.beginPath();
+  g.arc(128, 128, 60, 0, Math.PI * 2);
+  g.stroke();
   const t = texture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(1 / 0.9, 1 / 0.9);

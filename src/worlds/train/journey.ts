@@ -126,11 +126,26 @@ export class Journey {
 
   constructor(opts: { rand?: () => number; land?: Land; at?: number; speed?: number } = {}) {
     this.rand = opts.rand ?? Math.random;
-    const land = opts.land ?? 'gorge';
-    this.legs.push(this.leg(land, 0));
-    this.s = opts.at ?? 0;
-    this.v = opts.speed ?? LAYOUT[land].limit;
+    this.s = 0;
+    this.reset(opts.land ?? 'gorge', opts.at ?? 0, opts.speed);
+  }
+
+  /** Puts the train somewhere new: `at` meters into a stretch of `land` that starts where the line's got to (so the land behind is forgotten). */
+  reset(land: Land, at: number, speed?: number) {
+    const start = Math.ceil((this.s + 4000) / 1000) * 1000;
+    this.legs = [this.leg(land, start)];
+    this.cur = 0;
+    this.s = start + at;
+    this.v = speed ?? LAYOUT[land].limit;
+    this.phase = 'running';
+    this.held = 0;
+    this.lit = false;
+    this.locked = false;
+    this.served = -1;
+    this.stop = null;
     this.extend();
+    this.revision++;
+    this.changedFrom = -Infinity;
   }
 
   private leg(land: Land, start: number): Leg {

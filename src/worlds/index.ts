@@ -1,7 +1,7 @@
 // The worlds you can step into, as the chooser shows them. Each one's 3D code
 // (its kit) loads only when it's picked; see src/scene.ts.
 
-export type WorldId = 'alps' | 'city' | 'tower' | 'monastery' | 'cell' | 'heavens' | 'library';
+export type WorldId = 'alps' | 'city' | 'tower' | 'monastery' | 'cell' | 'heavens' | 'library' | 'train';
 
 export interface WorldInfo {
   id: WorldId;
@@ -13,7 +13,7 @@ export interface WorldInfo {
   /** The color it glows when you're near it. */
   glow: string;
   /** What falls (or drifts) inside the glass. */
-  weather: 'snow' | 'rain' | 'mist' | 'petals' | 'motes' | 'stars' | 'dust';
+  weather: 'snow' | 'rain' | 'mist' | 'petals' | 'motes' | 'stars' | 'dust' | 'lamps';
 }
 
 /** The chooser is laid out for at most this many globes (more only in the ?worlds=all preview). */
@@ -27,6 +27,7 @@ export const WORLDS: WorldInfo[] = [
   { id: 'cell', name: 'The Living Word', line: 'A cell, lit like a cathedral.', still: '/worlds/cell.jpg', glow: '#ffb38a', weather: 'motes' },
   { id: 'heavens', name: 'The Heavens', line: 'Midnight in a mountaintop dome.', still: '/worlds/heavens.jpg', glow: '#a9bcff', weather: 'stars' },
   { id: 'library', name: 'The Library', line: 'Lamplight in an endless library.', still: '/worlds/library.jpg', glow: '#e9b26a', weather: 'dust' },
+  { id: 'train', name: 'The Night Train', line: 'A sleeper car, crossing at night.', still: '/worlds/train.jpg', glow: '#ffc27a', weather: 'lamps' },
 ];
 
 export const isWorld = (id: string | null | undefined): id is WorldId => WORLDS.some((w) => w.id === id);

@@ -103,15 +103,15 @@ function conifer(b: Build, u: number, z: number, height: number, turn: number, s
   b.decor.add(SHAPES.cone, place(x(b, u), y + height * 0.12, z, w, height * 0.6, w, turn), snowy ? DARK.fir : DARK.fir);
   b.decor.add(SHAPES.cone, place(x(b, u), y + height * 0.42, z, w * 0.74, height * 0.58, w * 0.74, turn + 0.4), snowy ? DARK.snow.clone().multiplyScalar(0.55) : DARK.firLight);
   if (snowy) b.decor.add(SHAPES.cone, place(x(b, u), y + height * 0.66, z, w * 0.42, height * 0.34, w * 0.42, turn + 0.8), DARK.snow);
-  if (Math.abs(z) < 140) b.decor.add(SHAPES.cylinder, place(x(b, u), y - 0.2, z, 0.25, height * 0.2, 0.25), DARK.trunk);
+  if (Math.abs(z) < 45) b.decor.add(SHAPES.cylinder, place(x(b, u), y - 0.2, z, 0.25, height * 0.2, 0.25), DARK.trunk);
 }
 
 function broadleaf(b: Build, u: number, z: number, height: number, turn: number) {
   const y = b.ground(u, z);
   const w = height * 0.62;
-  if (Math.abs(z) < 200) b.decor.add(SHAPES.cylinder, place(x(b, u), y - 0.2, z, 0.35, height * 0.5, 0.35), DARK.trunk);
+  if (Math.abs(z) < 60) b.decor.add(SHAPES.cylinder, place(x(b, u), y - 0.2, z, 0.35, height * 0.5, 0.35), DARK.trunk);
   b.decor.add(SHAPES.blob, place(x(b, u), y + height * 0.62, z, w, height * 0.7, w, turn), DARK.leaf);
-  b.decor.add(SHAPES.blob, place(x(b, u) + w * 0.25, y + height * 0.75, z + w * 0.1, w * 0.6, height * 0.45, w * 0.6, turn + 1), DARK.leaf.clone().multiplyScalar(1.15));
+  if (Math.abs(z) < 250) b.decor.add(SHAPES.blob, place(x(b, u) + w * 0.25, y + height * 0.75, z + w * 0.1, w * 0.6, height * 0.45, w * 0.6, turn + 1), DARK.leaf.clone().multiplyScalar(1.15));
 }
 
 /** A house with a pitched roof, a chimney, and a window or two lit on the side toward the line. */
@@ -136,7 +136,7 @@ function house(b: Build, u: number, z: number, opts: { w: number; d: number; h: 
       const wz = z - along * sin + out * cos;
       const color = lit ? (hash(i, 7, opts.seed) < 0.15 ? LIT.tv : LIT.warm) : DARK.glass;
       b.decor.add(SHAPES.quad, place(wx, y + 0.3 + floor, wz, 0.9, 1.2, 1, turn + (face < 0 ? Math.PI : 0)), DARK.glass, lit ? color : undefined);
-      if (lit && Math.abs(z) > 25) b.lights.push({ pos: new THREE.Vector3(wx, y + 0.3 + floor, wz), color: color.clone().multiplyScalar(0.5), size: 1.4 });
+      if (lit && Math.abs(z) > 25) b.lights.push({ pos: new THREE.Vector3(wx, y + 0.3 + floor, wz), color: color.clone().multiplyScalar(0.16), size: 0.7 });
     }
   }
 }
@@ -236,8 +236,12 @@ function slab(m: Mesher, x0: number, y0: number, z0: number, x1: number, y1: num
 
 // --- the landscapes ------------------------------------------------------------------
 
-/** Scatters things on a grid of cells along the stretch, each cell's spot jittered; `put` decides what (if anything) goes there. */
-function scatter(b: Build, leg: Leg, cell: number, zFrom: number, zTo: number, salt: number, put: (u: number, z: number, r: number, i: number, j: number) => void) {
+/**
+ * Scatters things on a grid of cells along the stretch, each cell's spot
+ * jittered; `put` decides what (if anything) goes there. Past `near` meters out
+ * they thin away, the far ones being only specks in the haze.
+ */
+function scatter(b: Build, leg: Leg, cell: number, zFrom: number, zTo: number, salt: number, put: (u: number, z: number, r: number, i: number, j: number) => void, near = 70) {
   const l0 = Math.floor((b.u0 - leg.start) / cell) - 1;
   const l1 = Math.ceil((b.u1 - leg.start) / cell) + 1;
   const j0 = Math.floor(zFrom / cell);
@@ -247,6 +251,7 @@ function scatter(b: Build, leg: Leg, cell: number, zFrom: number, zTo: number, s
       const u = leg.start + (i + hash(i, j, leg.seed + salt)) * cell;
       const z = (j + hash(j, i, leg.seed + salt * 3)) * cell;
       if (z < zFrom || z > zTo) continue;
+      if (Math.abs(z) > near && hash(i * 5, j * 3, leg.seed + salt * 11) > Math.pow(near / Math.abs(z), 1.25)) continue;
       if (!b.mine(leg, u, salt + i * 7 + j * 13) || !b.free(u, z, 5)) continue;
       put(u, z, hash(i * 3, j * 5, leg.seed + salt * 7), i, j);
     }
