@@ -6,6 +6,8 @@ import { MODULES, pad, PHRASES } from '../../src/worlds/train/board';
 import { bpmFor, BRANCHES, clackInterval, FIRST_LEAD, inStep, Journey, LANDS, LAYOUT, LEVER_LIT, LEVER_LOCK, RAIL, VIADUCT_LIMIT, type Land, type TrainEvent } from '../../src/worlds/train/journey';
 import { PLATFORM, STATION_LAMPS } from '../../src/worlds/train/ground';
 import { SHED_PILLARS } from '../../src/worlds/train/scenery';
+import { stationPlan, type StationKind } from '../../src/worlds/train/station';
+import { STATION_TEX } from '../../src/worlds/train/night';
 import { CAR, clear, CORRIDOR, OPPOSITE, ROOM, route, solid, THROUGH, where, WINDOW } from '../../src/worlds/train/plan';
 import { CHORDS, ECHOES, MELODY } from '../../src/worlds/train/sound';
 import { fresh, MAX_HOLES, nextHole, parseTicket, SHAPES } from '../../src/worlds/train/ticket';
@@ -257,6 +259,45 @@ describe('the stations', () => {
     expect(STATION_LAMPS.z).toBeLessThan(PLATFORM.edge - 1.5);
     expect(STATION_LAMPS.z).toBeGreaterThan(PLATFORM.back);
     expect(STATION_LAMPS.y).toBeGreaterThan(PLATFORM.y + 2.5);
+  });
+
+  for (const kind of ['city', 'lake', 'pass'] as StationKind[])
+    it(`${kind}: lamps along the platform, the house on it, and the light where the land has things to light`, () => {
+      const P = stationPlan(kind, 10_000, 4321);
+      // Lamps all along the platform, none over the sign by our window.
+      expect(P.lamps.length).toBeGreaterThan(8);
+      for (const u of P.lamps) {
+        expect(u).toBeGreaterThan(P.p0);
+        expect(u).toBeLessThan(P.p1);
+        expect(Math.abs(u - P.w)).toBeGreaterThan(3);
+      }
+      // The house stands on the platform, the canopy over the platform.
+      expect(P.h0).toBeGreaterThan(P.p0);
+      expect(P.h1).toBeLessThan(P.p1);
+      expect(P.c0).toBeGreaterThanOrEqual(P.p0);
+      expect(P.c1).toBeLessThanOrEqual(P.p1);
+      // Its own lamps fit the shader's four, the first over the sign; its windows' light comes out of the house.
+      expect(P.lights.length).toBeLessThanOrEqual(4);
+      expect(Math.abs(P.lights[0].u - P.w)).toBeLessThan(0.5);
+      for (const q of P.lights) expect(q.z).toBeLessThan(PLATFORM.edge);
+      expect(P.glows.length).toBeGreaterThan(0);
+      for (const g of P.glows) {
+        expect(g.u0).toBeGreaterThanOrEqual(P.h0);
+        expect(g.u1).toBeLessThanOrEqual(P.h1);
+      }
+      // The strip the light reads covers the whole platform and a little beyond, as far as the lamps reach.
+      expect(P.stop + STATION_TEX.from).toBeLessThan(P.p0 - 8);
+      expect(P.stop + STATION_TEX.from + STATION_TEX.length).toBeGreaterThan(P.p1 + 8);
+      // Planned once, the same for the land and for the light.
+      expect(stationPlan(kind, 10_000, 4321)).toBe(P);
+    });
+
+  it("leave our window a view: the city's lit window behind the sign, the lake's water past the halt", () => {
+    const city = stationPlan('city', 10_000, 99);
+    const behind = city.bays.reduce((a, q) => (Math.abs(q.u - city.w) < Math.abs(a.u - city.w) ? q : a));
+    expect(behind.role === 'win' && behind.lit[0]).toBe(true);
+    const lake = stationPlan('lake', 10_000, 99);
+    expect(lake.h1).toBeLessThan(lake.w - 3);
   });
 });
 

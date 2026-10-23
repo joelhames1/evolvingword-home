@@ -607,8 +607,14 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         const tri = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, -500, 0, 1, -500, 0, 0, -500, 1], 3));
         tri.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
         for (const m of land.materials) warm.add(new THREE.Mesh(tri, m));
+        // (Into a target like the one the film look draws into, so they're compiled just as they'll be drawn, not once more for the screen.)
+        const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+        const was = renderer.getRenderTarget();
+        renderer.setRenderTarget(target);
         renderer.compile(warm, camera, scene);
         renderer.compile(sparks.group, camera, scene);
+        renderer.setRenderTarget(was);
+        target.dispose();
         tri.dispose();
       }
       lastRenderer = renderer;
