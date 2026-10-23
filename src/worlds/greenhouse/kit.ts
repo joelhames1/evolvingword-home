@@ -1,15 +1,68 @@
-// The Greenhouse: the studio in a Victorian glasshouse at golden hour.
+// The Greenhouse: the studio in a Victorian glasshouse against an old garden
+// wall, at golden hour. Dust turns in the shafts of low sun; now and then a
+// shower passes and rain runs down the glass. Along the staging the visitor's
+// own flowers grow, each from a genome of its own: pick one, then another, and
+// the bee carries the pollen across and a seed into an empty pot, and in about
+// twenty seconds you see what came of it. The tools are at the end of the
+// staging; the seed catalog on the drawers wants a few varieties nobody has yet.
+// The word is bedded out on the bank across the lawn. ‹ › walks you from the
+// potting bench to the prizes, the books and seeds, the map and the line, and
+// the flowers.
 import * as THREE from 'three';
-import type { Kit, KitModule } from '../kit';
+import { SHOTS, type Shot } from '../../camera';
+import { canvas, texture } from '../../textures';
+import type { Kit, KitModule, Studio, Wiring } from '../kit';
 import { buildBed } from './bed';
+import { buildBee } from './bee';
+import { buildCatalog } from './catalog';
 import { buildFlowers } from './flowers';
-import { growth, load } from './garden';
-import { decode } from './genome';
+import { compost, emptyPot, forget, growth, inBloom, keep, load, newStamps, prune, receive, settle, shareLink, sow, starter, thirst, water, type Garden, type Plant } from './garden';
+import { decode, describe, encode, gardenName, hash, latinName, traits, WANTED, type Genome } from './genome';
 import { BANK, buildGrounds } from './grounds';
 import { buildHouse } from './house';
-import { HOUSE, SUN } from './plan';
+import { buildLight, castsSun } from './light';
+import { clear, GIFT_POT, HOUSE, POT, POT_AT, POTS, route, SHOW_POT, solid, SUN } from './plan';
+import { buildBand } from './sound';
+import { arrangeStudio, CATALOG } from './studio';
+import { buildTools } from './tools';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+/** Close-ups with a card on the left slide their picture right to make room (as in scene.ts). */
+const CARD = 0.13;
+const SLOTS = POT_AT.length;
+/** The prize plant at the show: the catalog's hardest, to show it can be done. */
+const SHOW = WANTED.find((w) => w.id === 'midnight-lily')!;
+const GRADE = ['', 'Easily raised', 'Wants patience', 'A rare prize'];
+const FOLIAGE = ['#3a6a2a', '#5a9a32', '#6a908a', '#7a5428'];
+
+/** In the open, with a hand's width of air on every side: somewhere the camera can stand. */
+const roomy = (p: THREE.Vector3) => !solid(p, 0.06);
+
+/** A plant label pushed into the soil: "a gift from a friend". */
+function giftLabel() {
+  const [c, g] = canvas(256, 96);
+  g.fillStyle = '#f1e8d2';
+  g.fillRect(0, 0, 256, 96);
+  g.strokeStyle = '#b08a5a';
+  g.lineWidth = 4;
+  g.strokeRect(2, 2, 252, 92);
+  g.fillStyle = '#3a2a1a';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = '600 38px "Caveat", cursive';
+  g.fillText('a gift from', 128, 30);
+  g.fillText('a friend', 128, 66);
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ map: texture(c), roughness: 0.85 });
+  const card = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.032, 0.002), mat);
+  card.position.y = 0.075;
+  group.add(card);
+  const stake = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.07, 0.002), new THREE.MeshStandardMaterial({ color: '#efe6d0', roughness: 0.8 }));
+  stake.position.y = 0.035;
+  group.add(stake);
+  group.traverse((o) => (o.castShadow = true));
+  return group;
+}
 
 export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   log('OPENING THE VENTS', 40);
@@ -17,56 +70,699 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const house = buildHouse(quality);
   house.glass.uniforms.uSunDir.value.copy(SUN);
   const bed = buildBed(grounds.daylight);
+  log('WATERING THE STAGING', 55);
   const flowers = buildFlowers(quality);
-  const garden = load();
-  garden.pots.forEach((p, i) => flowers.set(i, p ? decode(p.code) : null));
-  scene.environmentIntensity = 0.2;
+  const light = buildLight(quality);
+  const bee = buildBee();
+  const tools = buildTools(house.materials.wood);
+  const catalog = buildCatalog();
+  catalog.group.position.copy(CATALOG.at);
+  catalog.group.rotation.set(CATALOG.tilt, Math.PI, 0, 'YXZ');
+  const band = buildBand();
+  const extras = new THREE.Group();
+  for (const o of [house.group, flowers.group, tools.group, catalog.group, bee.group]) castsSun(o);
+  scene.environmentIntensity = 0.07;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // The low sun, through the glass, and the sky's light all round.
-  const lights = new THREE.Group();
-  const sun = new THREE.DirectionalLight('#ffbb6a', 6.5);
-  sun.position.copy(SUN).multiplyScalar(30);
-  sun.target.position.set(0, 0, 0.3);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024);
-  const sc = sun.shadow.camera;
-  sc.left = -8;
-  sc.right = 8;
-  sc.top = 6;
-  sc.bottom = -6;
-  sc.near = 10;
-  sc.far = 50;
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.025;
-  lights.add(sun, sun.target);
-  lights.add(new THREE.HemisphereLight('#f0d6b4', '#6a4a30', 0.42));
+  // --- the garden: this browser's own, and any gift that came with the link ----------------------
+  let garden: Garden = load();
+  let giftAt: number | null = null;
+  const asked = new URLSearchParams(location.search).get('bloom');
+  if (asked !== null) {
+    // Whatever's in the link is a stranger's typing: only a well-formed code gets in (see decode).
+    giftAt = receive(garden, asked.slice(0, 32), Date.now());
+    if (giftAt !== null) keep(garden);
+  }
+  const showPlant: Plant = { code: encode(SHOW.example), born: 0, watered: Date.now(), parents: null, gift: false };
+  /** What's in each slot: the staging's pots, the gift waiting on the bench, the show plant. */
+  const plantIn = (i: number): Plant | null => (i < POTS ? garden.pots[i] : i === GIFT_POT ? garden.waiting : showPlant);
+  const genomeIn = (i: number): Genome | null => {
+    const p = plantIn(i);
+    return p ? decode(p.code) : null;
+  };
+  /** How fast things grow (the tests speed it up). */
+  let speed = 1;
+  const grown = (i: number, now = Date.now()) => {
+    const p = plantIn(i);
+    return p ? growth(p, now, speed) : 0;
+  };
+  const blooming = (i: number, now = Date.now()) => grown(i, now) >= 0.86;
+  const nameOf = (code: string | null | undefined) => {
+    const g = code ? decode(code) : null;
+    return g ? gardenName(g) : 'a flower';
+  };
+
+  // Labels on gifts, one per slot, shown when there's a gift in it.
+  const labels = POT_AT.map((p) => {
+    const l = giftLabel();
+    l.position.copy(p).add(v(0.05, POT.h * 0.8, 0.06));
+    l.rotation.set(-0.15, 0.4, 0.1);
+    l.visible = false;
+    extras.add(l);
+    return l;
+  });
+
+  // What's showing in each slot, so a pot is only rebuilt when it changes.
+  const shown: (string | null)[] = Array.from({ length: SLOTS }, () => null);
+  const opened = new Uint8Array(SLOTS);
+  const sync = () => {
+    const now = Date.now();
+    for (let i = 0; i < SLOTS; i++) {
+      const p = plantIn(i);
+      const code = p?.code ?? null;
+      if (code !== shown[i]) {
+        shown[i] = code;
+        flowers.set(i, code ? decode(code) : null, code ? hash(`${code}${i}`) : 0);
+        // Already in flower when it arrived: no bell for it.
+        opened[i] = p && inBloom(p, now, speed) ? 1 : 0;
+      }
+      labels[i].visible = !!p?.gift;
+    }
+  };
+  sync();
+
+  const droop = new Float32Array(SLOTS);
+  const droopV = new Float32Array(SLOTS);
+  let selected = -1;
+  let pending = -1;
+  let lensOn = -1;
+  let hoverSlot = -1;
+  let hoverAt = -1;
+  let clock = 0;
+  let busy = false;
+  let wiring: Wiring | null = null;
+  let arrived = '';
+  let welcomed = false;
+  let rain = 0;
+  let showerOn = false;
+  let forced: boolean | null = null;
+  let nextShower = 70 + Math.random() * 50;
+  let showerEnd = 0;
+  let beeNext = 0;
+  let notesKey = '';
+  const say = (text: string) => wiring?.say(text);
+  const card: Wiring['card'] = (kicker, title, body, actions) => wiring?.card(kicker, title, body, actions);
+
+  // --- where things are, for the bee and the camera ---------------------------------------------------
+  const mainBloom = (i: number) => flowers.blooms(i)[0] ?? { at: flowers.top(i), axis: v(0, 1, 0), size: 0.06 };
+  /** Where the bee lands on a flower: on its face, a little out. */
+  const landing = (i: number) => {
+    const b = mainBloom(i);
+    return b.at.clone().addScaledVector(b.axis, 0.018).add(v(0, 0.012, 0));
+  };
+  /** The close look at a flower: in front of its main bloom and a little above, out over the aisle. */
+  const bloomShot = (i: number): Shot => {
+    const b = mainBloom(i);
+    const dir = v(b.axis.x * 0.25, 0.42, 1).normalize();
+    const pos = b.at.clone().addScaledVector(dir, 0.5 + b.size * 2.2);
+    for (let k = 0; k < 12 && !roomy(pos); k++) pos.addScaledVector(dir, 0.1);
+    return { pos, target: b.at.clone().add(v(0, -0.01, 0)), fov: 32, near: 0.02, lean: 0.008, shift: CARD };
+  };
+
+  // --- the cards ------------------------------------------------------------------------------------
+  const counts = () => {
+    const now = Date.now();
+    let inFlower = 0;
+    let young = 0;
+    let dry = 0;
+    garden.pots.forEach((p, i) => {
+      if (!p) return;
+      if (blooming(i, now)) inFlower++;
+      else young++;
+      if (thirst(p, now) > 0.05) dry++;
+    });
+    return { inFlower, young, dry, empty: garden.pots.filter((p) => !p).length };
+  };
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const stagingCard = () => {
+    const c = counts();
+    card(
+      'The staging',
+      'Breed a flower',
+      [
+        'Click a flower, then another, and the bee carries the pollen from one to the other. The seed goes into an empty pot and grows in about twenty seconds.',
+        'Children take after both parents, with now and then a surprise.',
+        { note: `${plural(c.inFlower, 'flower', 'flowers')} in bloom · ${c.young ? `${c.young} growing · ` : ''}${plural(c.empty, 'empty pot', 'empty pots')}${c.dry ? ` · ${plural(c.dry, 'plant', 'plants')} thirsty` : ''}` },
+      ],
+      [
+        ...(c.dry ? [{ label: 'Water them all', run: () => void waterAll() }] : []),
+        { label: 'The seed catalog', run: () => wiring?.goTo('catalog') },
+        { label: 'Start the garden over', quiet: true, run: () => startOverCard() },
+      ],
+    );
+  };
+  const parentage = (p: Plant) => (p.gift ? 'A gift from a friend.' : p.parents ? `Seed of ${nameOf(p.parents[0])} and ${nameOf(p.parents[1])}.` : 'One of the first seeds in the house.');
+  const emptyCard = () =>
+    card('On the staging', 'An empty pot', ['Fresh soil, waiting. Pick two flowers and the bee brings their seed to the first empty pot.'], [{ label: 'The seed catalog', quiet: true, run: () => wiring?.goTo('catalog') }]);
+  const fullCard = () => card('On the staging', 'Every pot is full', ['There’s nowhere for the seed to go. Compost one you can spare first: click it, then the compost bin (or its Compost button).'], []);
+  const plantCard = (i: number) => {
+    const p = garden.pots[i];
+    const g = genomeIn(i);
+    if (!p || !g) return emptyCard();
+    const dry = thirst(p, Date.now()) > 0.05;
+    card(
+      `On the staging · pot ${i + 1}`,
+      gardenName(g),
+      [describe(g), { note: `${latinName(g)}. ${p.gift ? 'A gift from a friend. ' : ''}${dry ? 'It’s thirsty. ' : ''}Now click another flower to cross them.` }],
+      [
+        { label: 'Look through the lens', run: () => closer(i) },
+        { label: 'Water it', run: () => void waterPot(i) },
+        { label: 'Share this flower', run: () => void share(i) },
+        { label: 'Cut it back', quiet: true, run: () => void prunePot(i) },
+        { label: 'Compost it', quiet: true, run: () => void compostPot(i) },
+      ],
+    );
+  };
+  const seedlingCard = (i: number) => {
+    const p = garden.pots[i];
+    if (!p) return emptyCard();
+    const left = Math.max(1, Math.ceil(((0.86 - grown(i)) * 20) / speed));
+    card(`On the staging · pot ${i + 1}`, 'A seedling', [`${parentage(p)} It flowers in about ${plural(left, 'second', 'seconds')}.`, { note: 'Nobody knows what it will be until it opens.' }], [
+      { label: 'Water it', run: () => void waterPot(i) },
+      { label: 'Compost it', quiet: true, run: () => void compostPot(i) },
+    ]);
+  };
+  const lensCard = (i: number) => {
+    const p = plantIn(i);
+    const g = genomeIn(i);
+    if (!p || !g) return;
+    if (!blooming(i)) {
+      card('Under the lens', 'A seedling', ['Too young to say. The lens tells you everything once it flowers.', { note: parentage(p) }], [{ label: 'Back to the staging', quiet: true, run: () => wiring?.goTo('staging') }]);
+      return;
+    }
+    card('Under the lens', latinName(g), [`“${gardenName(g)}”`, { list: traits(g) }, { note: parentage(p) }], [
+      ...(i < POTS ? [{ label: 'Share this flower', run: () => void share(i) }, { label: 'Water it', run: () => void waterPot(i) }] : []),
+      { label: 'Back to the staging', quiet: true, run: () => wiring?.goTo('staging') },
+    ]);
+  };
+  const startOverCard = () =>
+    card('The staging', 'Start the garden over?', ['Every plant goes to the compost, the catalog loses its rosettes, and the first seeds come back. There’s no undoing it.'], [
+      {
+        label: 'Start over',
+        run: () => {
+          forget();
+          garden = starter(Date.now());
+          keep(garden);
+          selected = -1;
+          sync();
+          catalog.show(catalog.page(), (id) => garden.stamps.includes(id));
+          wiring?.sound.click();
+          say('A FRESH START · THE FIRST SEEDS ARE BACK');
+          stagingCard();
+        },
+      },
+      { label: 'Keep my garden', quiet: true, run: () => stagingCard() },
+    ]);
+  /** The flower in bloom that's nearest to a wanted variety. */
+  const nearest = (id: string) => {
+    const w = WANTED.find((x) => x.id === id)!;
+    let best = -1;
+    let score = -1;
+    garden.pots.forEach((p, i) => {
+      const g = p && blooming(i) ? decode(p.code) : null;
+      if (g && w.near(g) > score) {
+        score = w.near(g);
+        best = i;
+      }
+    });
+    return best;
+  };
+  const catalogCard = () => {
+    const i = catalog.page();
+    const w = WANTED[i];
+    const done = garden.stamps.includes(w.id);
+    const near = nearest(w.id);
+    const g = near >= 0 ? genomeIn(near) : null;
+    card(
+      `The seed catalog · ${garden.stamps.length} of ${WANTED.length} rosettes`,
+      w.name,
+      [w.line, done ? 'Bred here: its page has the rosette.' : `${GRADE[w.difficulty]}. ${w.hint}`, ...(g && !done ? [{ note: `Nearest in your garden: ${gardenName(g)}, in pot ${near + 1}.` }] : [])],
+      [
+        { label: '‹ Back a page', run: () => turnPage(-1) },
+        { label: 'Next page ›', run: () => turnPage(1) },
+        { label: 'To the flowers', quiet: true, run: () => wiring?.goTo('staging') },
+      ],
+    );
+  };
+  const turnPage = (d: number) => {
+    catalog.show(catalog.page() + d, (id) => garden.stamps.includes(id));
+    wiring?.sound.page();
+    if (wiring?.current() === 'catalog') catalogCard();
+  };
+  const showCard = () =>
+    card('Best in show', SHOW.name, [SHOW.line, 'The prize of the house’s own show. It’s in the catalog, if you’d like to raise one yourself.'], [{ label: 'The seed catalog', run: () => wiring?.goTo('catalog') }]);
+  const waitingCard = () =>
+    card('On the potting bench', 'A gift from a friend', ['It came while every pot was full, so it’s waiting here. Compost one on the staging and it moves into the pot.'], [{ label: 'To the flowers', run: () => wiring?.goTo('staging') }]);
+
+  // --- doing things -----------------------------------------------------------------------------
+  const wait = (s: number) => new Promise<void>((r) => window.setTimeout(r, s * 1000));
+  const select = (i: number) => {
+    selected = i;
+    wiring?.sound.click();
+    if (!busy) void bee.fly([landing(i)], reduced ? 0.3 : 1.4 + bee.at().distanceTo(landing(i)) * 0.6);
+    plantCard(i);
+  };
+  const closer = (i: number) => {
+    selected = i;
+    lensOn = i;
+    Object.assign(SHOTS.bloom, bloomShot(i));
+    // Already there: the card and the lens again, for this one.
+    if (wiring?.current() === 'bloom' && !wiring.moving()) arrived = '';
+    else wiring?.goTo('bloom');
+  };
+  /** The bee carries pollen from a to b, then a seed to an empty pot. */
+  const cross = async (a: number, b: number) => {
+    if (emptyPot(garden) < 0) return fullCard();
+    busy = true;
+    selected = -1;
+    const nameA = nameOf(garden.pots[a]?.code);
+    const nameB = nameOf(garden.pots[b]?.code);
+    say(`POLLEN FROM ${nameA.toUpperCase()} TO ${nameB.toUpperCase()}`);
+    card('The bee', 'Off it goes', [`From ${nameA} to ${nameB} with the pollen, then a seed to an empty pot.`], []);
+    try {
+      const A = landing(a);
+      const B = landing(b);
+      if (bee.at().distanceTo(A) > 0.03) await bee.fly([A], reduced ? 0.3 : 1.2 + bee.at().distanceTo(A) * 0.5);
+      if (!reduced) await wait(0.5);
+      await bee.fly([A.clone().lerp(B, 0.5).add(v(0, 0.22, 0.12)), B], reduced ? 0.3 : 1.4 + A.distanceTo(B) * 0.6, { pollen: true });
+      if (!reduced) await wait(0.6);
+      const pot = emptyPot(garden);
+      if (pot < 0) return fullCard();
+      const above = POT_AT[pot].clone().add(v(0, POT.h + 0.22, 0));
+      await bee.fly([B.clone().lerp(above, 0.5).add(v(0, 0.18, 0.1)), above], reduced ? 0.3 : 1.2 + B.distanceTo(above) * 0.6, { seed: true });
+      bee.drop();
+      await wait(0.22);
+      band.plop();
+      const sown = sow(garden, a, b, Date.now());
+      if (!sown) return fullCard();
+      keep(garden);
+      sync();
+      card('On the staging', 'A seed is in', [`From ${nameA} and ${nameB}, in pot ${sown.pot + 1}. In about twenty seconds you’ll see what it is.`, { note: 'Pick two more whenever you like.' }], []);
+      // Then off to rest on a flower.
+      window.setTimeout(() => {
+        const open = [...Array(POTS).keys()].filter((i) => blooming(i));
+        if (open.length && !busy) void bee.fly([landing(open[Math.floor(Math.random() * open.length)])], 2);
+      }, 800);
+      return sown;
+    } finally {
+      busy = false;
+    }
+  };
+  const waterPot = async (i: number) => {
+    if (tools.busy() || !garden.pots[i]) return;
+    say('A GOOD DRINK');
+    const going = tools.water(flowers.top(i));
+    await wait(reduced ? 0 : 0.95);
+    band.pour();
+    water(garden, i, Date.now());
+    keep(garden);
+    await going;
+    if (wiring?.current() === 'staging' && selected === i) plantCard(i);
+  };
+  const waterAll = async () => {
+    const now = Date.now();
+    const dry = garden.pots.map((p, i) => (p && thirst(p, now) > 0.05 ? i : -1)).filter((i) => i >= 0);
+    for (const i of dry.slice(0, 8)) await waterPot(i);
+    if (wiring?.current() === 'staging') stagingCard();
+  };
+  const prunePot = async (i: number) => {
+    if (tools.busy() || busy || !garden.pots[i]) return;
+    const plan = flowers.plan(i);
+    const going = tools.snip(POT_AT[i].clone().add(v(0, POT.h + (plan ? plan.height * 0.5 : 0.1), 0.02)));
+    await wait(reduced ? 0 : 0.85);
+    band.snip();
+    prune(garden, i, Date.now());
+    keep(garden);
+    opened[i] = 0;
+    say('CUT BACK · IT WILL FLOWER AGAIN IN A MOMENT');
+    await going;
+  };
+  const compostPot = async (i: number) => {
+    if (tools.busy() || busy || !garden.pots[i]) return;
+    const g = genomeIn(i);
+    const top = flowers.top(i);
+    if (selected === i) selected = -1;
+    compost(garden, i);
+    keep(garden);
+    sync();
+    say('TO THE COMPOST');
+    await tools.compost(top.add(v(0, -0.15, 0)), new THREE.Color(g ? FOLIAGE[g.foliage] : FOLIAGE[0]));
+    band.thunk();
+    if (wiring?.current() === 'staging') stagingCard();
+  };
+  const share = async (i: number) => {
+    const p = garden.pots[i];
+    if (!p) return;
+    const link = shareLink(location.origin, p.code);
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(link);
+      copied = true;
+    } catch {
+      // No clipboard here (or not allowed): the link is on the card to copy by hand.
+    }
+    const g = decode(p.code)!;
+    card('Share this flower', gardenName(g), [copied ? 'The link is copied. Send it to a friend and the flower grows in a pot in their greenhouse.' : 'Copy this link and send it to a friend; the flower grows in a pot in their greenhouse.', { note: link }], [
+      { label: 'Back to the flower', quiet: true, run: () => plantCard(i) },
+    ]);
+    if (copied) say('LINK COPIED · SEND IT TO A FRIEND');
+  };
+  const clickPot = (i: number) => {
+    if (i === SHOW_POT) {
+      if (wiring?.current() !== 'honors') wiring?.goTo('honors');
+      return showCard();
+    }
+    if (i === GIFT_POT) return waitingCard();
+    const here = wiring?.current();
+    if (here !== 'staging' && here !== 'bloom') {
+      pending = i;
+      wiring?.goTo('staging');
+      return;
+    }
+    const p = garden.pots[i];
+    if (!p) return emptyCard();
+    if (!blooming(i)) return seedlingCard(i);
+    if (busy) return;
+    if (here === 'bloom') {
+      if (lensOn !== i) closer(i);
+      return;
+    }
+    if (selected < 0) return select(i);
+    if (selected === i) return closer(i);
+    void cross(selected, i);
+  };
+
+  // --- the kit ---------------------------------------------------------------------------------------
+  let line: Studio['line'] | null = null;
+  let dressing: ReturnType<typeof arrangeStudio> | null = null;
+  const walls = [
+    { id: 'desk', name: 'The potting bench' },
+    { id: 'honors', name: 'The prizes', members: ['diplomas', 'medals'] },
+    { id: 'library', name: 'Books & seeds', members: ['catalog'] },
+    { id: 'places', name: 'Map, shirts & shoes', members: ['map', 'shoes', 'projects'] },
+    { id: 'staging', name: 'The flowers', members: ['bloom'] },
+  ];
+  const right = new THREE.Vector3();
+  const toBee = new THREE.Vector3();
+  const toCam = new THREE.Vector3();
+  const side = new THREE.Vector3();
+  const UP = v(0, 1, 0);
 
   const kit: Kit = {
-    objects: [grounds.group, house.group, bed.group, flowers.group, lights],
+    objects: [grounds.group, house.group, bed.group, flowers.group, light.group, bee.group, tools.group, catalog.group, extras],
     board: bed,
     shots: {
+      // Out on the lawn at the sunny end, the house lit gold along its length, the door open.
       vista: { pos: v(-11.5, 2.5, -9.5), target: v(0.2, 2.0, 0.4), fov: 46, lean: 0.25 },
-      window: { pos: v(0.75, 1.55, -1.5), target: v(-1.6, 1.4, -14), fov: 54, lean: 0.04 },
-      board: { pos: v(0.95, 1.75, -1.35), target: BANK.center.clone(), fov: 26, lean: 0.03 },
+      // Nose to the front glass over the bench, looking out toward the sun.
+      window: { pos: v(0.75, 1.55, -1.5), target: v(-4, 1.2, -14), fov: 54, lean: 0.04 },
+      // The bedding on the bank across the lawn.
+      board: { pos: v(0.95, 1.72, -1.35), target: BANK.center.clone().add(v(0, 0.05, 0)), fov: 26, lean: 0.03 },
     },
+    // Across the lawn to the door at the end, in, and along the aisle to the bench.
     intro: { via: [v(-9.2, 2.0, -3.6), v(HOUSE.x0 - 1.4, 1.55, HOUSE.door.z), v(HOUSE.x0 + 0.9, 1.55, HOUSE.door.z), v(-2.5, 1.5, 0.9)], duration: 10, lines: ['EVOLVING WORD', 'A LITTLE STUDIO UNDER GLASS', 'WHERE WE MAKE THINGS TOGETHER'] },
     tagline: 'A LITTLE STUDIO UNDER GLASS.',
-    closeups: () => ({
-      staging: { pos: v(-3.9, 1.95, 0.85), target: v(-3.95, 1.05, -1.6), fov: 50, lean: 0.04 },
-    }),
-    frame({ t, camera, renderer }) {
+    band,
+    walls,
+    route,
+
+    arrange(s: Studio) {
+      line = s.line;
+      dressing = arrangeStudio(s, house.materials);
+      extras.add(dressing.group);
+      // In the low sun, the bigger pieces throw shadows; the small things on the bench don't need to.
+      for (const o of [s.desk.group, s.shelf.group, s.line.group, s.honors.group, s.map.group, dressing.group]) castsSun(o);
+    },
+
+    closeups() {
+      const first = garden.pots.findIndex((p) => !!p);
+      return {
+        staging: { pos: v(-3.6, 1.95, 0.95), target: v(-3.75, 1.08, -1.55), fov: 48, lean: 0.04, shift: CARD },
+        bloom: bloomShot(Math.max(0, first)),
+        catalog: { pos: CATALOG.at.clone().add(v(0, 0.55, -0.62)), target: CATALOG.at.clone().add(v(0, 0.02, 0)), fov: 36, near: 0.03, lean: 0.01, shift: CARD },
+        honors: { pos: v(3.45, 1.66, 0.45), target: v(3.45, 1.7, HOUSE.back), fov: 44, lean: 0.04 },
+        library: { pos: v(0.62, 1.5, 0.25), target: v(0.62, 1.12, HOUSE.back), fov: 54, lean: 0.04, shift: 0.1 },
+        places: { pos: v(-3.7, 1.62, -0.25), target: v(-3.7, 1.42, HOUSE.back), fov: 62, lean: 0.05 },
+      };
+    },
+
+    // Each shirt from straight out in front of it, in the aisle.
+    projectShot(focus) {
+      return { pos: v(focus.x + 0.15, focus.y + 0.04, focus.z - 1.6), target: focus.clone().add(v(0, 0.02, 0)), fov: 38, lean: 0.04, shift: CARD };
+    },
+
+    wire(w) {
+      wiring = w;
+      flowers.pick.forEach((object, i) =>
+        w.touch({
+          object,
+          noGlow: true,
+          when: () => i !== GIFT_POT || !!garden.waiting,
+          label: () => {
+            hoverSlot = i;
+            hoverAt = clock;
+            if (i === SHOW_POT) return 'Best in show';
+            const p = plantIn(i);
+            if (!p) return 'An empty pot';
+            if (i === GIFT_POT) return 'A gift from a friend';
+            if (!blooming(i)) return 'A seedling';
+            const name = nameOf(p.code);
+            if (selected >= 0 && selected !== i) return `Cross with ${name}`;
+            if (selected === i) return 'Look closer';
+            return name;
+          },
+          onClick: () => clickPot(i),
+        }),
+      );
+      const atFlowers = () => ['staging', 'bloom'].includes(w.current());
+      w.touch({
+        object: tools.can,
+        label: () => (selected >= 0 ? `Water ${nameOf(garden.pots[selected]?.code)}` : 'The watering can'),
+        onClick: () => {
+          if (!atFlowers()) return w.goTo('staging');
+          if (selected >= 0) return void waterPot(selected);
+          if (counts().dry) return void waterAll();
+          card('The tools', 'The watering can', ['Everything’s had a drink. Plants left a long while without one start to droop; a drink brings them straight back up.'], []);
+        },
+      });
+      w.touch({
+        object: tools.shears,
+        label: 'The shears',
+        onClick: () => {
+          if (!atFlowers()) return w.goTo('staging');
+          if (selected >= 0) return void prunePot(selected);
+          card('The tools', 'The shears', ['Pick a flower first, then the shears cut it back to its leaves. It flowers again in a few seconds.'], []);
+        },
+      });
+      w.touch({
+        object: tools.lens,
+        label: 'The hand lens',
+        onClick: () => {
+          if (!atFlowers()) return w.goTo('staging');
+          if (selected >= 0) return closer(selected);
+          card('The tools', 'The hand lens', ['Pick a flower first, then look at it through the lens: its name, everything about it, and where it came from.'], []);
+        },
+      });
+      w.touch({
+        object: tools.bin,
+        label: () => (selected >= 0 ? `Compost ${nameOf(garden.pots[selected]?.code)}` : 'The compost bin'),
+        onClick: () => {
+          if (!atFlowers()) return w.goTo('staging');
+          if (selected >= 0) return void compostPot(selected);
+          const n = garden.composted;
+          card('The tools', 'The compost bin', [`Pick a flower first, then the bin, and it goes on the heap to make room. ${n ? `${n} so far.` : 'Nothing on it yet.'}`], []);
+        },
+      });
+      w.touch({
+        object: catalog.book,
+        label: () => (w.current() === 'catalog' ? 'Turn the page' : 'The seed catalog'),
+        onClick: () => (w.current() === 'catalog' ? turnPage(1) : w.goTo('catalog')),
+      });
+      for (const r of dressing?.rosettes ?? []) w.touch({ object: r, label: 'A rosette', onClick: () => w.goTo('medals') });
+    },
+
+    frame({ t, dt, camera, renderer, shot, ready }) {
+      clock = t;
       const now = Date.now();
-      garden.pots.forEach((p, i) => flowers.state(i, p ? growth(p, now) : 0, 0, 0));
+      sync();
+      // Each plant: its age, a spring for its droop (so water brings it up with a little bounce), a glow when picked or pointed at.
+      const notes: number[] = [];
+      for (let i = 0; i < SLOTS; i++) {
+        const p = plantIn(i);
+        const g = p ? growth(p, now, speed) : 0;
+        const aim = p && i !== SHOW_POT ? thirst(p, now) * 0.85 : 0;
+        droopV[i] += ((aim - droop[i]) * 36 - droopV[i] * 4.5) * dt;
+        droop[i] = THREE.MathUtils.clamp(droop[i] + droopV[i] * dt, -0.3, 1);
+        const glow = (i === selected ? 0.55 + 0.3 * Math.sin(t * 4) : 0) + (i === hoverSlot && t - hoverAt < 0.15 ? 0.45 : 0);
+        flowers.state(i, g, droop[i], glow);
+        if (!p || g < 0.86) continue;
+        const genome = decode(p.code);
+        if (!genome) continue;
+        notes.push(genome.note);
+        // A flower opening: its note, and if it's one the catalog wants, a rosette.
+        if (!opened[i]) {
+          opened[i] = 1;
+          band.bloom(genome.note);
+          const fresh = i < POTS ? newStamps(garden, genome) : [];
+          if (fresh.length) {
+            garden.stamps.push(...fresh);
+            keep(garden);
+            for (const id of fresh) catalog.stamp(id);
+            band.stamp();
+            say(`${WANTED.find((x) => x.id === fresh[0])!.name.toUpperCase()} · BRED HERE · THE CATALOG HAS ITS ROSETTE`);
+          }
+        }
+      }
+      const key = notes.join(',');
+      if (key !== notesKey) {
+        notesKey = key;
+        band.setNotes(notes);
+      }
+
+      // The bee: when you're at the flowers and it isn't busy, it potters from one to another.
+      const atFlowers = shot === 'staging' || shot === 'bloom';
+      if (atFlowers && !busy && selected < 0 && !bee.flying() && t > beeNext) {
+        beeNext = t + 5 + Math.random() * 6;
+        const open = [...Array(POTS).keys()].filter((i) => blooming(i, now));
+        if (open.length) {
+          const to = landing(open[Math.floor(Math.random() * open.length)]);
+          void bee.fly([bee.at().lerp(to, 0.5).add(v(0, 0.15, 0.1)), to], 2 + bee.at().distanceTo(to) * 0.5);
+        }
+      }
+      bee.tick(t, dt);
+      right.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      toBee.copy(bee.at()).sub(camera.position);
+      const dist = toBee.length();
+      band.bee(bee.buzz(), THREE.MathUtils.clamp(1 - dist / 4, 0, 1), toBee.normalize().dot(right));
+
+      // Arriving somewhere of ours: its card.
+      const still = wiring ? !wiring.moving() : true;
+      const here = still && ready ? shot : '';
+      if (here !== arrived) {
+        arrived = here;
+        if (here === 'staging') {
+          if (pending >= 0) {
+            const i = pending;
+            pending = -1;
+            if (!garden.pots[i]) emptyCard();
+            else if (!blooming(i)) seedlingCard(i);
+            else select(i);
+          } else if (selected >= 0) plantCard(selected);
+          else stagingCard();
+          if (!welcomed && giftAt === null) {
+            welcomed = true;
+            say('PICK A FLOWER, THEN ANOTHER · THE BEE DOES THE REST');
+          }
+        }
+        if (here === 'catalog') catalogCard();
+        if (here === 'bloom' && lensOn >= 0) {
+          const b = mainBloom(lensOn);
+          toCam.copy(camera.position).sub(b.at).normalize();
+          side.crossVectors(toCam, UP).normalize();
+          tools.hold(b.at.clone().addScaledVector(toCam, 0.16).addScaledVector(side, -0.05).add(v(0, -0.02, 0)), camera.position.clone());
+          lensCard(lensOn);
+        }
+      }
+      if (shot !== 'bloom' && lensOn >= 0) {
+        lensOn = -1;
+        tools.hold(null);
+      }
+      if (shot !== 'staging' && shot !== 'bloom') selected = -1;
+      // A gift: say so once we're in.
+      if (ready && giftAt !== null && !welcomed) {
+        welcomed = true;
+        say(giftAt >= 0 ? `A GIFT FROM A FRIEND IS GROWING IN POT ${giftAt + 1} · GO AND SEE` : 'A GIFT FROM A FRIEND IS WAITING ON THE POTTING BENCH');
+      }
+
+      // Now and then a shower passes over.
+      if (forced === null) {
+        if (!showerOn && t > nextShower) {
+          showerOn = true;
+          showerEnd = t + 50 + Math.random() * 30;
+        } else if (showerOn && t > showerEnd) {
+          showerOn = false;
+          nextShower = t + 200 + Math.random() * 160;
+        }
+      }
+      const wet = forced ?? showerOn;
+      rain += ((wet ? 1 : 0) - rain) * (1 - Math.exp(-dt / 5));
+      house.tick(t, rain);
+      grounds.setRain(rain);
+      light.tick(t, rain);
+      band.rain(rain);
+
+      tools.tick(t, dt);
+      catalog.tick(t, dt);
       flowers.tick(t);
       grounds.tick(t, camera, renderer);
-      house.tick(t, 0);
+      // The rosettes stir a little in the air from the vents.
+      for (const r of dressing?.rosettes ?? []) r.rotation.z = Math.sin(t * 0.8 + (r.userData.phase as number)) * 0.03;
     },
+
     outside(camera) {
       const p = camera.position;
       if (p.x < HOUSE.x0 || p.x > HOUSE.x1 || p.z < HOUSE.front || p.z > HOUSE.back) return 1;
-      return THREE.MathUtils.clamp(1 - (p.z - HOUSE.front) / 2.5, 0, 1) * 0.6;
+      // In the house, the garden (and the rain on the glass) is louder the nearer the glass you are.
+      return THREE.MathUtils.clamp(1 - (p.z - HOUSE.front) / 2.6, 0, 1) * 0.6;
     },
-    debug: { grounds, house, bed, flowers, garden },
+
+    debug: {
+      grounds,
+      house,
+      bed,
+      flowers,
+      bee,
+      tools,
+      catalog,
+      light,
+      band,
+      shots: SHOTS,
+      garden: () => garden,
+      /** Growth this many times faster (for the tests). */
+      speed: (k: number) => {
+        // Each plant keeps its place in its growing as the clock changes.
+        const now = Date.now();
+        for (const p of garden.pots) if (p) p.born = now - ((now - p.born) * speed) / k;
+        speed = k;
+      },
+      select: (i: number) => select(i),
+      breed: (a: number, b: number) => cross(a, b),
+      water: (i: number) => waterPot(i),
+      prune: (i: number) => prunePot(i),
+      compost: (i: number) => compostPot(i),
+      lens: (i: number) => closer(i),
+      shareLink: (i: number) => (garden.pots[i] ? shareLink(location.origin, garden.pots[i]!.code) : null),
+      /** Make it rain (true), clear (false), or let the weather do as it likes (null). */
+      shower: (on: boolean | null) => (forced = on),
+      busy: () => busy || tools.busy() || bee.flying(),
+      line: () => line,
+      solid: (p: THREE.Vector3) => solid(p),
+      roomy: (p: THREE.Vector3) => roomy(p),
+      settle: () => (settle(garden), keep(garden)),
+      /**
+       * For the tests: every walk between two places (each wall, each close-up,
+       * each shirt, each flower's close look, and the way in) checked for
+       * anything solid within a few centimeters, and every place for room to stand.
+       */
+      blocked: () => {
+        const out: string[] = [];
+        const at: Record<string, THREE.Vector3> = {};
+        for (const w of walls) for (const n of [w.id, ...(w.members ?? [])]) if (n !== 'projects' && n !== 'bloom' && SHOTS[n]) at[n] = SHOTS[n].pos;
+        for (const n of ['signal', 'about', 'watch', 'pad', 'treats', 'work', 'window', 'board']) at[n] = SHOTS[n].pos;
+        line?.items.forEach((it, i) => (at[`projects ${i + 1}`] = kit.projectShot!(it.focus.clone(), i)!.pos));
+        for (let i = 0; i < POTS; i++) if (garden.pots[i]) at[`bloom ${i + 1}`] = bloomShot(i).pos;
+        for (const [a, p] of Object.entries(at)) if (!roomy(p)) out.push(`${a} has no room`);
+        for (const [a, p] of Object.entries(at))
+          for (const [b, q] of Object.entries(at)) if (a !== b && !clear(p, q, route(p, q) ?? [], 0.03)) out.push(`${a} -> ${b}`);
+        if (!clear(kit.shots.vista.pos, SHOTS.desk.pos, kit.intro.via, 0.03)) out.push('the way in');
+        const way = new THREE.CatmullRomCurve3([kit.shots.vista.pos, ...kit.intro.via, SHOTS.desk.pos], false, 'centripetal');
+        for (let i = 1; i < 10; i++) {
+          const p = way.getPoint(i / 10);
+          for (const [b, q] of Object.entries(at)) if (!clear(p, q, route(p, q) ?? [], 0.03)) out.push(`the way in (${i}/10) -> ${b}`);
+        }
+        return out;
+      },
+    },
   };
   return kit;
 };

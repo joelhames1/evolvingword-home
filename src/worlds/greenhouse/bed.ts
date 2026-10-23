@@ -80,7 +80,7 @@ const FRAG = /* glsl */ `
 function flowerGeometry() {
   const parts: THREE.BufferGeometry[] = [];
   for (let i = 0; i < 5; i++) {
-    const petal = new THREE.CircleGeometry(0.034, 7);
+    const petal = new THREE.CircleGeometry(0.034, 5);
     petal.scale(0.85, 1, 1);
     petal.translate(0, 0.03, 0);
     petal.rotateX(-Math.PI / 2 + 0.45);
@@ -88,7 +88,7 @@ function flowerGeometry() {
     petal.translate(0, 0.045, 0);
     parts.push(petal);
   }
-  const eye = new THREE.SphereGeometry(0.01, 6, 4);
+  const eye = new THREE.SphereGeometry(0.01, 5, 3);
   eye.translate(0, 0.05, 0);
   parts.push(eye.toNonIndexed());
   return mergeGeometries(parts.map((g) => (g.index ? g.toNonIndexed() : g)).map((g) => (g.deleteAttribute('uv'), g)));
@@ -96,7 +96,7 @@ function flowerGeometry() {
 
 /** A low mound of leaves, about the size of a cell. */
 function moundGeometry() {
-  const geo = new THREE.IcosahedronGeometry(0.068, 1);
+  const geo = new THREE.IcosahedronGeometry(0.068, 0);
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const y = p.getY(i);

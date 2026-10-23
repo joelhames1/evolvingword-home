@@ -115,8 +115,9 @@ export const ALCOVE = { x0: -0.6, x1: 0.36, z0: HOUSE.kneeIn, z1: -1.76, top: 1.
  * separately (see solid).
  */
 export const BLOCKS: [number, number, number, number, number, number][] = [
-  // The potting bench (the desk), the CRT's alcove and the things on the bench.
-  [-1.78, 0, -2.0, 1.78, 0.98, -1.17],
+  // The potting bench (the desk) up to its top, the CRT's alcove, the lamp and the Rolodex on it.
+  [-1.78, 0, -2.0, 1.78, 0.8, -1.17],
+  [1.12, 0.76, -1.86, 1.5, 0.98, -1.46],
   [ALCOVE.x0, 0, HOUSE.kneeIn, ALCOVE.x1, ALCOVE.top + 0.08, ALCOVE.z1],
   [-1.42, 0.76, -1.75, -0.9, 1.32, -1.3],
   // The staging and the flowers on it (up to the tallest stem).

@@ -274,8 +274,8 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
   };
   // Fruit trees on the lawn to the left, toward the sun.
   for (let i = 0; i < 5; i++) {
-    const x = -10.5 + (i % 2) * 2.4 + r() * 0.6;
-    const z = -6.5 - i * 2.6 + r();
+    const x = -17.5 + (i % 2) * 2.6 + r() * 0.6;
+    const z = -5.5 - i * 2.8 + r();
     put(wood, trunk(1.6, 0.09), x, 0, z, '#5a4a38');
     crown(x, 2.3, z, 1.25 + r() * 0.3, 1.8, ['#5c7a2e', '#6a8434', '#567028'][i % 3], 22);
   }
@@ -303,15 +303,20 @@ export function buildGrounds(quality: 'high' | 'low'): Grounds {
   const foliage = foliageMaterial(daylight);
   group.add(new THREE.Mesh(mergeGeometries(solidLeaf), foliage));
   group.add(new THREE.Mesh(mergeGeometries(wood), outdoor(daylight, { vertexColors: true })));
-  const blobGeo = new THREE.IcosahedronGeometry(1, 2);
-  const crowns = new THREE.InstancedMesh(blobGeo, foliage, blobs.length);
+  // The near blobs (the borders) rounder than the far ones.
   const m4 = new THREE.Matrix4();
-  blobs.forEach((b, i) => {
-    crowns.setMatrixAt(i, m4.compose(b.at, new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 3, r() * 3, r() * 3)), b.s));
-    crowns.setColorAt(i, b.color);
-  });
-  crowns.frustumCulled = false;
-  group.add(crowns);
+  for (const [list, detail] of [
+    [blobs.filter((b) => b.at.z < HOUSE.kneeOut - 1 && b.at.z > HOUSE.kneeOut - 2.2), 2],
+    [blobs.filter((b) => !(b.at.z < HOUSE.kneeOut - 1 && b.at.z > HOUSE.kneeOut - 2.2)), 1],
+  ] as const) {
+    const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, detail), foliage, list.length);
+    list.forEach((b, i) => {
+      crowns.setMatrixAt(i, m4.compose(b.at, new THREE.Quaternion().setFromEuler(new THREE.Euler(r() * 3, r() * 3, r() * 3)), b.s));
+      crowns.setColorAt(i, b.color);
+    });
+    crowns.frustumCulled = false;
+    group.add(crowns);
+  }
 
   // Flowers in the borders and on the lawn's edge: points of color that stay a few pixels across.
   const blooms: { pos: THREE.Vector3; color: THREE.Color; size: number }[] = [];

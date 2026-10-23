@@ -8,6 +8,16 @@ import { HOUSE, SUN } from './plan';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
+/** The layer the sun's shadows are drawn from: only what's put on it casts one (bars, benches, plants, the bigger pieces), not every little thing. */
+export const SUN_SHADOW = 2;
+
+/** Lets an object (and everything in it) throw a shadow in the low sun. */
+export function castsSun(o: THREE.Object3D) {
+  o.traverse((c) => {
+    if ((c as THREE.Mesh).isMesh) c.layers.enable(SUN_SHADOW);
+  });
+}
+
 export interface Light {
   group: THREE.Group;
   sun: THREE.DirectionalLight;
@@ -150,19 +160,20 @@ export function buildLight(quality: 'high' | 'low'): Light {
   const sc = sun.shadow.camera;
   sc.left = -6.5;
   sc.right = 6.5;
-  sc.top = 5;
-  sc.bottom = -4;
+  sc.top = 7;
+  sc.bottom = -3;
+  sc.layers.set(SUN_SHADOW);
   sc.near = 12;
   sc.far = 48;
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.02;
   group.add(sun, sun.target);
-  // The sky through all that glass: warm from above, the brick and earth bouncing it back.
-  const sky = new THREE.HemisphereLight('#f0d6b4', '#6a4a30', 0.42);
+  // The sky through all that glass, faint: the shade stays shade, warm from the brick and the earth.
+  const sky = new THREE.HemisphereLight('#e8d2b8', '#7a4a2a', 0.16);
   group.add(sky);
-  // A little warm bounce off the sunlit back wall, toward the benches.
-  const bounce = new THREE.PointLight('#ffb070', 1.1, 9, 1.4);
-  bounce.position.set(1.5, 2.2, 2.1);
+  // A little warm bounce off the sunlit back wall and floor, toward the benches.
+  const bounce = new THREE.PointLight('#ffa060', 1.4, 10, 1.3);
+  bounce.position.set(1.0, 1.6, 1.8);
   group.add(bounce);
 
   // --- the shafts ----------------------------------------------------------------------------------
@@ -256,7 +267,7 @@ export function buildLight(quality: 'high' | 'low'): Light {
       const k = 1 - wet * 0.55;
       sun.intensity = 6.5 * k;
       level.value = 1 - wet * 0.85;
-      sky.intensity = 0.42 + wet * 0.12;
+      sky.intensity = 0.16 + wet * 0.12;
       rainLevel.value = wet;
       rain.visible = wet > 0.01;
     },

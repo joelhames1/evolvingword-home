@@ -77,14 +77,17 @@ export interface Wall {
   members?: string[];
 }
 
+/** A piece of a card: a paragraph, a list of headed lines, or a small note. */
+export type CardBody = string | { list: { head: string; text: string }[] } | { note: string };
+
 /** What a world can hook into once the studio is built: its own clickable things and cards. */
 export interface Wiring {
   /** Something to hover and click. */
   touch(target: Target): void;
   /** Fly to a shot. */
   goTo(shot: string): void;
-  /** The card on the left, as the props use it. */
-  card(kicker: string, title: string, body: string[], actions?: { label: string; quiet?: boolean; href?: string; run?: () => void }[]): void;
+  /** The card on the left, as the props use it: paragraphs, a list, or a small note. */
+  card(kicker: string, title: string, body: CardBody[], actions?: { label: string; quiet?: boolean; href?: string; run?: () => void }[]): void;
   /** A line in the caption bar. */
   say(text: string): void;
   sound: Sound;
