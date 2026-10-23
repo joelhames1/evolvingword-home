@@ -221,8 +221,10 @@ function herbBundle(kind: number, seed: number) {
 
 export interface Dressing {
   group: THREE.Group;
-  /** The rosettes on the show board, to stir when a medal swings. */
+  /** The rosettes on the show board, to stir a little. */
   rosettes: THREE.Object3D[];
+  /** The pieces big enough to throw a shadow worth having in the low sun. */
+  casters: THREE.Object3D[];
 }
 
 /** Moves the studio's pieces to the greenhouse and adds what dresses them. */
@@ -467,5 +469,5 @@ export function arrangeStudio(s: Studio, mats: { wood: THREE.MeshStandardMateria
   }
 
   for (const o of [honors.group, map.group, s.shelf.group, s.shoes.group, line.group, group]) o.updateMatrixWorld(true);
-  return { group, rosettes };
+  return { group, rosettes, casters: [board, cab, top, leg, tin] };
 }

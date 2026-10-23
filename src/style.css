@@ -1655,3 +1655,20 @@ html.lite body {
   background: linear-gradient(180deg, #7a2a1e, #4e1712);
   color: #f1e2c4;
 }
+
+/* The Greenhouse: a base of cast iron gone verdigris, and a cream enamel plaque lettered in green. */
+.world-greenhouse .base {
+  background:
+    radial-gradient(circle at 22% 38%, rgba(160, 210, 180, 0.35) 0 2px, transparent 3px),
+    radial-gradient(circle at 78% 62%, rgba(160, 210, 180, 0.3) 0 2px, transparent 3px),
+    linear-gradient(180deg, #4e7a66, #2f5444 55%, #1a3328);
+  box-shadow:
+    inset 0 3px 0 rgba(190, 230, 200, 0.45),
+    inset 0 -2px 0 rgba(255, 210, 122, 0.3);
+}
+.world-greenhouse .plaque {
+  background: linear-gradient(180deg, #f6efdc, #e4d8b8);
+  color: #24533a;
+  border: 1px solid #b89a52;
+  border-radius: 3px;
+}

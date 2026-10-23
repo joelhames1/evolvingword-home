@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { POTS, restore, seedFrom, serialize, starter, thirst, growth, MAX_SAVED, GROW_MS } from '../../src/worlds/greenhouse/garden';
+import { ALPHABET, clean, MAX_PHRASE } from '../../src/evolve';
+import { WORLDS } from '../../src/worlds';
+import { PHRASES } from '../../src/worlds/greenhouse/bed';
+import { DRONE, SCALE } from '../../src/worlds/greenhouse/sound';
+import { FONT } from '../../src/worlds/tower/board';
+import { compost, emptyPot, GROW_MS, growth, inBloom, MAX_SAVED, POTS, prune, receive, restore, seedFrom, serialize, settle, shareLink, sow, starter, thirst, water } from '../../src/worlds/greenhouse/garden';
 import { clampGenome, CODE_LENGTH, cross, decode, describe as say, encode, gardenName, latinName, MUTATION, seeded, STARTERS, traits, WANTED, type Genome } from '../../src/worlds/greenhouse/genome';
 
 /** Every number in a genome, by name, for comparing. */
@@ -291,3 +296,108 @@ describe('the garden kept in the browser', () => {
     expect(thirst(p, now + 1e12)).toBe(1);
   });
 });
+
+describe('gardening', () => {
+  const now = 1_800_000_000_000;
+
+  it('sows a cross in the first empty pot, with its parents on it', () => {
+    const g = starter(now);
+    const a = g.pots.findIndex(Boolean);
+    const b = g.pots.findIndex((p, i) => p && i > a);
+    const free = emptyPot(g);
+    const sown = sow(g, a, b, now)!;
+    expect(sown.pot).toBe(free);
+    expect(g.pots[free]!.parents).toEqual([g.pots[a]!.code, g.pots[b]!.code]);
+    expect(decode(g.pots[free]!.code)).toEqual(sown.genome);
+    expect(growth(g.pots[free]!, now)).toBe(0);
+    expect(inBloom(g.pots[free]!, now + GROW_MS)).toBe(true);
+    expect(g.crosses).toBe(1);
+  });
+
+  it('won\'t sow into a full garden, or from an empty pot', () => {
+    const g = starter(now);
+    const empty = emptyPot(g);
+    expect(sow(g, empty, g.pots.findIndex(Boolean), now)).toBeNull();
+    while (emptyPot(g) >= 0) sow(g, g.pots.findIndex(Boolean), g.pots.findIndex(Boolean), now);
+    expect(g.pots.every(Boolean)).toBe(true);
+    expect(sow(g, 0, 1, now)).toBeNull();
+  });
+
+  it('waters, cuts back to the leaves, and composts to make room', () => {
+    const g = starter(now - 3_600_000);
+    const i = g.pots.findIndex(Boolean);
+    const later = now + 3_600_000;
+    expect(thirst(g.pots[i]!, later)).toBe(1);
+    water(g, i, later);
+    expect(thirst(g.pots[i]!, later)).toBe(0);
+    prune(g, i, later);
+    expect(growth(g.pots[i]!, later)).toBeCloseTo(0.45);
+    expect(inBloom(g.pots[i]!, later + GROW_MS)).toBe(true);
+    const before = g.pots.filter(Boolean).length;
+    expect(compost(g, i)).toBe(true);
+    expect(g.pots[i]).toBeNull();
+    expect(g.pots.filter(Boolean).length).toBe(before - 1);
+    expect(g.composted).toBe(1);
+    expect(compost(g, i)).toBe(false);
+  });
+
+  it('takes a gift from a link into an empty pot, once, and only a real one', () => {
+    const g = starter(now);
+    const code = encode(WANTED[0].example);
+    const pot = receive(g, code, now)!;
+    expect(pot).toBeGreaterThanOrEqual(0);
+    expect(g.pots[pot]).toMatchObject({ code, gift: true, parents: null });
+    // The same link again doesn't plant it twice.
+    expect(receive(g, code, now)).toBe(pot);
+    expect(g.pots.filter((p) => p?.code === code)).toHaveLength(1);
+    // Anything else in the link is ignored, and the garden is untouched.
+    const kept = serialize(g);
+    for (const bad of ['', 'x', `${code}x`, code.slice(1), '<script>', '__proto__', 'constructor', 'f'.repeat(13), ' '.repeat(13), null, undefined, 7, {}, []]) expect(receive(g, bad, now)).toBeNull();
+    expect(serialize(g)).toBe(kept);
+  });
+
+  it('keeps a gift waiting on the bench while the garden is full, and pots it as soon as there\'s room', () => {
+    const g = starter(now);
+    while (emptyPot(g) >= 0) sow(g, g.pots.findIndex(Boolean), g.pots.findIndex(Boolean), now);
+    const code = encode(WANTED[3].example);
+    expect(receive(g, code, now)).toBe(-1);
+    expect(g.waiting?.code).toBe(code);
+    expect(receive(g, code, now)).toBe(-1);
+    // It survives being kept and read back.
+    expect(restore(serialize(g), now).waiting?.code).toBe(code);
+    compost(g, 4);
+    expect(g.pots[4]?.code).toBe(code);
+    expect(g.waiting).toBeNull();
+    expect(settle(g)).toBe(-1);
+  });
+
+  it('shares a flower as a short link the decoder takes back', () => {
+    const code = encode(STARTERS[3]);
+    const link = shareLink('https://evolvingword.com', code);
+    expect(link).toBe(`https://evolvingword.com/?bloom=${code}`);
+    expect(link.length).toBeLessThan(50);
+    expect(decode(new URL(link).searchParams.get('bloom'))).toEqual(STARTERS[3]);
+  });
+});
+
+describe('the greenhouse', () => {
+  it('has a globe with pollen in the glass', () => {
+    expect(WORLDS.find((w) => w.id === 'greenhouse')).toMatchObject({ name: 'The Greenhouse', weather: 'pollen', still: '/worlds/greenhouse.jpg' });
+  });
+
+  it('only beds out phrases that fit, in letters it can plant', () => {
+    for (const phrase of PHRASES) {
+      expect(clean(phrase), phrase).toBe(phrase);
+      expect(phrase.length).toBeLessThanOrEqual(MAX_PHRASE);
+    }
+    // Every letter a visitor can type has a five-by-seven planting.
+    for (const ch of ALPHABET) expect(FONT[ch], ch).toMatch(/^[.#]{35}$/);
+  });
+
+  it('gives every note a flower can have a place in the garden\'s chord, over the drone', () => {
+    for (let n = 0; n <= 15; n++) expect(SCALE[n], `note ${n}`).toBeDefined();
+    expect([...SCALE].sort((a, b) => a - b)).toEqual(SCALE);
+    expect(Math.max(...DRONE)).toBeLessThan(Math.min(...SCALE));
+  });
+});
+

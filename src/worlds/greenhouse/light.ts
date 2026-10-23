@@ -8,13 +8,13 @@ import { HOUSE, SUN } from './plan';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
-/** The layer the sun's shadows are drawn from: only what's put on it casts one (bars, benches, plants, the bigger pieces), not every little thing. */
-export const SUN_SHADOW = 2;
-
-/** Lets an object (and everything in it) throw a shadow in the low sun. */
-export function castsSun(o: THREE.Object3D) {
+/**
+ * Whether an object (and everything in it) throws a shadow in the low sun. Every
+ * caster costs a draw in the sun's pass, so only the bigger pieces do.
+ */
+export function castsSun(o: THREE.Object3D, on = true) {
   o.traverse((c) => {
-    if ((c as THREE.Mesh).isMesh) c.layers.enable(SUN_SHADOW);
+    if ((c as THREE.Mesh).isMesh) c.castShadow = on;
   });
 }
 
@@ -152,7 +152,7 @@ export function buildLight(quality: 'high' | 'low'): Light {
   const dir = SUN.clone().negate();
 
   // The sun, low, golden, throwing every bar's shadow across the floor and the wall.
-  const sun = new THREE.DirectionalLight('#ffbb6a', 6.5);
+  const sun = new THREE.DirectionalLight('#ffa858', 7.5);
   sun.position.copy(SUN).multiplyScalar(30).add(v(0, 0, 0.3));
   sun.target.position.set(0, 0, 0.3);
   sun.castShadow = true;
@@ -162,14 +162,13 @@ export function buildLight(quality: 'high' | 'low'): Light {
   sc.right = 6.5;
   sc.top = 7;
   sc.bottom = -3;
-  sc.layers.set(SUN_SHADOW);
   sc.near = 12;
   sc.far = 48;
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.02;
   group.add(sun, sun.target);
-  // The sky through all that glass, faint: the shade stays shade, warm from the brick and the earth.
-  const sky = new THREE.HemisphereLight('#e8d2b8', '#7a4a2a', 0.16);
+  // The sky through all that glass: cool and faint, so the shade stays blue against the gold.
+  const sky = new THREE.HemisphereLight('#a8b8d8', '#7a4a2a', 0.26);
   group.add(sky);
   // A little warm bounce off the sunlit back wall and floor, toward the benches.
   const bounce = new THREE.PointLight('#ffa060', 1.4, 10, 1.3);
@@ -265,9 +264,9 @@ export function buildLight(quality: 'high' | 'low'): Light {
       time.value = t;
       // A shower dims the sun and the shafts with it.
       const k = 1 - wet * 0.55;
-      sun.intensity = 6.5 * k;
+      sun.intensity = 7.5 * k;
       level.value = 1 - wet * 0.85;
-      sky.intensity = 0.16 + wet * 0.12;
+      sky.intensity = 0.26 + wet * 0.14;
       rainLevel.value = wet;
       rain.visible = wet > 0.01;
     },

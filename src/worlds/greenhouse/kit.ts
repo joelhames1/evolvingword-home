@@ -80,7 +80,6 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   catalog.group.rotation.set(CATALOG.tilt, Math.PI, 0, 'YXZ');
   const band = buildBand();
   const extras = new THREE.Group();
-  for (const o of [house.group, flowers.group, tools.group, catalog.group, bee.group]) castsSun(o);
   scene.environmentIntensity = 0.07;
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -472,15 +471,15 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     objects: [grounds.group, house.group, bed.group, flowers.group, light.group, bee.group, tools.group, catalog.group, extras],
     board: bed,
     shots: {
-      // Out on the lawn at the sunny end, the house lit gold along its length, the door open.
-      vista: { pos: v(-11.5, 2.5, -9.5), target: v(0.2, 2.0, 0.4), fov: 46, lean: 0.25 },
+      // Out on the lawn, a little above it, looking in through the front glass: the bench, the books, the flowers.
+      vista: { pos: v(-1.6, 2.7, -6.9), target: v(0.4, 1.65, 1.0), fov: 50, lean: 0.25 },
       // Nose to the front glass over the bench, looking out toward the sun.
       window: { pos: v(0.75, 1.55, -1.5), target: v(-4, 1.2, -14), fov: 54, lean: 0.04 },
       // The bedding on the bank across the lawn.
       board: { pos: v(0.95, 1.72, -1.35), target: BANK.center.clone().add(v(0, 0.05, 0)), fov: 26, lean: 0.03 },
     },
-    // Across the lawn to the door at the end, in, and along the aisle to the bench.
-    intro: { via: [v(-9.2, 2.0, -3.6), v(HOUSE.x0 - 1.4, 1.55, HOUSE.door.z), v(HOUSE.x0 + 0.9, 1.55, HOUSE.door.z), v(-2.5, 1.5, 0.9)], duration: 10, lines: ['EVOLVING WORD', 'A LITTLE STUDIO UNDER GLASS', 'WHERE WE MAKE THINGS TOGETHER'] },
+    // Along the front of the house to the open door at the sunny end, in, and back along the aisle to the bench.
+    intro: { via: [v(-4.8, 2.3, -5.6), v(-8.3, 1.8, -3.0), v(HOUSE.x0 - 1.5, 1.55, HOUSE.door.z), v(HOUSE.x0 + 0.9, 1.55, HOUSE.door.z), v(-2.5, 1.5, 0.95)], duration: 11, lines: ['EVOLVING WORD', 'A LITTLE STUDIO UNDER GLASS', 'WHERE WE MAKE THINGS TOGETHER'] },
     tagline: 'A LITTLE STUDIO UNDER GLASS.',
     band,
     walls,
@@ -490,8 +489,18 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       line = s.line;
       dressing = arrangeStudio(s, house.materials);
       extras.add(dressing.group);
-      // In the low sun, the bigger pieces throw shadows; the small things on the bench don't need to.
-      for (const o of [s.desk.group, s.shelf.group, s.line.group, s.honors.group, s.map.group, dressing.group]) castsSun(o);
+      // The sun is the light in here: the desk lamp still lights, but leaves the shadows to the sun.
+      s.desk.group.traverse((o) => {
+        if ((o as THREE.SpotLight).isSpotLight) o.castShadow = false;
+      });
+      // In the low sun, the bigger pieces throw shadows (the bench, the CRT, the lamp, the shirts and
+      // herbs, the shoes, the frames); the small things don't need to, and every caster costs a draw.
+      for (const o of [s.desk.group, s.watch.group, s.pad.group, s.treats.group, s.rolodex.group, s.honors.group, s.map.group, s.shelf.group]) castsSun(o, false);
+      for (const o of s.desk.group.children) if ((o as THREE.Mesh).geometry?.type === 'RoundedBoxGeometry') castsSun(o);
+      for (const o of s.shelf.group.children) if ((o as THREE.Mesh).geometry?.type === 'BoxGeometry' || (o as THREE.InstancedMesh).isInstancedMesh) castsSun(o);
+      for (const d of s.honors.diplomas) castsSun(d.children[0]);
+      castsSun(s.map.group.children[0]);
+      for (const o of [s.desk.lamp, s.desk.crtScreen.parent!, s.line.group, s.shoes.group, ...dressing.casters]) castsSun(o);
     },
 
     closeups() {

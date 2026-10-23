@@ -62,7 +62,8 @@ else {
       switchTo('simple');
     });
   const q = new URLSearchParams(location.search);
-  const asked = q.get('world');
+  // A flower shared from the greenhouse (?bloom=...) opens the greenhouse, unless the link names another world.
+  const asked = q.get('world') ?? (q.has('bloom') ? 'greenhouse' : null);
   if (isWorld(asked)) enter(asked, false);
   // Screenshots and tests jump straight to a shot, in the world asked for or the last one.
   else if (q.has('shot')) enter(lastWorld() ?? 'alps', false);

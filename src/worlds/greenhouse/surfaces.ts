@@ -128,9 +128,14 @@ export function floor(size: { w: number; d: number }, aisle: { z0: number; z1: n
   g.clip();
   g.translate(W / 2, (a0 + a1) / 2);
   g.rotate(Math.PI / 4);
-  const span = Math.hypot(W, H);
-  for (let i = -span / t; i < span / t; i++)
-    for (let j = -12; j < 12; j++) {
+  // Enough tiles to cover the aisle once it's turned on the diagonal.
+  const span = Math.hypot(W, a1 - a0) / 2 / t + 2;
+  for (let i = -span; i < span; i++)
+    for (let j = -span; j < span; j++) {
+      // Only the ones that land in the aisle's strip (the rest are clipped anyway).
+      const cx = (i + 0.5) * t * Math.SQRT1_2 - (j + 0.5) * t * Math.SQRT1_2;
+      const cy = (i + 0.5) * t * Math.SQRT1_2 + (j + 0.5) * t * Math.SQRT1_2;
+      if (Math.abs(cx) > W / 2 + t || Math.abs(cy) > (a1 - a0) / 2 + t) continue;
       const red = (Math.floor(i) + j) % 2 === 0;
       g.fillStyle = shade(red ? '#9a3a26' : '#1e1a18', (r() - 0.5) * 0.06);
       g.fillRect(i * t + 1, j * t + 1, t - 2, t - 2);

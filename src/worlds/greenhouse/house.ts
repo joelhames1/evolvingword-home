@@ -110,13 +110,13 @@ const GLASS_FRAG = /* glsl */ `
     // Grime at the foot of each pane and in its corners, and a faint green of algae.
     float foot = smoothstep(0.22, 0.0, vPane.y) * (0.55 + 0.45 * vnoise(vUv * 26.0));
     float edge = smoothstep(0.06, 0.0, min(vPane.x, 1.0 - vPane.x)) * 0.35;
-    float grime = clamp(foot + edge + vnoise(vUv * 3.0) * 0.12, 0.0, 1.0);
-    vec3 grimeCol = mix(vec3(0.22, 0.24, 0.12), vec3(0.32, 0.27, 0.18), vnoise(vUv * 9.0));
+    float grime = clamp((foot + edge) * 0.7 + vnoise(vUv * 3.0) * 0.08, 0.0, 1.0);
+    vec3 grimeCol = mix(vec3(0.26, 0.25, 0.16), vec3(0.34, 0.28, 0.2), vnoise(vUv * 9.0));
     vec2 wet = uRain > 0.01 ? drops(vUv) * uRain : vec2(0.0);
     vec3 col = vec3(0.05, 0.07, 0.06) * (1.0 - grime) + grimeCol * grime;
     col += sky * fres * 0.9 + uSunColor * glint * 2.5 * (1.0 - uRain * 0.6);
     col += (sky * 0.5 + uSunColor * 0.15) * wet.y;
-    float a = 0.06 + grime * 0.32 + fres * 0.55 + wet.x * 0.16 + glint * 0.3;
+    float a = 0.05 + grime * 0.22 + fres * 0.55 + wet.x * 0.16 + glint * 0.3;
     // Nothing to flare across the lens if the camera comes close.
     a *= smoothstep(0.1, 0.5, dist);
     gl_FragColor = vec4(col, clamp(a, 0.0, 0.9));
@@ -206,12 +206,10 @@ export function buildHouse(quality: 'high' | 'low'): House {
   const wall = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0 + 0.6, wallTop + 0.3, 0.45), brickMat);
   wall.position.set(0, (wallTop + 0.3) / 2, back + 0.225);
   wall.receiveShadow = true;
-  wall.castShadow = true;
   group.add(wall);
   // A stone coping along the top of the wall.
   const coping = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0 + 0.7, 0.08, 0.55), stone);
   coping.position.set(0, wallTop + 0.34, back + 0.225);
-  coping.castShadow = true;
   group.add(coping);
   // The knee wall along the front, and round the ends (with a gap for the door).
   const kneeWall = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0 + 0.3, knee - 0.05, kneeIn - kneeOut), kneeMat);
@@ -461,7 +459,6 @@ export function buildHouse(quality: 'high' | 'low'): House {
   );
   (crest.material as THREE.MeshStandardMaterial).alphaMap!.repeat.set((x1 - x0) / 0.5, 1);
   crest.position.set(0, HOUSE.ridge.y + 0.16, HOUSE.ridge.z - 0.02);
-  crest.castShadow = true;
   group.add(crest);
   const finialProfile = [
     [0, 0],
@@ -478,7 +475,6 @@ export function buildHouse(quality: 'high' | 'low'): House {
   for (const x of [x0, x1]) {
     const f = new THREE.Mesh(finialGeo, iron);
     f.position.set(x, HOUSE.ridge.y + 0.06, HOUSE.ridge.z);
-    f.castShadow = true;
     group.add(f);
   }
 
