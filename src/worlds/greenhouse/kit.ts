@@ -820,6 +820,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         speed = k;
       },
       select: (i: number) => select(i),
+      /** The flower picked to cross, or -1. */
+      picked: () => selected,
       breed: (a: number, b: number) => cross(a, b),
       water: (i: number) => waterPot(i),
       prune: (i: number) => prunePot(i),

@@ -334,3 +334,80 @@ test('the greenhouse: the camera never goes through a bench, a plant, the glass 
   expect(await ew(page, (w) => w.inside)).toEqual([]);
   expect(problems).toEqual([]);
 });
+
+test('the greenhouse: letting go of a pick, the lens from flower to flower, the catalog by arrow keys, a link to copy by hand', async ({ page }) => {
+  test.setTimeout(420_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const problems = watch(page);
+  await fresh(page);
+  await page.goto('/?shot=staging&full&world=greenhouse');
+  await page.waitForFunction(() => 'garden' in ((window as unknown as { __ew?: object }).__ew ?? {}));
+  await expect(page.locator('#card-title')).toHaveText('Breed a flower', { timeout: 60_000 });
+  const [a, b] = await ew(page, (w) => w.garden().pots.map((p: Ew | null, i: number) => (p ? i : -1)).filter((i: number) => i >= 0));
+
+  // Pick one, then think better of it: Esc lets go (and stays at the flowers), Esc again steps back to the bench.
+  await ew(page, (w) => w.select(w.garden().pots.findIndex(Boolean)));
+  await expect(page.locator('#card-kicker')).toHaveText(`On the staging · pot ${a + 1}`, { timeout: 30_000 });
+  expect(await ew(page, (w) => w.picked())).toBe(a);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#card-title')).toHaveText('Breed a flower', { timeout: 30_000 });
+  expect(await ew(page, (w) => [w.picked(), w.rig.current])).toEqual([-1, 'staging']);
+  // "Never mind" on the card does the same.
+  await page.evaluate((i) => (window as unknown as { __ew: Ew }).__ew.select(i), b);
+  await page.locator('#card-actions button', { hasText: 'Never mind' }).click();
+  expect(await ew(page, (w) => w.picked())).toBe(-1);
+
+  // Under the lens, one flower and then another: the camera goes to each, and the card names each.
+  const look = async (i: number) => {
+    await page.evaluate((i) => (window as unknown as { __ew: Ew }).__ew.lens(i), i);
+    await page.waitForFunction(() => (window as unknown as { __ew: Ew }).__ew.rig.current === 'bloom', null, { timeout: 30_000 });
+    await settled(page);
+    await expect(page.locator('#card-kicker')).toHaveText('Under the lens', { timeout: 30_000 });
+    return { at: await ew(page, (w) => w.camera.position.toArray() as number[]), name: await page.locator('#card-title').textContent() };
+  };
+  const first = await look(a);
+  const second = await look(b);
+  expect(Math.hypot(...first.at.map((x, k) => x - second.at[k]))).toBeGreaterThan(0.2);
+  expect(second.name).not.toBe(first.name);
+  await page.keyboard.press('Escape');
+  await settled(page);
+  expect(await current(page)).toBe('staging');
+
+  // The catalog's pages turn with the arrows, and stay put on the catalog.
+  await page.evaluate(() => (window as unknown as { __ew: Ew }).__ew.goTo('catalog'));
+  await settled(page);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  expect(await ew(page, (w) => [w.catalog.page(), w.rig.current])).toEqual([2, 'catalog']);
+  await page.keyboard.press('ArrowLeft');
+  expect(await ew(page, (w) => w.catalog.page())).toBe(1);
+
+  // Sharing: copied if the browser lets it, and either way the link is on the card.
+  await page.evaluate(() => (window as unknown as { __ew: Ew }).__ew.goTo('staging'));
+  await settled(page);
+  await page.evaluate((i) => (window as unknown as { __ew: Ew }).__ew.select(i), a);
+  await page.locator('#card-actions button', { hasText: 'Share this flower' }).click();
+  await expect(page.locator('#card-body .note')).toContainText('/?bloom=', { timeout: 30_000 });
+  expect(problems).toEqual([]);
+});
+
+test('the greenhouse: grows and breeds with no storage at all, and from a garden kept wrong', async ({ page }) => {
+  test.setTimeout(300_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const problems = watch(page);
+  // Storage that refuses everything (a locked-down browser): the garden still grows this visit.
+  await page.addInitScript(() => {
+    for (const k of ['getItem', 'setItem', 'removeItem'] as const)
+      Storage.prototype[k] = () => {
+        throw new DOMException('No storage here', 'SecurityError');
+      };
+  });
+  await page.goto('/?shot=staging&full&world=greenhouse');
+  await page.waitForFunction(() => 'garden' in ((window as unknown as { __ew?: object }).__ew ?? {}), null, { timeout: 120_000 });
+  expect(await ew(page, (w) => w.garden().pots.filter(Boolean).length)).toBe(8);
+  await ew(page, (w) => w.speed(20));
+  const pots = await ew(page, (w) => w.garden().pots.map((p: Ew | null, i: number) => (p ? i : -1)).filter((i: number) => i >= 0));
+  await page.evaluate(([a, b]) => (window as unknown as { __ew: Ew }).__ew.breed(a, b), [pots[0], pots[1]]);
+  expect(await ew(page, (w) => w.garden().crosses)).toBe(1);
+  expect(problems).toEqual([]);
+});

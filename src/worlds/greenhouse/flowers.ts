@@ -9,7 +9,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash, rgb, seeded, type Genome, type Tint } from './genome';
-import { BASKETS, FERN_POTS, POT, POT_AT, TREE_FERN } from './plan';
+import { BASKETS, FERN_POTS, HOUSE, POT, POT_AT, TREE_FERN } from './plan';
 import { terracotta, soil as soilTexture } from './surfaces';
 
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -629,11 +629,16 @@ function fernLayout(): { fronds: Frond[]; bases: { at: THREE.Vector3; height: nu
       const a = (k / n) * Math.PI * 2 + r() * 0.5;
       const o = v(Math.cos(a), 0, Math.sin(a));
       const lift = rise + (r() - 0.5) * 0.35;
+      const from = at.clone().addScaledVector(o, out);
+      // No further than the glass and the brick: shorter where the house is close.
+      const rx = Math.abs(o.x) > 1e-3 ? (o.x > 0 ? HOUSE.x1 - 0.12 - from.x : from.x - HOUSE.x0 - 0.12) / Math.abs(o.x) : Infinity;
+      const rz = Math.abs(o.z) > 1e-3 ? (o.z > 0 ? HOUSE.back - 0.1 - from.z : from.z - HOUSE.front - 0.1) / Math.abs(o.z) : Infinity;
+      const room = Math.max(0.2, Math.min(rx, rz));
       fronds.push({
         slot,
-        at: at.clone().addScaledVector(o, out),
+        at: from,
         dir: o.clone().multiplyScalar(1 - Math.abs(lift) * 0.5).add(v(0, lift, 0)).normalize(),
-        len: len * (0.75 + r() * 0.4),
+        len: Math.min(len * (0.75 + r() * 0.4), room / 0.8),
         width: len * (0.36 + r() * 0.08),
         arch: arch * (0.8 + r() * 0.4),
         color: new THREE.Color(greens[Math.floor(r() * greens.length)]).multiplyScalar(0.85 + r() * 0.3),
