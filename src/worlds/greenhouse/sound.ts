@@ -18,6 +18,20 @@ export const DRONE = [38, 45];
 /** Birds: a blackbird's phrase is a few notes in this range, sliding. */
 const BIRD = [1800, 2600];
 
+/**
+ * The garden's chord from the notes of the flowers in bloom (indexes into
+ * SCALE): each pitch once, nothing crowded down low (where two notes a step
+ * apart only mumble), and at most seven, spread from the lowest to the highest.
+ */
+export function voicing(notes: number[]): number[] {
+  const pitches = [...new Set(notes.filter((n) => Number.isInteger(n)).map((n) => SCALE[Math.min(SCALE.length - 1, Math.max(0, n))]))].sort((a, b) => a - b);
+  const open: number[] = [];
+  for (const p of pitches) if (!open.length || p - open[open.length - 1] >= (p < 66 ? 4 : 2)) open.push(p);
+  const most = 7;
+  if (open.length <= most) return open;
+  return Array.from({ length: most }, (_, i) => open[Math.round((i * (open.length - 1)) / (most - 1))]);
+}
+
 export interface GreenhouseBand extends Band {
   /** The notes of the flowers in bloom (indexes into SCALE). */
   setNotes(notes: number[]): void;
@@ -286,9 +300,8 @@ export function buildBand(): GreenhouseBand {
       if (step === 0 && bar % 4 === 0) DRONE.forEach((n, i) => glass(k, at + i * 0.3, n, barLen * 4 + 3, i ? 0.016 : 0.022));
       // The garden's chord: every flower in bloom has a note in it (each pitch once), breathing in over two bars.
       if (step === 0 && bar % 2 === 0) {
-        const pitches = [...new Set(notes)].sort((a, b) => a - b).map((n) => SCALE[Math.min(SCALE.length - 1, Math.max(0, n))]);
-        // Kept to a soft voicing: at most eight notes, quieter the more there are.
-        chordNow = pitches.length > 8 ? pitches.filter((_, i) => i % Math.ceil(pitches.length / 8) === 0) : pitches;
+        // Kept to a soft, open voicing, quieter the more notes there are.
+        chordNow = voicing(notes);
         const vel = 0.022 / Math.sqrt(Math.max(1, chordNow.length / 2));
         chordNow.forEach((n, i) => glass(k, at + i * 0.22, n, barLen * 2 + 2.5, vel));
       }

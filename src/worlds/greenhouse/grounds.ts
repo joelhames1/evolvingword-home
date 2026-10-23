@@ -137,6 +137,10 @@ const LAWN_FRAG = /* glsl */ `
     vec3 gravel = mix(vec3(0.3, 0.26, 0.2), vec3(0.46, 0.4, 0.31), pebble);
     vec3 albedo = mix(grass, gravel, walk);
     vec3 col = daylight(albedo, normalize(vNrm), vWorld);
+    // Looking toward the low sun, the grass glows gold: light through the blades and off their edges.
+    vec3 look = vWorld - cameraPosition;
+    float toward = pow(max(dot(look / max(length(look), 1e-3), uSunDir), 0.0), 3.0);
+    col += uSunColor * albedo * vec3(1.0, 0.9, 0.5) * toward * (1.0 - walk) * (0.35 + 0.3 * n);
     gl_FragColor = vec4(fade(col, vWorld), 1.0);
   }
 `;

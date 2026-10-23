@@ -163,6 +163,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   let wiring: Wiring | null = null;
   let arrived = '';
   let welcomed = false;
+  /** When we were first in, and whether the flowers have been visited (or pointed out) since. */
+  let inSince = -1;
+  let shownFlowers = false;
   let rain = 0;
   let showerOn = false;
   let forced: boolean | null = null;
@@ -450,6 +453,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     const g = genomeIn(i);
     const top = flowers.top(i);
     if (selected === i) selected = -1;
+    // Looking at it under the lens: step back to the staging, there's nothing left to look at.
+    if (lensOn === i && wiring?.current() === 'bloom') wiring.goTo('staging');
     compost(garden, i);
     keep(garden);
     sync();
@@ -566,6 +571,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
 
     closeups() {
       const first = garden.pots.findIndex((p) => !!p);
+      // (Straight to the close look by link: that flower, under the lens.)
+      lensOn = first;
       return {
         staging: { pos: v(-3.35, 2.0, 1.0), target: v(-3.5, 1.05, -1.55), fov: 52, lean: 0.04, shift: CARD },
         bloom: bloomShot(Math.max(0, first)),
@@ -682,7 +689,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         droopV[i] += ((aim - droop[i]) * 36 - droopV[i] * 4.5) * dt;
         droop[i] = THREE.MathUtils.clamp(droop[i] + droopV[i] * dt, -0.3, 1);
         // (Not under the lens: there it's the only flower you're looking at.)
-      const glow = (i === selected && shot !== 'bloom' ? 0.6 + 0.25 * Math.sin(t * 2.6) : 0) + (i === hoverSlot && t - hoverAt < 0.15 && shot !== 'bloom' ? 0.45 : 0);
+        const glow = (i === selected && shot !== 'bloom' ? 0.6 + 0.25 * Math.sin(t * 2.6) : 0) + (i === hoverSlot && t - hoverAt < 0.15 && shot !== 'bloom' ? 0.45 : 0);
         flowers.state(i, g, droop[i], glow);
         if (!p || g < 0.86) continue;
         const genome = genomeOf(p.code);
@@ -763,6 +770,13 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       if (ready && giftAt !== null && !welcomed) {
         welcomed = true;
         say(giftAt >= 0 ? `A GIFT FROM A FRIEND IS GROWING IN POT ${giftAt + 1} · GO AND SEE` : 'A GIFT FROM A FRIEND IS WAITING ON THE POTTING BENCH');
+      }
+      // Sitting at the bench a while without going to look at the flowers: point the way, once.
+      if (ready && inSince < 0) inSince = t;
+      if (atFlowers) shownFlowers = true;
+      if (!shownFlowers && giftAt === null && here === 'desk' && inSince >= 0 && t - inSince > 14) {
+        shownFlowers = true;
+        say('‹ THE FLOWERS · PICK TWO AND BREED ONE OF YOUR OWN');
       }
 
       // Now and then a shower passes over.

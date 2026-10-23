@@ -5,7 +5,7 @@ import { WORLDS } from '../../src/worlds';
 import { PHRASES } from '../../src/worlds/greenhouse/bed';
 import { daisyGeometry, spireGeometry } from '../../src/worlds/greenhouse/grounds';
 import { regroup } from '../../src/worlds/greenhouse/studio';
-import { DRONE, SCALE } from '../../src/worlds/greenhouse/sound';
+import { DRONE, SCALE, voicing } from '../../src/worlds/greenhouse/sound';
 import { FONT } from '../../src/worlds/tower/board';
 import { compost, emptyPot, GROW_MS, growth, inBloom, MAX_SAVED, POTS, prune, receive, restore, seedFrom, serialize, settle, shareLink, sow, starter, thirst, water } from '../../src/worlds/greenhouse/garden';
 import { clampGenome, CODE_LENGTH, cross, decode, describe as say, encode, gardenName, latinName, MUTATION, seeded, STARTERS, traits, WANTED, type Genome } from '../../src/worlds/greenhouse/genome';
@@ -401,6 +401,20 @@ describe('the greenhouse', () => {
     for (let n = 0; n <= 15; n++) expect(SCALE[n], `note ${n}`).toBeDefined();
     expect([...SCALE].sort((a, b) => a - b)).toEqual(SCALE);
     expect(Math.max(...DRONE)).toBeLessThan(Math.min(...SCALE));
+  });
+
+  it('voices the chord openly however many flowers are out: a few notes, none crowded low, lowest to highest', () => {
+    expect(voicing([])).toEqual([]);
+    expect(voicing([3, 3, 3])).toEqual([SCALE[3]]);
+    for (const notes of [[...Array(16).keys()], [0, 1, 2, 3, 4], [0, 2, 3, 4, 5, 6, 8, 9], [15, 0, 7, 7, 1, 14], [-3, 40, 2.5, 5]]) {
+      const chord = voicing(notes);
+      expect(chord.length).toBeLessThanOrEqual(7);
+      expect([...chord].sort((a, b) => a - b)).toEqual(chord);
+      for (let i = 1; i < chord.length; i++) expect(chord[i] - chord[i - 1], `${chord}`).toBeGreaterThanOrEqual(chord[i] < 66 ? 4 : 2);
+      for (const p of chord) expect(SCALE).toContain(p);
+    }
+    expect(voicing([...Array(16).keys()])[0]).toBe(SCALE[0]);
+    expect(voicing([...Array(16).keys()]).at(-1)).toBe(SCALE[15]);
   });
 });
 
