@@ -243,7 +243,7 @@ export class Rig {
     const base = Math.tan(THREE.MathUtils.degToRad(this.fov) / 2) / (this.visible < 1 ? this.visible : 1);
     const aimWiden = this.widening(tall, base, w, h, shift > 0 ? covers : 0, shift < 0 ? covers : 0, offset);
     this.widen = this.fromWiden + (aimWiden - this.fromWiden) * along;
-    const fov = Math.min(this.fit || Math.abs(this.widen - 1) > 1e-3 ? 92 : 78, THREE.MathUtils.radToDeg(2 * Math.atan(tall * this.widen)));
+    const fov = Math.min(this.fit || Math.abs(this.widen - 1) > 1e-3 ? 100 : 78, THREE.MathUtils.radToDeg(2 * Math.atan(tall * this.widen)));
     const view = cam.view;
     const shifted = view?.enabled ? view.offsetX : 0;
     if (Math.abs(cam.fov - fov) > 1e-4 || cam.near !== this.near || -offset !== shifted || (view?.enabled && view.fullWidth !== w)) {

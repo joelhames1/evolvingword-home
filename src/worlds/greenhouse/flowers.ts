@@ -8,6 +8,7 @@
 // them they glow.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { canvas, rng, texture } from '../../textures';
 import { hash, rgb, seeded, type Genome, type Tint } from './genome';
 import { BASKETS, FERN_POTS, HOUSE, POT, POT_AT, POTS, TREE_FERN } from './plan';
 import { terracotta, soil as soilTexture } from './surfaces';
@@ -208,12 +209,15 @@ const SHAPE = /* glsl */ `
   varying float vLeafShape;
 
   // A petal: u across (-1..1), t along (0..1). Width by shape, cupped, opened on its hinge.
+  /** Where a frilled petal's margin is in its ruffle, along its length: a few slow waves, each petal its own. */
+  float frillPhase(float t) { return t * 15.5 + aMisc.z * 6.2832 + 0.6 * sin(t * 5.0 + aMisc.z * 9.0); }
   float petalWidth(float t, float shape) {
     t = clamp(t, 0.0, 1.0);
     float w;
     if (shape < 0.5) w = pow(max(sin(3.14159 * t), 0.0), 0.5) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
     else if (shape < 1.5) w = pow(max(sin(3.14159 * pow(t, 0.68)), 0.0), 0.9);
-    else if (shape < 2.5) w = pow(max(sin(3.14159 * t), 0.0), 0.45) * (1.0 + 0.08 * sin(t * 19.0 + aMisc.z * 6.0)) * mix(0.45, 1.0, smoothstep(0.0, 0.4, t));
+    // Frilled: the margin scalloped in time with its ruffle (see frillPhase), soft at the foot, deepest toward the tip.
+    else if (shape < 2.5) w = pow(max(sin(3.14159 * t), 0.0), 0.45) * (1.0 + 0.07 * sin(frillPhase(t)) * smoothstep(0.22, 0.6, t)) * mix(0.45, 1.0, smoothstep(0.0, 0.4, t));
     else w = pow(max(sin(3.14159 * min(t * 1.04, 1.0)), 0.0), 0.42) * mix(0.4, 1.0, smoothstep(0.0, 0.4, t));
     return w;
   }
@@ -234,10 +238,15 @@ const SHAPE = /* glsl */ `
     // Cupped across its width, softly (a trough, deepest at the margins), more so near the heart.
     float across = 1.0 - cos(u * 1.4);
     z -= across * w * mix(0.55, 0.3, t);
-    // A ruffle along the margins: gentle on most, deep on a frilled petal.
-    float frill = shape > 1.5 && shape < 2.5 ? 0.16 : 0.05;
-    float wave = sin(t * (shape > 1.5 && shape < 2.5 ? 17.0 : 10.0) + u * 2.0 + seed * 9.0) + 0.3 * sin(t * 23.0 - seed * 5.0);
-    z += wave * frill * w * pow(abs(u), 2.0) * smoothstep(0.15, 0.7, t);
+    // A ruffle along the margins: gentle on most; on a frilled petal, deep, smooth waves that rise
+    // from nothing at the midrib to their full height at the edge, in step with the scalloped outline.
+    if (shape > 1.5 && shape < 2.5) {
+      float edge = smoothstep(0.15, 1.0, abs(u));
+      z += sin(frillPhase(t) + u * 0.8) * 0.2 * w * edge * edge * smoothstep(0.12, 0.6, t);
+    } else {
+      float wave = sin(t * 10.0 + u * 2.0 + seed * 9.0) + 0.3 * sin(t * 23.0 - seed * 5.0);
+      z += wave * 0.05 * w * pow(abs(u), 2.0) * smoothstep(0.15, 0.7, t);
+    }
     // And a slight twist along its length, each petal its own.
     float tw = (seed - 0.5) * 0.35 * t;
     float xt = x * cos(tw) - z * sin(tw);
@@ -346,15 +355,26 @@ const PAINT = /* glsl */ `
   varying float vSeed;
   varying float vGlow;
   varying float vLeafShape;
-  /** A fern frond's leaflets, alternate along the stalk and pointing toward the tip: false between them. */
-  bool frondThere(vec2 part) {
+  /**
+   * A fern frond's leaflets, alternate along the stalk and pointing toward the
+   * tip: false between them. A tree fern's great fronds (shape 7) have twice as
+   * many, each cut again into little lobes along its length, the lobes fading
+   * out where they'd be smaller than a pixel (so they never shimmer).
+   */
+  bool frondThere(vec2 part, float shape) {
+    float big = step(6.5, shape);
     float u = abs(part.x);
     float t = part.y;
-    if (u < 0.07) return true;
-    if (t < 0.12) return false;
-    float f = fract(t * 17.0 + u * 1.6 + step(0.0, part.x) * 0.5);
+    if (u < mix(0.07, 0.03, big)) return true;
+    if (t < mix(0.12, 0.1, big)) return false;
+    float f = fract(t * mix(17.0, 34.0, big) + u * mix(1.6, 2.6, big) + step(0.0, part.x) * 0.5);
     // Each leaflet narrows toward its own tip, at the frond's edge.
     float reach = 0.36 * (1.0 - u * 0.75);
+    if (big > 0.5) {
+      float lobes = u * 8.0;
+      float fine = clamp(1.6 - fwidth(lobes) * 2.0, 0.0, 1.0);
+      reach *= mix(1.08, 0.62 + 0.5 * abs(sin(lobes * 3.14159)), fine);
+    }
     return abs(f - 0.5) < reach;
   }
   float h21(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -464,8 +484,16 @@ function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
       .replace(
         '#include <color_fragment>',
         /* glsl */ `
-        if (uKind > 0.5 && uKind < 1.5 && vLeafShape > 5.5 && !frondThere(vPart)) discard;
+        if (uKind > 0.5 && uKind < 1.5 && vLeafShape > 5.5 && !frondThere(vPart, vLeafShape)) discard;
         diffuseColor.rgb = uKind < 0.5 ? petalColor() : uKind < 1.5 ? leafColor() : uKind < 2.5 ? vColor : eyeColor();
+      `,
+      )
+      .replace(
+        '#include <roughnessmap_fragment>',
+        /* glsl */ `
+        #include <roughnessmap_fragment>
+        // A petal's thin margin has a waxy sheen to it: smoother there, so its edge (and a frilled one's every crest) catches the light.
+        if (uKind < 0.5) roughnessFactor *= 1.0 - 0.45 * smoothstep(0.6, 1.0, abs(vPart.x)) * smoothstep(0.25, 0.75, vPart.y);
       `,
       )
       .replace(
@@ -501,7 +529,7 @@ function plantMaterial(kind: Kind, opts: THREE.MeshStandardMaterialParameters) {
     // A fern's lacy shadow, not a solid one.
     s.fragmentShader = s.fragmentShader
       .replace('#include <common>', `#include <common>\n${PAINT}`)
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n if (uKind > 0.5 && uKind < 1.5 && vLeafShape > 5.5 && !frondThere(vPart)) discard;');
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n if (uKind > 0.5 && uKind < 1.5 && vLeafShape > 5.5 && !frondThere(vPart, vLeafShape)) discard;');
   };
   depth.customProgramCacheKey = () => 'greenhouse-plant-depth';
   return { mat, depth };
@@ -608,7 +636,7 @@ function scentMotes() {
 
 // --- the ferns ---------------------------------------------------------------------------------------
 
-interface Frond {
+export interface Frond {
   slot: number;
   at: THREE.Vector3;
   dir: THREE.Vector3;
@@ -616,6 +644,8 @@ interface Frond {
   width: number;
   arch: number;
   color: THREE.Color;
+  /** 6 a fern's frond, 7 a tree fern's, finer cut. */
+  shape?: number;
 }
 
 /**
@@ -662,17 +692,69 @@ function fernLayout(): { fronds: Frond[]; bases: { at: THREE.Vector3; height: nu
     bases.push({ at: rim, height: 0.35 });
     clump(SLOTS + FERN_POTS.length + i, rim, 15, 0.42, 0.25, 2.1, 0.12);
   });
-  // The tree fern: a crown of great fronds at the top of its trunk, and a few old ones gone brown, hanging.
-  const crown = TREE_FERN.clone().add(v(0, 2.35, 0));
+  // The tree fern (see treeFernFronds).
   const slot = SLOTS + FERN_POTS.length + BASKETS.length;
-  bases.push({ at: crown, height: 0.9 });
-  clump(slot, crown, 16, 1.05, 0.5, 1.5, 0.06);
-  for (let k = 0; k < 4; k++) {
-    const a = r() * Math.PI * 2;
-    const o = v(Math.cos(a), 0, Math.sin(a));
-    fronds.push({ slot, at: crown.clone().addScaledVector(o, 0.08).add(v(0, -0.05, 0)), dir: o.clone().add(v(0, -1.6, 0)).normalize(), len: 0.75, width: 0.26, arch: 0.4, color: new THREE.Color('#6a4a24').multiplyScalar(0.8 + r() * 0.3) });
-  }
+  bases.push({ at: TREE_CROWN.clone(), height: 1.1 });
+  fronds.push(...treeFernFronds(slot));
   return { fronds, bases };
+}
+
+/** The top of the tree fern's trunk, where its crown of fronds rises from. */
+export const TREE_CROWN = TREE_FERN.clone().add(v(0, 2.4, 0));
+
+/**
+ * A tree fern's crown: two dozen long fronds in a spiral round the top of the
+ * trunk, each rising and arching over in a long curve, finely cut (shape 7).
+ * Toward the glass and the brick, where there's no room, they climb steeply
+ * and turn over sooner; toward the house they reach out over the aisle. In the
+ * middle a few young ones stand up, pale; under the crown the old ones hang
+ * brown against the trunk, a skirt of them. No frond reaches the glass.
+ */
+export function treeFernFronds(slot: number): Frond[] {
+  const r = seeded(5150);
+  const out: Frond[] = [];
+  const crown = TREE_CROWN;
+  const greens = ['#3c6624', '#46702a', '#365c20', '#4e782c', '#41692a'];
+  const room = (o: THREE.Vector3, from: THREE.Vector3) => {
+    const rx = Math.abs(o.x) > 1e-3 ? (o.x > 0 ? HOUSE.x1 - 0.14 - from.x : from.x - HOUSE.x0 - 0.14) / Math.abs(o.x) : Infinity;
+    const rz = Math.abs(o.z) > 1e-3 ? (o.z > 0 ? HOUSE.back - 0.12 - from.z : from.z - HOUSE.front - 0.12) / Math.abs(o.z) : Infinity;
+    return Math.max(0.15, Math.min(rx, rz));
+  };
+  /** How far out a frond reaches, rising at `lift` (rise over run) and turning through `arch` over its length. */
+  const reach = (lift: number, arch: number, len: number) => {
+    const th = Math.atan(lift);
+    return ((Math.sin(th) - Math.sin(th - arch)) / arch) * len;
+  };
+  const N = 24;
+  for (let k = 0; k < N; k++) {
+    const a = k * 2.39996 + (r() - 0.5) * 0.3;
+    const o = v(Math.cos(a), 0, Math.sin(a));
+    const from = crown.clone().addScaledVector(o, 0.07 + r() * 0.03).add(v(0, (r() - 0.5) * 0.06, 0));
+    const space = room(o, from);
+    // 0 hard against a wall, 1 out over the house.
+    const open = THREE.MathUtils.smoothstep(space, 0.6, 1.6);
+    const lift = THREE.MathUtils.lerp(1.9, 0.5, open) + (r() - 0.5) * 0.25;
+    const arch = THREE.MathUtils.lerp(1.15, 1.6, open) * (0.9 + r() * 0.2);
+    let len = THREE.MathUtils.lerp(0.95, 1.42, open) * (0.88 + r() * 0.2);
+    const far = reach(lift, arch, len);
+    if (far > space) len *= space / far;
+    out.push({ slot, at: from, dir: o.clone().add(v(0, lift, 0)).normalize(), len, width: len * 0.34, arch, shape: 7, color: new THREE.Color(greens[k % greens.length]).multiplyScalar(0.85 + r() * 0.3) });
+  }
+  // Young fronds in the middle, standing up, a fresh yellow green.
+  for (let k = 0; k < 4; k++) {
+    const a = k * 1.7 + r();
+    const o = v(Math.cos(a), 0, Math.sin(a));
+    const len = 0.55 + r() * 0.2;
+    out.push({ slot, at: crown.clone().addScaledVector(o, 0.03).add(v(0, 0.04, 0)), dir: o.clone().add(v(0, 3.2, 0)).normalize(), len, width: len * 0.3, arch: 0.7 + r() * 0.3, shape: 7, color: new THREE.Color('#7aa23a').multiplyScalar(0.9 + r() * 0.2) });
+  }
+  // The old ones, gone brown, hanging down round the top of the trunk.
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2 + r() * 0.5;
+    const o = v(Math.cos(a), 0, Math.sin(a));
+    const len = 0.7 + r() * 0.25;
+    out.push({ slot, at: crown.clone().addScaledVector(o, 0.13).add(v(0, -0.08 - r() * 0.06, 0)), dir: o.clone().multiplyScalar(0.22).add(v(0, -1, 0)).normalize(), len, width: len * 0.26, arch: -0.25 - r() * 0.2, shape: 7, color: new THREE.Color(['#6a4a24', '#5a3e20', '#7a5a30'][k % 3]).multiplyScalar(0.75 + r() * 0.3) });
+  }
+  return out;
 }
 
 /** The digits, chalked: strokes in a box 0.6 wide and 1 tall. */
@@ -778,7 +860,193 @@ export function chalkNumbers(count: number) {
   return geo;
 }
 
-/** The baskets (wire, lined with moss), their chains, and the tree fern's trunk: one mesh, in vertex colors. */
+/** Where the fibre texture's strips are: the trunk's matted roots across most of it, the fiddleheads' golden hair in the last strip. */
+const FIBRE = { trunk: 0.84, hair0: 0.88, hair1: 0.99 };
+
+/**
+ * A tree fern's trunk, painted: near-black under a mat of fine rust-brown
+ * roots running down it, wavering, with the scars of old fronds across it
+ * here and there; and in a strip of its own, the fiddleheads' gold-brown hair.
+ * It repeats up the trunk (t) but not round it (s).
+ */
+function fibres() {
+  const W = 512;
+  const H = 512;
+  const [c, g] = canvas(W, H);
+  const r = rng(733);
+  const tw = W * FIBRE.trunk;
+  g.fillStyle = '#21160f';
+  g.fillRect(0, 0, W, H);
+  // Old frond scars: dark bands across, a little ragged.
+  for (let k = 0; k < 7; k++) {
+    g.fillStyle = `rgba(10,6,4,${0.35 + r() * 0.3})`;
+    g.fillRect(0, r() * H, tw, 3 + r() * 6);
+  }
+  // The roots: many fine strands down the trunk, each wandering a little, wrapping top to bottom.
+  for (let k = 0; k < 1100; k++) {
+    const x = r() * tw;
+    const y = r() * H;
+    const len = 40 + r() * 160;
+    const lum = r();
+    const col = lum < 0.6 ? [70 + r() * 40, 42 + r() * 22, 26 + r() * 12] : [120 + r() * 50, 72 + r() * 30, 38 + r() * 16];
+    g.strokeStyle = `rgba(${col.map(Math.round).join(',')},${0.45 + r() * 0.5})`;
+    g.lineWidth = 0.8 + r() * 1.8;
+    const sway = (r() - 0.5) * 14;
+    for (const dy of [0, -H, H]) {
+      g.beginPath();
+      g.moveTo(x, y + dy);
+      g.bezierCurveTo(x + sway, y + dy + len * 0.33, x - sway, y + dy + len * 0.66, x + sway * 0.5, y + dy + len);
+      g.stroke();
+    }
+  }
+  // The fiddleheads' hair: soft gold-brown, a little lighter in streaks.
+  const h0 = W * FIBRE.hair0 - 6;
+  g.fillStyle = '#8a6434';
+  g.fillRect(h0, 0, W - h0, H);
+  for (let k = 0; k < 900; k++) {
+    g.fillStyle = `rgba(${r() < 0.5 ? '200,160,90' : '90,60,30'},${0.25 + r() * 0.35})`;
+    g.fillRect(h0 + r() * (W - h0), r() * H, 1 + r() * 2, 3 + r() * 8);
+  }
+  const t = texture(c, { aniso: 4 });
+  t.wrapS = THREE.ClampToEdgeWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/** A tube along a path, `radius` at each point, in the fibre texture's strip from s0 to s1 (round it) and `vPer` repeats a meter along it. */
+function tube(path: THREE.Vector3[], radius: (k: number) => number, sides: number, s0: number, s1: number, vPer: number) {
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  const uv: number[] = [];
+  const index: number[] = [];
+  const tangent = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+  const binormal = new THREE.Vector3();
+  let along = 0;
+  for (let i = 0; i < path.length; i++) {
+    const a = path[Math.max(0, i - 1)];
+    const b = path[Math.min(path.length - 1, i + 1)];
+    tangent.subVectors(b, a).normalize();
+    if (i === 0) {
+      // Any start square to the path; after that, carried along it without twisting.
+      normal.set(0, 1, 0).cross(tangent);
+      if (normal.lengthSq() < 1e-6) normal.set(1, 0, 0).cross(tangent);
+      normal.normalize();
+    } else {
+      along += path[i].distanceTo(path[i - 1]);
+      normal.sub(tangent.clone().multiplyScalar(normal.dot(tangent))).normalize();
+    }
+    binormal.crossVectors(tangent, normal);
+    const rad = radius(i / (path.length - 1));
+    for (let s = 0; s <= sides; s++) {
+      const th = (s / sides) * Math.PI * 2;
+      const n = normal.clone().multiplyScalar(Math.cos(th)).addScaledVector(binormal, Math.sin(th));
+      pos.push(path[i].x + n.x * rad, path[i].y + n.y * rad, path[i].z + n.z * rad);
+      nrm.push(n.x, n.y, n.z);
+      uv.push(s0 + (s1 - s0) * (s / sides), along * vPer);
+    }
+  }
+  for (let i = 0; i + 1 < path.length; i++)
+    for (let s = 0; s < sides; s++) {
+      const a = i * (sides + 1) + s;
+      const b = a + sides + 1;
+      index.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(index);
+  return geo.toNonIndexed();
+}
+
+/**
+ * The path of a fiddlehead: a stalk rising from the crown, then rolled up into
+ * a crozier, the coil tightening as it goes. `open` (0..1) is how far it has
+ * unrolled: a tight little coil on a short stalk, or a tall stalk with its last
+ * turn letting go. `o` is the way it leans out.
+ */
+export function crozier(foot: THREE.Vector3, o: THREE.Vector3, open: number, steps = 40) {
+  const stalk = THREE.MathUtils.lerp(0.06, 0.3, open);
+  const turns = THREE.MathUtils.lerp(3.3, 1.2, open) * Math.PI;
+  const r0 = THREE.MathUtils.lerp(0.032, 0.085, open);
+  const up = v(0, 1, 0);
+  const pts: THREE.Vector3[] = [];
+  const nStalk = Math.max(3, Math.round(steps * 0.25));
+  for (let i = 0; i < nStalk; i++) {
+    const k = i / nStalk;
+    pts.push(foot.clone().addScaledVector(up, stalk * k).addScaledVector(o, stalk * 0.18 * k * k));
+  }
+  const top = foot.clone().addScaledVector(up, stalk).addScaledVector(o, stalk * 0.18);
+  const centre = top.clone().addScaledVector(o, r0);
+  for (let i = 0; i <= steps; i++) {
+    const phi = (i / steps) * turns;
+    const rad = r0 * Math.exp(-0.2 * phi);
+    pts.push(centre.clone().addScaledVector(o, -Math.cos(phi) * rad).addScaledVector(up, Math.sin(phi) * rad));
+  }
+  return pts;
+}
+
+/**
+ * The tree fern's trunk: a column of matted roots, flared into a root mass at
+ * the floor and thickening again toward the crown, a little crooked; the old
+ * frond stubs in a spiral round its top; and the fiddleheads unrolling in the
+ * middle of the crown. Textured with fibres(), uv's into its strips.
+ */
+export function treeFernTrunk(high: boolean) {
+  const parts: THREE.BufferGeometry[] = [];
+  const H = TREE_CROWN.y - TREE_FERN.y;
+  const radial = high ? 22 : 12;
+  const rows = high ? 28 : 12;
+  const trunk = new THREE.CylinderGeometry(1, 1, H, radial, rows, true);
+  trunk.translate(0, H / 2, 0);
+  const tp = trunk.attributes.position;
+  const tu = trunk.attributes.uv;
+  /** The middle of the trunk at a height: it wanders a little. */
+  const spine = (y: number) => v(Math.sin(y * 1.3) * 0.04, y, Math.sin(y * 0.9 + 1) * 0.03);
+  for (let i = 0; i < tp.count; i++) {
+    const y = tp.getY(i);
+    const th = Math.atan2(tp.getZ(i), tp.getX(i));
+    const R = (0.14 + 0.08 * Math.exp(-y / 0.22) + 0.035 * THREE.MathUtils.smoothstep(y, H - 0.8, H)) * (1 + 0.06 * Math.sin(th * 3 + y * 2.3) + 0.04 * Math.sin(th * 7 - y * 5.1) + 0.025 * Math.sin(y * 17 + th * 2));
+    const c = spine(y);
+    tp.setXYZ(i, c.x + Math.cos(th) * R, y, c.z + Math.sin(th) * R);
+    tu.setXY(i, tu.getX(i) * FIBRE.trunk, y * 1.4);
+  }
+  trunk.computeVertexNormals();
+  parts.push(trunk.toNonIndexed());
+  // The stubs of old fronds, in a spiral round the top of the trunk, pointing out and a little up.
+  const r = seeded(808);
+  const nStubs = high ? 40 : 22;
+  for (let k = 0; k < nStubs; k++) {
+    const y = H - 0.62 + (k / nStubs) * 0.58;
+    const th = k * 2.39996;
+    const o = v(Math.cos(th), 0, Math.sin(th));
+    const R = 0.14 + 0.035 * THREE.MathUtils.smoothstep(y, H - 0.8, H);
+    const stub = new THREE.ConeGeometry(0.026 + r() * 0.01, 0.07 + r() * 0.04, 5, 1);
+    const sp = stub.attributes.uv;
+    for (let i = 0; i < sp.count; i++) sp.setXY(i, sp.getX(i) * FIBRE.trunk, sp.getY(i) * 0.2 + r() * 0.01);
+    const dir = o.clone().add(v(0, 0.45 + r() * 0.3, 0)).normalize();
+    stub.applyMatrix4(new THREE.Matrix4().compose(spine(y).addScaledVector(o, R + 0.015), new THREE.Quaternion().setFromUnitVectors(v(0, 1, 0), dir), v(1, 1, 0.7)));
+    parts.push(stub.toNonIndexed());
+  }
+  // The fiddleheads: young fronds coming up rolled, some still tight, some letting go.
+  const top = spine(H);
+  const opens = [0.05, 0.2, 0.35, 0.55, 0.8];
+  opens.forEach((open, k) => {
+    const a = k * 2.2 + 0.4;
+    const o = v(Math.cos(a), 0, Math.sin(a));
+    const path = crozier(top.clone().addScaledVector(o, 0.03 + open * 0.03).add(v(0, -0.02, 0)), o, open, high ? 44 : 22);
+    parts.push(tube(path, (s) => THREE.MathUtils.lerp(0.012, 0.0045, s), high ? 7 : 5, FIBRE.hair0, FIBRE.hair1, 6));
+  });
+  for (const p of parts) {
+    for (const name of Object.keys(p.attributes)) if (!['position', 'normal', 'uv'].includes(name)) p.deleteAttribute(name);
+  }
+  const geo = mergeGeometries(parts);
+  geo.translate(TREE_FERN.x, TREE_FERN.y, TREE_FERN.z);
+  return geo;
+}
+
+/** The baskets (wire, lined with moss), their chains, and the pots' chalked numbers: one mesh, in vertex colors. */
 function fernFurniture(high: boolean) {
   const parts: THREE.BufferGeometry[] = [];
   const shade = (g: THREE.BufferGeometry, hex: string) => {
@@ -805,17 +1073,6 @@ function fernFurniture(high: boolean) {
     const rod = new THREE.CylinderGeometry(0.005, 0.005, 0.6, 5, 1).translate(hook.x, hook.y + 0.3, hook.z);
     parts.push(shade(rod, '#2a2622'));
   }
-  // The tree fern's trunk: rough and fibrous, a little crooked.
-  const trunk = new THREE.CylinderGeometry(0.1, 0.15, 2.4, high ? 12 : 8, 8);
-  const tp = trunk.attributes.position;
-  for (let i = 0; i < tp.count; i++) {
-    const y = tp.getY(i);
-    const k = 1 + Math.sin(y * 23 + Math.atan2(tp.getZ(i), tp.getX(i)) * 3) * 0.06;
-    tp.setXYZ(i, tp.getX(i) * k + Math.sin(y * 1.3) * 0.04, y, tp.getZ(i) * k);
-  }
-  trunk.computeVertexNormals();
-  trunk.translate(TREE_FERN.x, 1.2, TREE_FERN.z);
-  parts.push(shade(trunk, '#3e2c1e'));
   // The staging's pots, numbered in chalk.
   parts.push(chalkNumbers(POTS));
   return mergeGeometries(parts);
@@ -853,7 +1110,8 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
     shared.uPlantA.value[SLOTS + i].set(1, 0, i * 1.7, b.height);
     shared.uPlantB.value[SLOTS + i].set(b.at.x, b.at.y, b.at.z, 0);
   });
-  const petals = parts('petal', strip(high ? 8 : 6, high ? 14 : 8), MAX.petal, { aPetal: 4, aWin: 4, aBase: 3, aTip: 3, aMark: 3 }, { roughness: 0.55 });
+  // Petals finely divided along their length on the better tier, so a frilled margin stays a smooth curve right up under the lens.
+  const petals = parts('petal', strip(high ? 10 : 6, high ? 24 : 10), MAX.petal, { aPetal: 4, aWin: 4, aBase: 3, aTip: 3, aMark: 3 }, { roughness: 0.55 });
   const leafMesh = parts('leaf', strip(high ? 6 : 4, high ? 10 : 6), MAX.leaf, { aLeaf: 4, aWin: 4, aColor: 3 }, { roughness: 0.6 });
   const stemGeo = new THREE.CylinderGeometry(0.8, 1, 1, 6, 1, true);
   stemGeo.translate(0, 0.5, 0);
@@ -893,6 +1151,11 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
   furniture.castShadow = true;
   furniture.receiveShadow = true;
   group.add(furniture);
+  // The tree fern's trunk, its old frond stubs and the fiddleheads in its crown: one textured mesh (the pots' kind of program).
+  const treeFern = new THREE.Mesh(treeFernTrunk(high), new THREE.MeshStandardMaterial({ map: fibres(), roughness: 0.95 }));
+  treeFern.castShadow = true;
+  treeFern.receiveShadow = true;
+  group.add(treeFern);
 
   // Something to click for each pot.
   const pickMat = new THREE.MeshBasicMaterial({ visible: false });
@@ -996,7 +1259,7 @@ export function buildFlowers(quality: 'high' | 'low'): Flowers {
       const side = new THREE.Vector3().crossVectors(UP, f.dir);
       if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
       const face = new THREE.Vector3().crossVectors(f.dir, side.normalize()).normalize();
-      put(leafMesh, 'leaf', frame(f.at, f.dir, face), f.slot, { aLeaf: [f.len, f.width, 6, f.arch], aWin: [0, 0.001, 0, 0], aColor: f.color.toArray() });
+      put(leafMesh, 'leaf', frame(f.at, f.dir, face), f.slot, { aLeaf: [f.len, f.width, f.shape ?? 6, f.arch], aWin: [0, 0.001, 0, 0], aColor: f.color.toArray() });
     }
     for (const [mesh, kind] of [
       [petals, 'petal'],

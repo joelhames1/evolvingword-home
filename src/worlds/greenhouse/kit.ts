@@ -40,9 +40,13 @@ const roomy = (p: THREE.Vector3) => !solid(p, 0.06);
 
 /** Every pot on the staging and a little of what grows in it: what the view of the staging keeps clear of the card. */
 const STAGE_FIT = POT_AT.slice(0, POTS).flatMap((p) => [p.clone(), p.clone().add(v(-0.11, POT.h, 0.02)), p.clone().add(v(0.11, POT.h, 0.02)), p.clone().add(v(0, POT.h + 0.3, 0))]);
-/** The staging from the aisle, square on (for a wide window), and along it from the potting bench's end (for a tall one). */
-const SQUARE_ON = { pos: v(-3.35, 2.0, 1.0), target: v(-3.5, 1.05, -1.55) };
-const ALONG = { pos: v(-1.5, 2.45, 0.2), target: v(-4.0, 0.98, -1.62) };
+/**
+ * The staging from the back of the aisle, square on (for a wide window), and
+ * from above the potting bench's end, looking along it (for a narrow one),
+ * clear of the hanging baskets.
+ */
+const SQUARE_ON = { pos: v(-3.3, 2.35, 1.6), target: v(-3.85, 1.0, -1.6) };
+const ALONG = { pos: v(-0.6, 2.6, 0.4), target: v(-4.1, 0.9, -1.65) };
 /**
  * The view of the staging for this window: square on when it's wide, turning
  * to look along the benches as it gets narrower, so the two rows of pots fit
@@ -51,7 +55,7 @@ const ALONG = { pos: v(-1.5, 2.45, 0.2), target: v(-4.0, 0.98, -1.62) };
  */
 export function stagingShot(aspect: number): Shot {
   const k = 1 - THREE.MathUtils.smoothstep(aspect, 0.8, 1.45);
-  return { pos: SQUARE_ON.pos.clone().lerp(ALONG.pos, k), target: SQUARE_ON.target.clone().lerp(ALONG.target, k), fov: 52 - 22 * k, lean: 0.04, shift: CARD, fit: STAGE_FIT };
+  return { pos: SQUARE_ON.pos.clone().lerp(ALONG.pos, k), target: SQUARE_ON.target.clone().lerp(ALONG.target, k), fov: 50 - 20 * k, lean: 0.04, shift: CARD, fit: STAGE_FIT };
 }
 
 /** A plant label pushed into the soil: "a gift from a friend". */
@@ -207,7 +211,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     const dir = v(b.axis.x * 0.25, 0.42, 1).normalize();
     const pos = b.at.clone().addScaledVector(dir, 0.34 + b.size * 2.5);
     for (let k = 0; k < 12 && !roomy(pos); k++) pos.addScaledVector(dir, 0.1);
-    return { pos, target: b.at.clone().add(v(0, -0.008, 0)), fov: 30, near: 0.02, lean: 0.006, shift: CARD };
+    // The whole bloom beside the card, whatever the window.
+    const fit = [v(-1, 0.6, 0), v(1, 0.6, 0), v(-1, -0.7, 0), v(1, -0.7, 0), v(0, 1, 0)].map((d) => b.at.clone().addScaledVector(d, b.size * 1.05));
+    return { pos, target: b.at.clone().add(v(0, -0.008, 0)), fov: 30, near: 0.02, lean: 0.006, shift: CARD, fit };
   };
   /**
    * Watching a seed come up: the pot and the whole plant it will grow into, from
@@ -219,9 +225,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     const foot = POT_AT[i];
     const soil = POT.h * 0.82;
     const top = soil + (plan ? plan.top : 0.45);
-    const dir = (i >= 8 ? v(0.14, 0.95, 0.78) : v(0.14, 0.5, 1)).normalize();
+    const dir = (i >= 8 ? v(0.12, 1.05, 0.75) : v(0.12, 0.72, 1)).normalize();
     const mid = foot.clone().add(v(0, top * 0.5, 0));
-    const pos = mid.clone().addScaledVector(dir, 0.55 + top * 1.1);
+    const pos = mid.clone().addScaledVector(dir, 0.75 + top * 1.25);
     for (let k = 0; k < 14 && !roomy(pos); k++) pos.addScaledVector(dir, 0.08);
     const fit = [foot.clone().add(v(-POT.r, 0, POT.r)), foot.clone().add(v(POT.r, 0, POT.r)), foot.clone().add(v(0, top, 0))];
     for (const b of plan?.blooms ?? []) {
@@ -252,8 +258,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       'The staging',
       'Breed a flower',
       [
-        'Click a flower, then another, and the bee carries the pollen from one to the other. The seed goes into an empty pot and grows in about twenty seconds.',
-        'Children take after both parents, with now and then a surprise.',
+        'Click a flower, then another: the bee carries the pollen across, and the seed comes up in an empty pot in about twenty seconds, taking after both, now and then with a surprise.',
         { note: `${plural(c.inFlower, 'flower', 'flowers')} in bloom · ${c.young ? `${c.young} growing · ` : ''}${c.empty ? plural(c.empty, 'empty pot', 'empty pots') : 'no empty pots (compost one to make room)'}${c.dry ? ` · ${plural(c.dry, 'plant', 'plants')} thirsty` : ''}` },
       ],
       [
@@ -435,7 +440,6 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     card(`Just opened · pot ${i + 1}`, gardenName(g), [{ list: traits(g) }, { note: `${latinName(g)}. ${parentage(p)}` }], [
       { label: 'Share it', run: () => void share(i) },
       { label: 'Water it', run: () => void waterPot(i) },
-      { label: 'Under the lens', run: () => closer(i) },
       { label: 'Back to the staging', quiet: true, run: () => wiring?.goTo('staging') },
     ]);
   };
