@@ -5,6 +5,7 @@
 // bounces against its stop, the brake handle drops and stays down until the
 // train moves again, the cord stretches and springs back.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvas, glow, texture } from '../../textures';
 import { NAMES, type Land } from './journey';
 import { ceilingAt, ROOM } from './plan';
@@ -31,11 +32,14 @@ function tabs(names: [string, string] | null, set: 0 | 1, state: LeverState, g: 
     g.lineWidth = 6;
     g.strokeRect(x + 4, 14, 236, 100);
     g.fillStyle = on ? '#1a1410' : '#5a5b5e';
-    g.font = '700 50px "Space Mono", monospace';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     const label = names ? names[i].replace(/^The /, '').toUpperCase() : '';
-    g.fillText(label, x + 122, 66);
+    // As big as fits on the tab.
+    let px = 50;
+    g.font = `700 ${px}px "Space Mono", monospace`;
+    while (g.measureText(label).width > 200 && px > 24) g.font = `700 ${(px -= 2)}px "Space Mono", monospace`;
+    g.fillText(label, x + 122, 64);
     // An arrow under each: which way the lever leans for it.
     g.fillStyle = on ? '#9c2a22' : '#3a3b3e';
     g.beginPath();
@@ -214,6 +218,27 @@ export function buildControls(materials: { brass: THREE.Material; iron: THREE.Ma
   const cordHit = new THREE.Mesh(new THREE.BoxGeometry(0.16, len + 0.12, 0.12), new THREE.MeshBasicMaterial({ visible: false }));
   cordHit.position.y = -len / 2 - 0.04;
   cord.add(cordHit);
+
+  // The parts that never move relative to their own group, merged per material.
+  for (const [g, still] of [
+    [lever, [plate, rim, quadrant, bezel, ...lever.children.filter((c) => (c as THREE.Mesh).geometry instanceof THREE.BoxGeometry && c !== plate && c !== rim && c !== leverHit)]],
+    [brake, [bbox, recess]],
+    [toggle, toggle.children],
+  ] as [THREE.Object3D, THREE.Object3D[]][]) {
+    const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+    for (const o of [...still]) {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) continue;
+      m.updateMatrix();
+      const geo = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone()).applyMatrix4(m.matrix);
+      if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(geo.attributes.position.count * 2), 2));
+      const mat = m.material as THREE.Material;
+      if (!byMat.has(mat)) byMat.set(mat, []);
+      byMat.get(mat)!.push(geo);
+      g.remove(m);
+    }
+    for (const [mat, geos] of byMat) g.add(new THREE.Mesh(mergeGeometries(geos)!, mat));
+  }
 
   // --- state and motion ----------------------------------------------------------------------
   let names: [string, string] | null = null;

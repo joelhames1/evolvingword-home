@@ -17,8 +17,8 @@ export const TRAIN_SPAN = { back: CAR.back - 75, front: CAR.front + 25 };
 export function nightUniforms(): DaylightUniforms {
   const u = daylightUniforms({
     sunDir: MOONLIGHT,
-    sunColor: new THREE.Color('#8ea6d8').multiplyScalar(0.34),
-    sky: new THREE.Color('#1c2a4a').multiplyScalar(0.55),
+    sunColor: new THREE.Color('#8ea6d8').multiplyScalar(0.55),
+    sky: new THREE.Color('#1c2a4a').multiplyScalar(0.7),
     ground: new THREE.Color('#0a0d14').multiplyScalar(0.5),
     haze: new THREE.Color('#0d1424'),
     hazeDensity: 0.0012,
@@ -72,7 +72,7 @@ const SPILL = /* glsl */ `
     float lo = ${WINDOW.y0.toFixed(2)} - d * 0.45;
     float hi = ${WINDOW.y1.toFixed(2)} + d * 0.35;
     float band = smoothstep(lo - 0.3, lo + 0.1, world.y) * (1.0 - smoothstep(hi - 0.1, hi + 0.3, world.y));
-    float wall = clamp(toward, 0.0, 1.0) * band;
+    float wall = clamp(toward, 0.0, 1.0) * band * 2.2;
     return lit * max(ground, wall) * exp(-d3 * 0.55) * uSpill;
   }
 `;
@@ -137,7 +137,7 @@ const FRAG = /* glsl */ `
       vec3 h = normalize(view + uSunDir);
       col += uSunColor * pow(max(dot(n, h), 0.0), 40.0) * uSheen;
     }
-    col += albedo * uSpillColor * spillAt(vWorld, n) * 0.9;
+    col += albedo * uSpillColor * spillAt(vWorld, n) * 1.3;
     col += albedo * sparkAt(vWorld);
     // The city's glow lights things a little from below the sky, everywhere.
     col += albedo * uGlow;
@@ -192,16 +192,23 @@ export function cityMaterial(u: DaylightUniforms) {
         float seed = vGlow.x;
         if (abs(n.y) < 0.5) {
           // A grid of windows: a floor every 3.2 m, a bay every 2.7 m, a sill and a lintel.
-          vec2 cell = vec2(floor(vUv.x / 2.7), floor(vUv.y / 3.2));
-          vec2 f = vec2(fract(vUv.x / 2.7), fract(vUv.y / 3.2));
-          float pane = step(0.22, f.x) * step(f.x, 0.78) * step(0.3, f.y) * step(f.y, 0.82);
+          vec2 g = vUv / vec2(2.7, 3.2);
+          vec2 cell = floor(g);
+          vec2 f = fract(g);
+          // Soft edges a pixel wide, and where the windows are smaller than a few pixels, their average:
+          // a grid that fine only shimmers.
+          vec2 fw = max(fwidth(g), vec2(1e-4));
+          vec2 lo = smoothstep(vec2(0.22, 0.3) - fw, vec2(0.22, 0.3) + fw, f);
+          vec2 hi = 1.0 - smoothstep(vec2(0.78, 0.82) - fw, vec2(0.78, 0.82) + fw, f);
+          float pane = lo.x * lo.y * hi.x * hi.y;
+          pane = mix(pane, 0.27, smoothstep(0.15, 0.45, max(fw.x, fw.y)));
           // No windows in the bottom meter or a half at the top (the parapet).
           pane *= step(1.2, vUv.y);
           float h = hash(cell + seed * 97.0);
           float on = step(h, vGlow.y);
           float tv = step(0.86, hash(cell * 1.7 + seed * 31.0));
           vec3 warm = mix(vec3(1.0, 0.72, 0.42), vec3(1.0, 0.85, 0.6), hash(cell + 3.1));
-          vec3 glowCol = mix(warm, vec3(0.55, 0.7, 1.0), tv) * (1.2 + 1.2 * hash(cell * 2.3));
+          vec3 glowCol = mix(warm, vec3(0.55, 0.7, 1.0), tv) * (0.7 + 0.6 * hash(cell * 2.3));
           // Dark glass catches a little of the sky.
           albedo = mix(albedo, vec3(0.05, 0.06, 0.08), pane * 0.85);
           lit = glowCol * pane * on;
@@ -209,7 +216,7 @@ export function cityMaterial(u: DaylightUniforms) {
           float shop = step(vUv.y, 3.0) * step(0.08, f.x) * step(f.x, 0.92) * step(0.5, vUv.y);
           lit += vec3(1.0, 0.8, 0.55) * 0.9 * shop * step(0.9, hash(vec2(cell.x, 9.0) + seed * 13.0));
         }
-        vec3 col = daylight(albedo, n, vWorld) + albedo * uGlow * 1.5 + lit;
+        vec3 col = daylight(albedo * 0.55, n, vWorld) + albedo * uGlow * 1.5 + lit;
         gl_FragColor = vec4(fade(col, vWorld), 1.0);
       }
     `,

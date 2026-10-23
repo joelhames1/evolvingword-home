@@ -38,10 +38,14 @@ interface Piece {
 
 export interface Land {
   group: THREE.Group;
-  /** Moves the pieces to where the train is, and builds the next one that's needed. */
-  update(s: number, camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer): void;
-  /** The line ahead has changed from here on: build it again. */
-  invalidate(from: number): void;
+  /**
+   * Moves the pieces to where the train is, and builds the next one that's needed.
+   * `facing` is the side of the train the camera can see from where it is (-1 the
+   * window side, 1 the corridor's, 0 both), so the other side needn't be drawn.
+   */
+  update(s: number, camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, facing?: number): void;
+  /** The line ahead has changed from here on: build it again (all at once, if `now`). */
+  invalidate(from: number, now?: boolean): void;
   /** The lamps near the line within reach of the compartment's window, at track position u. */
   sweeps(): Sweep[];
   /** The stations' flap signs nearby, in the scene. */
@@ -58,6 +62,7 @@ export interface Land {
  */
 function halves(m: Mesher): THREE.BufferGeometry[] {
   if (m.empty) return [];
+  const sides = [-1, 0, 1];
   const parts = [new Mesher(), new Mesher(), new Mesher()];
   const n = m.pos.length / 9;
   for (let t = 0; t < n; t++) {
@@ -72,7 +77,12 @@ function halves(m: Mesher): THREE.BufferGeometry[] {
       into.uv.push(m.uv[i * 2], m.uv[i * 2 + 1]);
     }
   }
-  return parts.filter((p) => !p.empty).map((p) => p.geometry());
+  return parts.flatMap((p, i) => {
+    if (p.empty) return [];
+    const g = p.geometry();
+    g.userData.side = sides[i];
+    return [g];
+  });
 }
 
 export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; flapTexture: THREE.Texture }): Land {
@@ -235,7 +245,9 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       geo.setAttribute('color', new THREE.BufferAttribute(c2, 3));
       geo.setIndex(index);
       geo.computeBoundingSphere();
-      return new THREE.Mesh(geo, mats.terrain);
+      const mesh = new THREE.Mesh(geo, mats.terrain);
+      mesh.userData.side = j1 === mid ? -1 : 1;
+      return mesh;
     });
   }
 
@@ -251,7 +263,9 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
       const pz = geo.attributes.position.getZ(i);
       uv.setXY(i, base + px, pz);
     }
-    return new THREE.Mesh(geo, mats.water);
+    const mesh = new THREE.Mesh(geo, mats.water);
+    mesh.userData.side = z1 <= 0 ? -1 : z0 >= 0 ? 1 : 0;
+    return mesh;
   }
 
   function build(piece: Piece) {
@@ -301,6 +315,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     ] as const)
       for (const geo of halves(m)) {
         const mesh = new THREE.Mesh(geo, mat);
+        mesh.userData.side = geo.userData.side;
         if (m === b.pools) mesh.renderOrder = 2;
         out.add(mesh);
       }
@@ -355,7 +370,7 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
     group,
     clock,
     ground,
-    update(s, camera, renderer) {
+    update(s, camera, renderer, facing = 0) {
       const k0 = Math.floor((s - BEHIND) / CHUNK);
       const k1 = Math.floor((s + AHEAD) / CHUNK);
       const want = new Set<number>();
@@ -382,10 +397,13 @@ export function buildLand(opts: { journey: Journey; uniforms: DaylightUniforms; 
         if (!live) continue;
         p.group.position.x = p.u0 - s;
         for (const l of p.lights) l.fit(camera, renderer);
+        for (const c of p.group.children) if (c.userData.side) c.visible = !facing || c.userData.side === facing;
       }
     },
-    invalidate(from) {
+    invalidate(from, now = false) {
+      ends.clear();
       for (const p of pool) if (!Number.isNaN(p.u0) && p.u0 + CHUNK > from) p.dirty = true;
+      if (now) first = true;
     },
     sweeps() {
       const out: Sweep[] = [];

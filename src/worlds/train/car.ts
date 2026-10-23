@@ -648,11 +648,8 @@ export function buildCar(): Car {
     halos.push(sp);
   }
 
-  // Everything inside casts no shadow but the desk lamp's (the studio's); the shell takes them.
-  group.traverse((o) => {
-    const m = o as THREE.Mesh;
-    if (m.isMesh && m.castShadow === undefined) m.castShadow = false;
-  });
+  // Hundreds of fixed little parts: drawn as one mesh per material, not one each.
+  mergeStatic(group, new Set<THREE.Object3D>([pane, windowHit, ...curtains.map((c) => c.mesh)]));
 
   let paneDrop = 0;
   const bulbBase = bulb.color.clone();
@@ -705,6 +702,42 @@ export function buildCar(): Car {
     lights: { ceiling: ceilingLight, reading, corridor, moon, sweep },
     materials: { brass, trim, velvet, iron, paint, roofMat, gold, leather, darkBrass },
   };
+}
+
+/**
+ * Merges every mesh in the group that never moves or changes shape into one
+ * mesh per material (and per whether it casts shadows), leaving alone what's
+ * kept (and anything under it) and anything see-through.
+ */
+function mergeStatic(group: THREE.Group, keep: Set<THREE.Object3D>) {
+  group.updateMatrixWorld(true);
+  const toLocal = group.matrixWorld.clone().invert();
+  const lists = new Map<string, { mat: THREE.Material; cast: boolean; geos: THREE.BufferGeometry[] }>();
+  const gone: THREE.Mesh[] = [];
+  const kept = (o: THREE.Object3D) => {
+    for (let p: THREE.Object3D | null = o; p && p !== group; p = p.parent) if (keep.has(p)) return true;
+    return false;
+  };
+  group.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || kept(m) || Array.isArray(m.material) || m.material.transparent || m.renderOrder) return;
+    const g = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone()).applyMatrix4(toLocal.clone().multiply(m.matrixWorld));
+    for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+    if (!g.attributes.normal) g.computeVertexNormals();
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+    g.clearGroups();
+    const key = `${m.material.uuid}:${m.castShadow}`;
+    if (!lists.has(key)) lists.set(key, { mat: m.material, cast: m.castShadow, geos: [] });
+    lists.get(key)!.geos.push(g);
+    gone.push(m);
+  });
+  for (const m of gone) m.parent?.remove(m);
+  for (const { mat, cast, geos } of lists.values()) {
+    const merged = new THREE.Mesh(mergeGeometries(geos)!, mat);
+    merged.castShadow = cast;
+    merged.receiveShadow = true;
+    group.add(merged);
+  }
 }
 
 /** A bogie under the car at x: its frame, four wheels, springs. */

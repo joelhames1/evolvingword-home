@@ -109,6 +109,16 @@ function conifer(b: Build, u: number, z: number, height: number, turn: number, s
 function broadleaf(b: Build, u: number, z: number, height: number, turn: number) {
   const y = b.ground(u, z);
   const w = height * 0.62;
+  // Close to the line, a fuller crown of several lumps; further off one will do.
+  if (Math.abs(z) < 40) {
+    b.decor.add(SHAPES.cylinder, place(x(b, u), y - 0.2, z, 0.35, height * 0.55, 0.35), DARK.trunk);
+    for (let k = 0; k < 5; k++) {
+      const a = turn + k * 1.3;
+      const rr = k === 0 ? 0 : w * 0.32;
+      b.decor.add(SHAPES.blob, place(x(b, u) + Math.cos(a) * rr, y + height * (0.62 + (k % 2) * 0.12), z + Math.sin(a) * rr, w * 0.62, height * 0.42, w * 0.62, a), DARK.leaf.clone().multiplyScalar(0.9 + k * 0.06));
+    }
+    return;
+  }
   if (Math.abs(z) < 60) b.decor.add(SHAPES.cylinder, place(x(b, u), y - 0.2, z, 0.35, height * 0.5, 0.35), DARK.trunk);
   b.decor.add(SHAPES.blob, place(x(b, u), y + height * 0.62, z, w, height * 0.7, w, turn), DARK.leaf);
   if (Math.abs(z) < 250) b.decor.add(SHAPES.blob, place(x(b, u) + w * 0.25, y + height * 0.75, z + w * 0.1, w * 0.6, height * 0.45, w * 0.6, turn + 1), DARK.leaf.clone().multiplyScalar(1.15));
@@ -263,7 +273,7 @@ function dressFields(b: Build, leg: Leg) {
   // Trees along the hedgerows and in little woods.
   scatter(b, leg, 14, -1300, 1300, 1, (u, z, r) => {
     const az = Math.abs(z);
-    if (az < 12) return;
+    if (az < 14) return;
     const wood = noise((u - leg.start) / 300, z / 300, s + 3) > 0.35;
     const hedge = Math.abs(((z + noise((u - leg.start) / 80, 0, s) * 10) % 85) / 85) < 0.08 || Math.abs(((u - leg.start) % 110) / 110) < 0.06;
     if (!(wood && r < 0.85) && !(hedge && r < 0.55)) return;
@@ -406,7 +416,7 @@ function dressGorge(b: Build, leg: Leg) {
   // Pines on the tops and down the slopes, thinning where the walls get sheer.
   scatter(b, leg, 11, -1300, 1300, 11, (u, z, r) => {
     const az = Math.abs(z);
-    if (az < 9) return;
+    if (az < (z < 0 ? 13 : 9)) return;
     const local = u - leg.start;
     const d = Math.abs(local - gorgeAt(z, s)) / gorgeHalf(z, s);
     if (d > 0.82 && d < 1.03) return;
@@ -530,7 +540,7 @@ function dressPass(b: Build, leg: Leg) {
   // Snowy firs down the valley side and up the mountain.
   scatter(b, leg, 10, -1300, 900, 21, (u, z, r) => {
     const az = Math.abs(z);
-    if (az < 8 || inTunnel(u)) return;
+    if (az < (z < 0 ? 13 : 8) || inTunnel(u)) return;
     const dense = noise(local(u) / 140, z / 140, s + 7) > 0.05;
     if (r > (dense ? 0.7 : 0.15)) return;
     if (z > 0 && z > 250) return;
@@ -611,10 +621,11 @@ function tunnel(b: Build, a: number, e: number) {
       }
     }
     // Lamps on the window-side wall, and a cable run.
-    for (let k = Math.ceil((from - a) / 28); a + k * 28 < to; k++) {
-      const lu = a + k * 28 + 6;
+    for (let k = Math.ceil((from - a) / 22); a + k * 22 < to; k++) {
+      const lu = a + k * 22 + 6;
       if (lu >= to) break;
-      b.decor.add(SHAPES.box, place(x(b, lu), 1.9, -W + 0.1, 0.5, 0.18, 0.12), DARK.iron, LIT.amber.clone().multiplyScalar(1.4));
+      b.decor.add(SHAPES.box, place(x(b, lu), 1.9, -W + 0.1, 0.5, 0.18, 0.12), DARK.iron, LIT.amber.clone().multiplyScalar(2.2));
+      pool(b, lu, -W + 1.2, 1.4, LIT.amber.clone().multiplyScalar(0.12));
       b.lights.push({ pos: new THREE.Vector3(x(b, lu), 1.9, -W + 0.25), color: LIT.amber.clone().multiplyScalar(0.8), size: 1.2 });
       b.sweeps.push({ u: lu, y: 1.9, z: -W + 0.3, color: LIT.amber.clone().multiplyScalar(0.5), power: 2.0 });
     }
@@ -693,7 +704,7 @@ function dressCity(b: Build, leg: Leg) {
             const depth = 11 + hash(lot, row * 3 + face, s + k) * 12;
             const h = (9 + Math.pow(hash(lot, row * 5 + face, s + k * 3), 2) * 26) * tall;
             const zc = sign * (edge + (face * depth) / 2);
-            building(b, mid, zc, w - 0.6, depth, h, STREET, hash(lot, k, s + row), row < 2 ? 0.07 : 0.05);
+            building(b, mid, zc, w - 0.6, depth, h, STREET, hash(lot, k, s + row), row < 2 ? 0.045 : 0.03);
           }
         }
       });
@@ -791,8 +802,8 @@ function dressLake(b: Build, leg: Leg) {
   const s = leg.seed % 997;
   const L = LAYOUT.lake;
   // Woods up the hill on the corridor side, and a fringe of trees along the shore.
-  scatter(b, leg, 10, -14, 1100, 31, (u, z, r) => {
-    if (Math.abs(z) < 7) return;
+  scatter(b, leg, 10, -22, 1100, 31, (u, z, r) => {
+    if (Math.abs(z) < 12) return;
     if (z < 0 && r > 0.25) return;
     const dense = noise((u - leg.start) / 120, z / 120, s + 2) > -0.2;
     if (r > (dense ? 0.8 : 0.2)) return;

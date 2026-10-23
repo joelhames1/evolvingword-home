@@ -98,10 +98,10 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const glintMat = (c: string) => new THREE.SpriteMaterial({ map: glow('rgba(255,210,150,1)', 64), color: c, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.3 });
   const glintLamp = new THREE.Sprite(glintMat('#ffcf96'));
   glintLamp.position.copy(mirror(ON_TABLE.lamp.clone().add(v(0, 0.29, 0))));
-  glintLamp.scale.setScalar(0.34);
+  glintLamp.scale.setScalar(0.2);
   const glintRead = new THREE.Sprite(glintMat('#ffd8a8'));
   glintRead.position.copy(mirror(v(ROOM.x0 + 0.17, 1.31, 0.02)));
-  glintRead.scale.setScalar(0.2);
+  glintRead.scale.setScalar(0.13);
   glints.add(glintLamp, glintRead);
 
   // --- the station's sign: something to click when one's outside -----------------------------
@@ -126,6 +126,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   let deskLamp: { spot: THREE.SpotLight; fill: THREE.PointLight; base: [number, number] } | null = null;
   let lastRenderer: THREE.WebGLRenderer | null = null;
   let lastCalls = 0;
+  const look = new THREE.Vector3();
   let lineItems: Studio['line']['items'] = [];
   ticket.stamp(landNow);
   const hintsEl = () => document.getElementById('hints');
@@ -363,13 +364,16 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         spot.position.copy(bulbAt).add(v(0, -0.02, 0.03));
         spot.target.position.copy(bulbAt).add(v(0.35, -0.3, 0.32));
         spot.angle = 1.05;
+        // It lights the table and not much past it, so only what's on the table need cast a shadow for it.
+        spot.distance = 1.7;
       }
       fill?.position.copy(bulbAt).add(v(0, 0.05, 0.1));
       if (halo) {
         halo.position.copy(bulbAt);
         halo.scale.setScalar(0.32);
       }
-      if (spot && fill) deskLamp = { spot, fill, base: [spot.intensity, fill.intensity] };
+      // (A shaded lamp a hand's breadth over the table: much gentler than the desk's.)
+      if (spot && fill) deskLamp = { spot, fill, base: [1.15, 0.45] };
       // The rest of the table.
       s.watch.group.position.copy(ON_TABLE.watch);
       s.watch.group.rotation.y = -0.2;
@@ -463,12 +467,12 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     closeups(s: Studio) {
       const crtAt = ON_TABLE.crt.clone().add(v(0, 0.33, 0.236));
       return {
-        desk: { pos: v(0.3, 1.5, 0.17), target: v(0.14, 1.26, -1.55), fov: 64, lean: 0.04 },
+        desk: { pos: v(0.3, 1.5, 0.13), target: v(0.14, 1.26, -1.55), fov: 64, lean: 0.04 },
         about: { pos: v(0.25, 1.5, 0.1), target: v(0.05, 1.2, -1.55), fov: 54, lean: 0.03, shift: -CARD },
         signal: { pos: crtAt.clone().add(v(0, 0.01, 0.54)), target: crtAt.clone().add(v(0, -0.004, 0)), fov: 31, lean: 0.012, near: 0.02 },
         treats: { pos: v(0.53, 1.12, -0.86), target: v(0.53, 0.8, -1.36), fov: 34, lean: 0.015, near: 0.02, shift: CARD },
         ticket: { pos: ON_TABLE.ticket.clone().add(v(0.0, 0.3, 0.17)), target: ON_TABLE.ticket.clone().add(v(0, 0, -0.005)), fov: 30, lean: 0.008, near: 0.02, shift: CARD },
-        lever: { pos: v(0.98, 1.6, -0.82), target: LEVER_AT.clone().add(v(0, 0.27, 0.05)), fov: 34, lean: 0.015, shift: CARD },
+        lever: { pos: v(0.82, 1.64, -0.5), target: LEVER_AT.clone().add(v(0, 0.26, 0.05)), fov: 40, lean: 0.015, shift: CARD },
         brake: { pos: v(-0.66, 1.58, -0.9), target: BRAKE_AT.clone().add(v(0, 0, 0.05)), fov: 32, lean: 0.015, shift: CARD },
         // Nose to the glass, looking down and back along the train at the wheels.
         sparks: { pos: v(0.42, 1.48, -1.3), target: v(-2.6, -1.0, -3.0), fov: 64, lean: 0.01 },
@@ -536,7 +540,10 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       const s = journey.s;
       const vNow = journey.v;
       const uWin = s + WINDOW_X;
-      land.update(s, camera, renderer);
+      // From the compartment looking out, the far side of the train can't be seen; nor from the corridor, this side.
+      camera.getWorldDirection(look);
+      const at = where(camera.position);
+      land.update(s, camera, renderer, at === 'room' && look.z < -0.3 ? -1 : at === 'corridor' && look.z > 0.3 ? 1 : 0);
       sky.tick(t, camera);
       land.clock.tick();
       uniforms.uTime.value = t;
@@ -596,10 +603,10 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       }
 
       // The lamps in the glass: brighter the darker it is outside, gone where the window's down or we're outside.
-      const dark = 1 + tunnelK * 1.6;
+      const dark = (1 + tunnelK * 1.6) * smooth(-1.05, -0.75, camera.position.z);
       glints.visible = inside > 0;
-      glintLamp.material.opacity = (deskLamp && deskLamp.spot.intensity > 0 ? 0.32 : 0) * dark * flicker;
-      glintRead.material.opacity = 0.26 * dark * flicker * (1 - windowK);
+      glintLamp.material.opacity = (deskLamp && deskLamp.spot.intensity > 0 ? 0.22 : 0) * dark * flicker;
+      glintRead.material.opacity = 0.2 * dark * flicker * (1 - windowK);
 
       // A lamp outside going by: its light sweeps across the compartment.
       let best: { k: number; x: number; y: number; z: number; color: THREE.Color } | null = null;
@@ -758,7 +765,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       jump: (l: Land, at: number, speed?: number) => {
         journey.reset(l, at, speed);
         landNow = l;
-        land.invalidate(-Infinity);
+        land.invalidate(-Infinity, true);
       },
       pull: () => pull(),
       brake: () => brake(),

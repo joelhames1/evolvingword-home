@@ -121,10 +121,10 @@ export function groundOf(leg: Leg, u: number, z: number): number {
 
 const C = (hex: string) => new THREE.Color(hex);
 const COLORS = {
-  grass: C('#2e3d27'),
-  meadow: C('#3c4a2c'),
-  plough: C('#3b2c22'),
-  stubble: C('#5a4b2e'),
+  grass: C('#3d5034'),
+  meadow: C('#4f6040'),
+  plough: C('#4a3a2e'),
+  stubble: C('#76664a'),
   hedge: C('#1d2a1a'),
   rock: C('#4c4b4f'),
   darkRock: C('#2f2e33'),
