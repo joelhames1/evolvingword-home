@@ -220,6 +220,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
           : [`No points for a while. We're in ${NAMES[landNow].toLowerCase()}; at the end of it the line forks for ${branchName(0)} or ${branchName(1)}.`, 'The lamp lights up as the junction comes near. Then pull the lever to pick.'];
     wiring?.card('The points lever', st === 'live' ? 'A junction ahead' : st === 'locked' ? 'Set and locked' : 'No junction yet', body, st === 'live' ? [{ label: 'Throw the lever', run: () => pull() }] : []);
   };
+  /** Standing at the lever with its card up: the card follows the junction. */
+  const atLever = () => !!wiring && wiring.current() === 'lever' && !wiring.moving();
   const pull = () => {
     if (!journey.pull()) {
       wiring?.goTo('lever');
@@ -242,7 +244,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     band.brakeOn();
     wiring?.sound.click();
     say('EMERGENCY STOP');
-    // Over to the window to watch the sparks, if we're in the compartment.
+    // Out to the line to watch the sparks, if we're in the compartment.
     const here = wiring?.current() ?? '';
     if (wiring && where(SHOTS[here]?.pos ?? MIDDLE) === 'room') wiring.goTo('sparks');
     return true;
@@ -286,6 +288,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const onEvent = (e: TrainEvent) => {
     switch (e.kind) {
       case 'points':
+        if (atLever()) leverCard();
         band.points();
         flickerUntil = performance.now() + 750;
         jolt = 1;
@@ -297,10 +300,11 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       case 'lit': {
         const j = journey.junction();
         say(`POINTS AHEAD · THE LEVER'S LIT · ${NAMES[j.to[j.set ? 0 : 1]].toUpperCase()} OR ${NAMES[j.to[j.set]].toUpperCase()}`);
+        if (atLever()) leverCard();
         break;
       }
       case 'locked':
-        if (wiring?.current() === 'lever') leverCard();
+        if (atLever()) leverCard();
         break;
       case 'arrive':
         band.chime();
@@ -511,8 +515,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         ticket: { pos: ON_TABLE.ticket.clone().add(v(0.0, 0.3, 0.17)), target: ON_TABLE.ticket.clone().add(v(0, 0, -0.005)), fov: 30, lean: 0.008, near: 0.02, shift: CARD },
         lever: { pos: v(0.82, 1.64, -0.5), target: LEVER_AT.clone().add(v(0, 0.26, 0.05)), fov: 40, lean: 0.015, shift: CARD },
         brake: { pos: v(-0.66, 1.58, -0.9), target: BRAKE_AT.clone().add(v(0, 0, 0.05)), fov: 32, lean: 0.015, shift: CARD },
-        // Nose to the glass, looking down and back along the train at the wheels.
-        sparks: { pos: v(0.22, 1.56, -1.42), target: v(-1.2, -0.6, -4.6), fov: 64, lean: 0.01 },
+        // Out by the line, low, just behind our wheels: the sparks fly at you.
+        sparks: { pos: v(-4.6, -0.15, -3.9), target: v(0.3, -1.0, -0.8), fov: 50, lean: 0.01 },
         honors: { pos: v(-0.45, 1.52, -0.24), target: v(ROOM.x1, 1.32, -0.26), fov: 52, lean: 0.04 },
         medals: { pos: v(0.55, 1.62, -0.27), target: v(ROOM.x1 - 0.05, 1.6, -0.27), fov: 40, lean: 0.015, shift: CARD },
         library: { pos: v(0.22, 1.12, -0.25), target: v(ROOM.x1, 0.66, -0.25), fov: 50, lean: 0.03, shift: 0.1 },

@@ -70,7 +70,7 @@ export function natural(land: Land, u: number, z: number, seed: number): number 
       // The valley on the window side: down and away, with peaks beyond it.
       const fall = -320 * Math.pow(smooth(4, 950, az), 0.8);
       const knolls = fbm(u / 160 + s, z / 160, 33) * 26 * smooth(20, 250, az);
-      const beyond = 1050 * smooth(950, 1500, az) * (0.45 + ridged(u / 420 + s, z / 420, 34));
+      const beyond = 600 * smooth(800, 1400, az) * (0.45 + ridged(u / 420 + s, z / 420, 34));
       let h = -1.8 + fall + knolls + beyond;
       // Over the tunnel, the mountain comes right across the line.
       const t = LAYOUT.pass.tunnel!;
@@ -165,8 +165,11 @@ export function paint(out: THREE.Color, leg: Leg, u: number, z: number, h: numbe
       break;
     }
     case 'pass': {
-      out.copy(COLORS.snow).multiplyScalar(0.92 + 0.08 * noise(local / 20, z / 20, 65));
-      out.lerp(COLORS.darkRock, smooth(0.75, 1.3, slope) * 0.85);
+      // Snow drifted in waves by the wind, a rock showing through here and there; on the
+      // steep faces bare rock, but for the snow that holds to the high ridges.
+      out.copy(COLORS.snow).multiplyScalar(0.84 + 0.1 * noise(local / 20, z / 20, 65) + 0.06 * Math.sin(local / 3.1 + noise(local / 40, z / 9, 68) * 4));
+      out.lerp(COLORS.darkRock, 0.6 * smooth(0.62, 0.8, noise(local / 6, z / 6, 69)) * smooth(6, 14, az));
+      out.lerp(COLORS.darkRock, smooth(0.75, 1.3, slope) * 0.85 * (1 - 0.6 * smooth(120, 600, h)));
       break;
     }
     case 'city': {
