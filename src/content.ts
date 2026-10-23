@@ -8,7 +8,7 @@ export const ABOUT = {
   lines: [
     'I write poems in fountain pen, run races of every length, and keep a map of the places I have been.',
     'Evolving Word is my studio: a room for making things with the people I love, and a few things just for me.',
-    'Everything here was built with AI as a collaborator. The mountains are code. So is the music on the tape deck.',
+    'Everything here was built with AI as a collaborator. Every world is code, and so is the music on the tape deck.',
   ],
 };
 
