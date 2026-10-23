@@ -247,8 +247,11 @@ const SHAPE = /* glsl */ `
       float wave = sin(t * 10.0 + u * 2.0 + seed * 9.0) + 0.3 * sin(t * 23.0 - seed * 5.0);
       z += wave * 0.05 * w * pow(abs(u), 2.0) * smoothstep(0.15, 0.7, t);
     }
+    // Each petal turned a little about its midrib, the same way round in every one, so where two
+    // overlap one margin lies over its neighbour's rather than through it (a frilled one, more).
+    z += u * w * (shape > 1.5 && shape < 2.5 ? 0.3 : 0.12) * smoothstep(0.0, 0.45, t);
     // And a slight twist along its length, each petal its own.
-    float tw = (seed - 0.5) * 0.35 * t;
+    float tw = (seed - 0.5) * 0.2 * t;
     float xt = x * cos(tw) - z * sin(tw);
     z = x * sin(tw) + z * cos(tw);
     x = xt;
@@ -268,8 +271,11 @@ const SHAPE = /* glsl */ `
     vec3 q = petalAt(u, t, open, aWin.w);
     // (The shadow's pass needs only where it is, not which way it faces.)
     #ifndef G_DEPTH
-      vec3 du = petalAt(min(u + 0.04, 1.0), t, open, aWin.w) - petalAt(max(u - 0.04, -1.0), t, open, aWin.w);
-      vec3 dt = petalAt(u, min(t + 0.03, 1.0), open, aWin.w) - petalAt(u, max(t - 0.03, 0.0), open, aWin.w);
+      // One step across and one along (back the other way at the far edges): three shapes, not five.
+      float su = u < 0.96 ? 0.04 : -0.04;
+      float st = t < 0.97 ? 0.03 : -0.03;
+      vec3 du = (petalAt(u + su, t, open, aWin.w) - q) * sign(su);
+      vec3 dt = (petalAt(u, t + st, open, aWin.w) - q) * sign(st);
       vec3 nn = cross(du, dt);
       n = length(nn) > 1e-9 ? normalize(nn) : vec3(0.0, 0.0, 1.0);
     #endif
@@ -367,13 +373,14 @@ const PAINT = /* glsl */ `
     float t = part.y;
     if (u < mix(0.07, 0.03, big)) return true;
     if (t < mix(0.12, 0.1, big)) return false;
-    float f = fract(t * mix(17.0, 34.0, big) + u * mix(1.6, 2.6, big) + step(0.0, part.x) * 0.5);
+    float f = fract(t * mix(17.0, 26.0, big) + u * mix(1.6, 2.2, big) + step(0.0, part.x) * 0.5);
     // Each leaflet narrows toward its own tip, at the frond's edge.
     float reach = 0.36 * (1.0 - u * 0.75);
     if (big > 0.5) {
-      float lobes = u * 8.0;
+      // Cut into lobes (pinnules) all along it, deeply: lace, not a comb.
+      float lobes = u * 9.0;
       float fine = clamp(1.6 - fwidth(lobes) * 2.0, 0.0, 1.0);
-      reach *= mix(1.08, 0.62 + 0.5 * abs(sin(lobes * 3.14159)), fine);
+      reach *= mix(1.0, 0.42 + 0.72 * pow(abs(sin(lobes * 3.14159)), 0.7), fine);
     }
     return abs(f - 0.5) < reach;
   }
@@ -714,7 +721,7 @@ export function treeFernFronds(slot: number): Frond[] {
   const r = seeded(5150);
   const out: Frond[] = [];
   const crown = TREE_CROWN;
-  const greens = ['#3c6624', '#46702a', '#365c20', '#4e782c', '#41692a'];
+  const greens = ['#4f7e2c', '#5a8a32', '#476f28', '#62903a', '#55822e'];
   const room = (o: THREE.Vector3, from: THREE.Vector3) => {
     const rx = Math.abs(o.x) > 1e-3 ? (o.x > 0 ? HOUSE.x1 - 0.14 - from.x : from.x - HOUSE.x0 - 0.14) / Math.abs(o.x) : Infinity;
     const rz = Math.abs(o.z) > 1e-3 ? (o.z > 0 ? HOUSE.back - 0.12 - from.z : from.z - HOUSE.front - 0.12) / Math.abs(o.z) : Infinity;
@@ -725,20 +732,22 @@ export function treeFernFronds(slot: number): Frond[] {
     const th = Math.atan(lift);
     return ((Math.sin(th) - Math.sin(th - arch)) / arch) * len;
   };
-  const N = 24;
+  const N = 30;
   for (let k = 0; k < N; k++) {
     const a = k * 2.39996 + (r() - 0.5) * 0.3;
     const o = v(Math.cos(a), 0, Math.sin(a));
     const from = crown.clone().addScaledVector(o, 0.07 + r() * 0.03).add(v(0, (r() - 0.5) * 0.06, 0));
     const space = room(o, from);
-    // 0 hard against a wall, 1 out over the house.
-    const open = THREE.MathUtils.smoothstep(space, 0.6, 1.6);
-    const lift = THREE.MathUtils.lerp(1.9, 0.5, open) + (r() - 0.5) * 0.25;
-    const arch = THREE.MathUtils.lerp(1.15, 1.6, open) * (0.9 + r() * 0.2);
-    let len = THREE.MathUtils.lerp(0.95, 1.42, open) * (0.88 + r() * 0.2);
+    // 0 hard against a wall, 1 out over the house (and less so along the back wall, over the prizes).
+    const open = THREE.MathUtils.smoothstep(space, 0.6, 2.2) * (1 - 0.55 * THREE.MathUtils.smoothstep(o.z, 0.1, 0.6));
+    // A shuttlecock of great fronds, longer than the trunk is tall where there's room: rising well
+    // up before they arch over high above the aisle, wider than a palm's and lacier.
+    const lift = THREE.MathUtils.lerp(2.0, 1.0, open) + (r() - 0.5) * 0.3;
+    const arch = THREE.MathUtils.lerp(1.2, 1.9, open) * (0.9 + r() * 0.2);
+    let len = THREE.MathUtils.lerp(0.95, 2.0, open) * (0.88 + r() * 0.2);
     const far = reach(lift, arch, len);
     if (far > space) len *= space / far;
-    out.push({ slot, at: from, dir: o.clone().add(v(0, lift, 0)).normalize(), len, width: len * 0.34, arch, shape: 7, color: new THREE.Color(greens[k % greens.length]).multiplyScalar(0.85 + r() * 0.3) });
+    out.push({ slot, at: from, dir: o.clone().add(v(0, lift, 0)).normalize(), len, width: len * 0.46, arch, shape: 7, color: new THREE.Color(greens[k % greens.length]).multiplyScalar(0.85 + r() * 0.3) });
   }
   // Young fronds in the middle, standing up, a fresh yellow green.
   for (let k = 0; k < 4; k++) {
@@ -875,27 +884,37 @@ function fibres() {
   const [c, g] = canvas(W, H);
   const r = rng(733);
   const tw = W * FIBRE.trunk;
-  g.fillStyle = '#21160f';
+  g.fillStyle = '#1c120c';
   g.fillRect(0, 0, W, H);
-  // Old frond scars: dark bands across, a little ragged.
-  for (let k = 0; k < 7; k++) {
-    g.fillStyle = `rgba(10,6,4,${0.35 + r() * 0.3})`;
-    g.fillRect(0, r() * H, tw, 3 + r() * 6);
-  }
-  // The roots: many fine strands down the trunk, each wandering a little, wrapping top to bottom.
-  for (let k = 0; k < 1100; k++) {
+  // The roots: a thick mat of fine strands, tangled every which way but mostly down the trunk,
+  // rust and umber over near-black, wrapping top to bottom (no rings: that's a palm).
+  for (let k = 0; k < 2200; k++) {
     const x = r() * tw;
     const y = r() * H;
-    const len = 40 + r() * 160;
-    const lum = r();
-    const col = lum < 0.6 ? [70 + r() * 40, 42 + r() * 22, 26 + r() * 12] : [120 + r() * 50, 72 + r() * 30, 38 + r() * 16];
-    g.strokeStyle = `rgba(${col.map(Math.round).join(',')},${0.45 + r() * 0.5})`;
-    g.lineWidth = 0.8 + r() * 1.8;
-    const sway = (r() - 0.5) * 14;
+    const len = 18 + r() * 90;
+    const lean = (r() - 0.5) * 0.9;
+    const deep = k / 2200;
+    const col = r() < 0.55 ? [60 + r() * 40, 34 + r() * 22, 20 + r() * 12] : [130 + r() * 60, 70 + r() * 34, 34 + r() * 18];
+    g.strokeStyle = `rgba(${col.map(Math.round).join(',')},${0.35 + deep * 0.5})`;
+    g.lineWidth = 0.6 + r() * 1.4;
+    const sway = (r() - 0.5) * 18;
     for (const dy of [0, -H, H]) {
       g.beginPath();
       g.moveTo(x, y + dy);
-      g.bezierCurveTo(x + sway, y + dy + len * 0.33, x - sway, y + dy + len * 0.66, x + sway * 0.5, y + dy + len);
+      g.bezierCurveTo(x + sway + lean * len * 0.3, y + dy + len * 0.33, x - sway + lean * len * 0.6, y + dy + len * 0.66, x + lean * len, y + dy + len);
+      g.stroke();
+    }
+  }
+  // Here and there a shaggy tuft, lighter, standing out from the mat.
+  for (let k = 0; k < 160; k++) {
+    const x = r() * tw;
+    const y = r() * H;
+    g.strokeStyle = `rgba(${Math.round(150 + r() * 50)},${Math.round(96 + r() * 30)},${Math.round(50 + r() * 20)},${0.5 + r() * 0.4})`;
+    g.lineWidth = 0.7;
+    for (let s = 0; s < 6; s++) {
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + (r() - 0.5) * 14, y + 4 + r() * 12);
       g.stroke();
     }
   }
