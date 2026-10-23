@@ -277,13 +277,18 @@ export class Journey {
     return true;
   }
 
-  /** The next station on this stretch, if we haven't stopped there yet. */
-  station() {
+  private next = { at: 0, name: '', land: 'gorge' as Land };
+  /** The next station on this stretch, if we haven't stopped there yet. (One object, filled in again each time.) */
+  station(): Readonly<{ at: number; name: string; land: Land }> | null {
     const l = this.current();
     const st = LAYOUT[l.land].station;
     if (!st) return null;
     const at = l.start + st.at;
-    return at > this.s - 1 && at !== this.served ? { at, name: st.name, land: l.land } : null;
+    if (!(at > this.s - 1 && at !== this.served)) return null;
+    this.next.at = at;
+    this.next.name = st.name;
+    this.next.land = l.land;
+    return this.next;
   }
 
   /** The speed limit here: the lower of this stretch's and the next one's, near the points. */
@@ -304,9 +309,11 @@ export class Journey {
     return true;
   }
 
-  /** Moves the train on by dt seconds; returns what happened on the way. */
-  step(dt: number): TrainEvent[] {
-    const out: TrainEvent[] = [];
+  private events: TrainEvent[] = [];
+  /** Moves the train on by dt seconds; returns what happened on the way (in a list that's used again next time: read it at once). */
+  step(dt: number): readonly TrainEvent[] {
+    const out = this.events;
+    out.length = 0;
     this.held += dt;
     let accel = 0;
     const station = this.station();
@@ -352,7 +359,7 @@ export class Journey {
           this.phase = 'dwell';
           this.held = 0;
           this.served = station.at;
-          this.stop = station;
+          this.stop = { ...station };
           out.push({ kind: 'arrive', name: station.name, land: station.land });
         }
       } else {

@@ -14,7 +14,7 @@ import type { Kit, KitModule, Studio, Wall, Wiring } from '../kit';
 import { buildBoard } from './board';
 import { buildCar } from './car';
 import { buildLand } from './chunks';
-import type { Sweep } from './scenery';
+import { SHED_PILLARS, type Sweep } from './scenery';
 import { buildConsist } from './consist';
 import { BRAKE_AT, buildControls, LEVER_AT, type LeverState } from './controls';
 import { DWELL, FIRST_LEAD, Journey, LAYOUT, LEVER_LIT, LEVER_LOCK, NAMES, VIADUCT_LIMIT, type Land, type TrainEvent } from './journey';
@@ -58,6 +58,7 @@ const AIR: Record<Land, { haze: number; mist: number; color: THREE.Color }> = {
   lake: { haze: 0.001, mist: 0.55, color: new THREE.Color('#17223a') },
 };
 const hazeCol = new THREE.Color();
+const NO_SHEDS: [number, number][] = [];
 const LAMP_WARM = new THREE.Color('#ffb874');
 const LAMP_WHITE = new THREE.Color('#ffe2bc');
 const signAt = new THREE.Vector3();
@@ -69,7 +70,8 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const uniforms = nightUniforms();
   // We join the train on the viaduct, over the gorge.
   // (A longer first stretch than usual, so the first junction's lever lights up a little after you sit down.)
-  const journey = new Journey({ land: 'gorge', at: (LAYOUT.gorge.viaduct![0] + LAYOUT.gorge.viaduct![1]) / 2 - 60, speed: VIADUCT_LIMIT, lead: FIRST_LEAD });
+  const VIADUCT = LAYOUT.gorge.viaduct!;
+  const journey = new Journey({ land: 'gorge', at: VIADUCT[0] + 150, speed: VIADUCT_LIMIT, lead: FIRST_LEAD });
   const board = buildBoard(1.32);
   board.group.position.set(WINDOW_X, 1.955, ROOM.z0 + 0.032);
   const car = buildCar();
@@ -153,12 +155,13 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
   const openness = (u: number) => {
     let k = 1 - tunnelAt(u);
     for (const l of journey.legs) {
-      for (const [a, b] of LAYOUT[l.land].sheds ?? []) {
+      for (const [a, b] of LAYOUT[l.land].sheds ?? NO_SHEDS) {
         const inside = smooth(l.start + a - 3, l.start + a + 3, u) * (1 - smooth(l.start + b - 3, l.start + b + 3, u));
         if (inside <= 0) continue;
-        const m = ((u % 6) + 6) % 6;
-        const gap = Math.min(m, 6 - m);
-        k = Math.min(k, 1 - inside * (1 - 0.55 * smooth(0.3, 0.8, gap)));
+        const step = SHED_PILLARS.step;
+        const m = ((u % step) + step) % step;
+        const gap = Math.min(m, step - m);
+        k = Math.min(k, 1 - inside * (1 - 0.55 * smooth(0.25, 0.7, gap)));
       }
     }
     return k;
@@ -281,8 +284,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         }
         break;
       case 'lit': {
+        band.lit();
         const j = journey.junction();
-        say(`POINTS AHEAD · THE LEVER'S LIT · ${NAMES[j.to[j.set ? 0 : 1]].toUpperCase()} OR ${NAMES[j.to[j.set]].toUpperCase()}`);
+        say(`THE LEVER'S LIT · ${NAMES[j.to[j.set ? 0 : 1]].toUpperCase()} OR ${NAMES[j.to[j.set]].toUpperCase()}`);
         if (atLever()) leverCard();
         break;
       }
@@ -328,9 +332,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
     objects: [car.group, consist.group, controls.group, board.group, outside, skyHolder, sparks.group, signHit, routeMap.mesh, glints],
     board,
     shots: {
-      // Down in the gorge on the far side, the train crossing the viaduct in front of the moon,
-      // its corridor windows lit all along.
-      vista: { pos: v(7, -10, 34), target: v(-7.2, -6.6, -6.4), fov: 46, lean: 0.3 },
+      // Down in the gorge on the corridor's side, the train crossing the viaduct along the top of its
+      // arches, its windows lit all along, the moon through an arch.
+      vista: { pos: v(28, -19, 66), target: v(-10, -8, 0), fov: 44, lean: 0.3 },
       // Nose to the glass, looking out and a little back, down at what's going by.
       window: { pos: v(0.12, 1.36, -1.2), target: v(-0.9, 0.85, -9), fov: 62, lean: 0.03 },
       board: { pos: v(0.12, 1.86, -0.32), target: v(WINDOW_X, 1.95, ROOM.z0), fov: 40, lean: 0.02 },
@@ -555,6 +559,9 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
         lastCalls = renderer.info.render.calls;
         renderer.info.reset();
       }
+      // Held on the view from the gorge (a still, or a long look before stepping in): the train goes
+      // round the same few arches again, so the camera, which rides along with it, stays over the gorge.
+      if (shot === 'vista' && !wiring?.moving() && journey.current().land === 'gorge' && journey.s - journey.current().start > VIADUCT[0] + 230) journey.s -= 120;
       const step = Math.max(0, dt) * fast;
       // Big steps (a slow frame, or the tests' fast clock) in pieces, so nothing's skipped.
       let left = step;
@@ -589,7 +596,7 @@ export const buildKit: KitModule['buildKit'] = ({ quality, scene, log }) => {
       uniforms.uMist.value = mist;
       (uniforms.uGlow.value as THREE.Color).setRGB(0.07, 0.04, 0.015).multiplyScalar(glowK);
       sky.setCity(glowK);
-      sky.setHaze(hazeCol);
+      sky.setHaze(hazeCol, uniforms.uMoonGlow.value as THREE.Color);
 
       // A station near us: its platform lamps light what's round them.
       const stationLamps = uniforms.uStation.value as THREE.Vector4;

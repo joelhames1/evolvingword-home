@@ -108,6 +108,8 @@ export interface TrainBand extends Band {
   /** The horn, far ahead, echoing off what's out there. */
   horn(where: Land | 'tunnel'): void;
   points(): void;
+  /** The lever's lamp coming on: a small bell. */
+  lit(): void;
   lever(): void;
   punch(): void;
   windowSlide(open: boolean): void;
@@ -129,6 +131,7 @@ export function buildBand(): TrainBand {
   let windowOpen = 0;
   let tunnel = 0;
   let correction = 1;
+  let keeping = false;
   let brown: AudioBuffer | null = null;
   let white: AudioBuffer | null = null;
   let roll: GainNode | null = null;
@@ -520,7 +523,7 @@ export function buildBand(): TrainBand {
   return {
     // One beat per rail joint, held in step with the wheels; a slow walk below the speeds the band can follow.
     get bpm() {
-      return bpmFor(w.v) * (inStep(w.v) ? correction : 1);
+      return bpmFor(w.v) * (keeping ? correction : 1);
     },
     swing: 0.14,
     room: [2.6, 0.45],
@@ -554,13 +557,18 @@ export function buildBand(): TrainBand {
       const next = CHORDS[(block + 1) % CHORDS.length];
       const cycle = Math.floor(bar / (CHORDS.length * 2));
       const beatLen = sixteenth * 4;
-      const moving = inStep(w.v);
-      // Keep the beat on the wheels: at each beat, see where the joint is and lean the tempo toward it.
+      // In step with the wheels, or not: decided with a little room either way, so a train hovering
+      // round the slowest speed the band can follow doesn't make it lurch in and out of step.
+      const raw = (60 * w.v) / RAIL;
+      if (keeping ? raw < 38.5 || raw > 81.5 : inStep(w.v) && raw > 40.5 && raw < 79.5) keeping = !keeping;
+      const moving = keeping;
+      // Keep the beat on the wheels: at each beat, see where the joint is and lean the tempo toward it, gently.
       if (step % 4 === 0 && moving) {
         const s = w.s + w.v * (at - w.at) + WHEELS[0].x;
         let e = s / RAIL - Math.floor(s / RAIL);
         if (e > 0.5) e -= 1;
-        correction = Math.min(1.12, Math.max(0.88, 1 + e * 0.35));
+        const aim = Math.min(1.12, Math.max(0.88, 1 + e * 0.35));
+        correction += (aim - correction) * 0.5;
       } else if (!moving) correction = 1;
       // The accordion breathes over each chord.
       if (step === 0 && half === 0) accordion(k, at, chord.notes, beatLen * 8.2);
@@ -579,8 +587,8 @@ export function buildBand(): TrainBand {
         if (step === 0) kick(k, at, 0.7);
         if (step === 10 && Math.random() < 0.3) kick(k, at, 0.4);
       }
-      // The harmonica: every other time round, and never two cycles running without a rest.
-      if (cycle % 2 === 1)
+      // The harmonica: a phrase or two early on, to say it's there; then every other time round.
+      if (cycle % 2 === 1 || (cycle === 0 && (block === 2 || block === 3)))
         for (const [note, start, len] of MELODY[block]) if (start === half * 16 + step) harp(k, at, note, len * sixteenth);
     },
     wheels(s, v) {
@@ -763,6 +771,27 @@ export function buildBand(): TrainBand {
         t += 0.035 + Math.random() * 0.07;
       }
       burst(kit, kit.ambience, now + 0.1, 3000, 6, 0.02, 0.3);
+    },
+    lit() {
+      if (!kit || muted()) return;
+      const now = kit.ctx.currentTime + 0.05;
+      // Two strokes of a little signal bell in the wall.
+      for (const [dt, f] of [
+        [0, 1568],
+        [0.32, 1568],
+      ]) {
+        for (const [mult, amp, len] of [
+          [1, 1, 0.9],
+          [2.7, 0.25, 0.3],
+        ]) {
+          const o = kit.ctx.createOscillator();
+          o.frequency.value = f * mult;
+          const g = env(kit.ctx, now + dt, 0.022 * amp, 0.003, len);
+          o.connect(g).connect(kit.ambience);
+          o.start(now + dt);
+          o.stop(now + dt + len + 0.05);
+        }
+      }
     },
     lever() {
       if (!kit || muted()) return;

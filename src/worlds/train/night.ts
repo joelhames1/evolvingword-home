@@ -34,7 +34,7 @@ export function nightUniforms(): DaylightUniforms {
     uRim: { value: new THREE.Color('#b9cdf5').multiplyScalar(1.1) },
     // Where the moon is, for the haze to glow round it.
     uMoonDir: { value: MOON_DIR.clone() },
-    uMoonGlow: { value: new THREE.Color('#6f84b4').multiplyScalar(0.3) },
+    uMoonGlow: { value: new THREE.Color('#6f84b4').multiplyScalar(0.26) },
     // How much of the moon and the sky reach the line: none deep in a tunnel.
     uMoonK: { value: 1 },
     // The platform lamps of the station near us: the world x of one of them, the stretch they run
@@ -109,7 +109,9 @@ const NIGHT = /* glsl */ `
   uniform vec4 uStation;
   uniform vec3 uStationColor;
   uniform float uMoonK;
-  vec3 moonlit(vec3 albedo, vec3 n, vec3 world) {
+  vec3 moonlit(vec3 color, vec3 n, vec3 world) {
+    // By moonlight colors go grey: the eye sees them that way.
+    vec3 albedo = mix(color, vec3(dot(color, vec3(0.3, 0.55, 0.15))), 0.4);
     vec3 L = uSunDir;
     float ndl = dot(n, L);
     float key = clamp((ndl + 0.3) / 1.3, 0.0, 1.0);
@@ -145,10 +147,10 @@ const NIGHT = /* glsl */ `
     float s2 = s * s;
     float s8 = s2 * s2;
     s8 *= s8;
-    float s64 = s8 * s8;
-    s64 *= s64;
-    s64 *= s64;
-    return uHaze + uMoonGlow * (s8 * 0.6 + s64 * 1.2);
+    float s32 = s8 * s8;
+    s32 *= s32;
+    float s64 = s32 * s32;
+    return uHaze + uMoonGlow * (s32 * 0.55 + s64 * 1.0);
   }
   vec3 nightFade(vec3 col, vec3 world) {
     vec3 toP = world - cameraPosition;
@@ -156,6 +158,8 @@ const NIGHT = /* glsl */ `
     float fog = 1.0 - exp(-d * uHazeDensity);
     float low = exp(-max(world.y - uMistLevel, 0.0) / 14.0);
     fog = max(fog, uMist * low * (1.0 - exp(-d / 700.0)));
+    // And the edge of the land, wherever it's seen, gone into the haze.
+    fog = max(fog, smoothstep(1300.0, 1500.0, d));
     return mix(col, moonHaze(toP / max(d, 1e-3)), clamp(fog, 0.0, 1.0));
   }
 `;

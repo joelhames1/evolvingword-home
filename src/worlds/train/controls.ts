@@ -19,6 +19,9 @@ export const CORD_AT = v(-0.76, 0, ROOM.z0 + 0.1);
 
 export type LeverState = 'idle' | 'live' | 'locked';
 
+/** The lever's lamp: amber while the points can be changed, green once they're set, dark otherwise. */
+const LENS = { amber: new THREE.Color('#ffb44a'), green: new THREE.Color('#3dff8a'), glowGreen: new THREE.Color('#4dff9a'), off: new THREE.Color('#2a1a10') };
+
 /** The lever's two little enamel tabs: the branch names, the one it's set for lit. */
 function tabs(names: [string, string] | null, set: 0 | 1, state: LeverState, g: CanvasRenderingContext2D) {
   g.fillStyle = '#0d0f12';
@@ -293,9 +296,9 @@ export function buildControls(materials: { brass: THREE.Material; iron: THREE.Ma
       lever.position.x = LEVER_AT.x + Math.sin(t * 90) * 0.0015 * shake;
       // The lamp: amber, pulsing while the points can still be changed; steady green once they're set.
       const on = state === 'live' ? 0.55 + 0.45 * Math.sin(t * 4.2) : state === 'locked' ? 1 : 0;
-      lens.color.set(state === 'locked' ? '#3dff8a' : state === 'live' ? '#ffb44a' : '#2a1a10');
+      lens.color.copy(state === 'locked' ? LENS.green : state === 'live' ? LENS.amber : LENS.off);
       if (state !== 'idle') lens.color.multiplyScalar(0.6 + on * 1.4);
-      lampGlow.material.color.set(state === 'locked' ? '#4dff9a' : '#ffb44a');
+      lampGlow.material.color.copy(state === 'locked' ? LENS.glowGreen : LENS.amber);
       lampGlow.material.opacity = on * 0.8;
       tabMat.color.setScalar(state === 'idle' ? 0.5 : 0.85 + on * 0.15);
       // The brake handle drops quickly and comes back up slowly.

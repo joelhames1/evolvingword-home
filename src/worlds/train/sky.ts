@@ -12,8 +12,8 @@ export interface Sky {
   group: THREE.Group;
   /** How much of the sky the city's lights wash out, 0..1. */
   setCity(k: number): void;
-  /** The haze the land fades into: the sky low down matches it. */
-  setHaze(c: THREE.Color): void;
+  /** The haze the land fades into, and its glow round the moon: the sky low down matches it. */
+  setHaze(c: THREE.Color, glow: THREE.Color): void;
   tick(t: number, camera: THREE.Camera): void;
   stars: number;
 }
@@ -79,6 +79,7 @@ export function buildSky(quality: Quality): Sky {
         uniform vec3 uMoon;
         uniform float uCity;
         uniform vec3 uHaze;
+        uniform vec3 uMoonGlow;
         varying vec3 vDir;
         float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
         float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -88,12 +89,19 @@ export function buildSky(quality: Quality): Sky {
           float up = clamp(d.y, -0.2, 1.0);
           // (Linear light: these are darker than they look written down.)
           vec3 zenith = vec3(0.0016, 0.0024, 0.0062);
-          // Low down, the same haze the land fades into, so the far hills melt into the sky.
-          vec3 horizon = uHaze;
-          vec3 col = mix(horizon, zenith, pow(clamp(up, 0.0, 1.0), 0.45));
-          // The moon's glow, wide and soft, and a tighter halo.
+          // Low down, the same haze the land fades into (glowing round the moon just as it does there),
+          // so the far hills melt into the sky.
           float m = max(dot(d, uMoon), 0.0);
-          col += vec3(0.05, 0.06, 0.085) * pow(m, 8.0) * 0.6 + vec3(0.12, 0.13, 0.15) * pow(m, 400.0) * 0.5;
+          float m2 = m * m;
+          float m8 = m2 * m2;
+          m8 *= m8;
+          float m32 = m8 * m8;
+          m32 *= m32;
+          float m64 = m32 * m32;
+          vec3 horizon = uHaze + uMoonGlow * (m32 * 0.55 + m64 * 1.0);
+          vec3 col = mix(horizon, zenith + uMoonGlow * (m8 * 0.25 + m64 * 1.0), pow(clamp(up, 0.0, 1.0), 0.45));
+          // A tighter halo round the moon.
+          col += vec3(0.12, 0.13, 0.15) * pow(m, 400.0) * 0.5;
           // A faint Milky Way: a band across the sky, mottled.
           vec3 axis = normalize(vec3(0.45, 0.35, 0.82));
           float band = exp(-pow(dot(d, axis) / 0.16, 2.0));
@@ -106,7 +114,7 @@ export function buildSky(quality: Quality): Sky {
           gl_FragColor = vec4(col, 1.0);
         }
       `,
-      uniforms: { uMoon: { value: MOON_DIR.clone() }, uCity: city, uHaze: { value: new THREE.Color(0.007, 0.011, 0.024) } },
+      uniforms: { uMoon: { value: MOON_DIR.clone() }, uCity: city, uHaze: { value: new THREE.Color(0.007, 0.011, 0.024) }, uMoonGlow: { value: new THREE.Color(0, 0, 0) } },
       side: THREE.BackSide,
       depthWrite: false,
     }),
@@ -198,8 +206,10 @@ export function buildSky(quality: Quality): Sky {
     setCity(k) {
       city.value = k;
     },
-    setHaze(c) {
-      ((dome.material as THREE.ShaderMaterial).uniforms.uHaze.value as THREE.Color).copy(c);
+    setHaze(c, glow) {
+      const u = (dome.material as THREE.ShaderMaterial).uniforms;
+      (u.uHaze.value as THREE.Color).copy(c);
+      (u.uMoonGlow.value as THREE.Color).copy(glow);
     },
     tick(t, camera) {
       group.position.copy(camera.position);

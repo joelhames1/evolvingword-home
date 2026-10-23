@@ -577,23 +577,31 @@ function dressPass(b: Build, leg: Leg) {
   if (L.station) station(b, leg, leg.start + L.station.at, L.station.name, 'pass');
 }
 
+/** How far apart the sheds' pillars stand on the valley side, how wide each is, and how far out. */
+export const SHED_PILLARS = { step: 9, width: 0.42, z0: -4.75, z1: -4.3 };
+
 function sheds(b: Build, a: number, e: number) {
   const from = Math.max(a, b.u0);
   const to = Math.min(e, b.u1);
   if (to <= from) return;
   const concrete = new THREE.Color('#8d8a84');
-  // Roof slab, sloping down toward the valley, snow on top.
-  slab(b.rock, x(b, from), 4.4, -3.9, x(b, to), 5.1, 4.2, concrete, 'nstb');
-  b.decor.add(SHAPES.box, place(x(b, (from + to) / 2), 5.35, 0.2, to - from, 0.5, 8.4), DARK.snow);
+  const P = SHED_PILLARS;
+  // Roof slab, out over the pillars toward the valley, snow on top.
+  slab(b.rock, x(b, from), 4.4, P.z0 - 0.15, x(b, to), 5.1, 4.2, concrete, 'nstb');
+  b.decor.add(SHAPES.box, place(x(b, (from + to) / 2), 5.35, (P.z0 + 4.2) / 2, to - from, 0.5, 4.2 - P.z0 + 0.2), DARK.snow);
   // The mountain-side wall.
   slab(b.rock, x(b, from), CESS - 0.2, 3.4, x(b, to), 4.4, 4.2, concrete, 'n');
-  // Pillars every 6 m on the valley side.
-  for (let k = Math.ceil(from / 6); k * 6 < to; k++) {
-    const pu = k * 6;
-    slab(b.rock, x(b, pu) - 0.35, CESS - 1.2, -3.9, x(b, pu) + 0.35, 4.4, -3.1, concrete, 'nsew');
+  // Slim stone pillars on the valley side, well out from the line, so they flick past the window
+  // one by one instead of filling it.
+  for (let k = Math.ceil(from / P.step); k * P.step < to; k++) {
+    const pu = k * P.step;
+    const g = Math.min(b.ground(pu, P.z0), b.ground(pu, P.z1), CESS) - 1.2;
+    slab(b.stone, x(b, pu) - P.width / 2, g, P.z0, x(b, pu) + P.width / 2, 4.4, P.z1, new THREE.Color('#a49c8e'), 'nsew');
+    // A haunch where each meets the roof.
+    b.stone.add(SHAPES.box, place(x(b, pu), 4.2, (P.z0 + P.z1) / 2, P.width + 0.5, 0.4, P.z1 - P.z0), new THREE.Color('#a49c8e'));
   }
   // The ends of the roof, thick.
-  for (const pu of [a, e]) if (pu >= b.u0 && pu < b.u1) slab(b.rock, x(b, pu) - 0.4, 3.6, -4.0, x(b, pu) + 0.4, 5.4, 4.3, concrete, 'nsewt');
+  for (const pu of [a, e]) if (pu >= b.u0 && pu < b.u1) slab(b.rock, x(b, pu) - 0.4, 3.6, P.z0 - 0.2, x(b, pu) + 0.4, 5.4, 4.3, concrete, 'nsewt');
 }
 
 /** The tunnel: its walls and vault, a lamp every so often, and a stone portal at each end in the mountain's face. */

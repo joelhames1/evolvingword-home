@@ -19,7 +19,7 @@ export function buildRouteMap(journey: Journey) {
   const dot = new THREE.Mesh(new THREE.CircleGeometry(0.009, 16), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffb040').multiplyScalar(3.2) }));
   dot.position.z = 0.002;
   mesh.add(dot);
-  let lastKey = '';
+  const last = { start: NaN, set: -1, by: '', live: false, legs: -1, revision: -1 };
 
   /** Where along the strip u falls, in pixels: from the start of the stretch before last to the junction ahead. */
   const draw = () => {
@@ -127,9 +127,15 @@ export function buildRouteMap(journey: Journey) {
     mesh,
     tick(t: number) {
       const j = journey.junction();
-      const key = `${journey.current().start}:${j.set}:${j.by}:${j.live}:${journey.legs.length}:${journey.revision}`;
-      if (key !== lastKey) {
-        lastKey = key;
+      // Drawn again only when something it shows has changed (and nothing made to find out).
+      const k = last;
+      if (k.start !== journey.current().start || k.set !== j.set || k.by !== j.by || k.live !== j.live || k.legs !== journey.legs.length || k.revision !== journey.revision) {
+        k.start = journey.current().start;
+        k.set = j.set;
+        k.by = j.by;
+        k.live = j.live;
+        k.legs = journey.legs.length;
+        k.revision = journey.revision;
         geom = draw();
       }
       // The light, where we are; it pulses a little.
