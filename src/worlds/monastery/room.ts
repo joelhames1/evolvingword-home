@@ -394,19 +394,42 @@ export function buildCell(daylight: DaylightUniforms): Cell {
     candles.push(light);
   }
 
-  // A plain wooden Tau on the pier by the window.
-  const tauWood = new THREE.MeshStandardMaterial({ map: wood(47, '#7a5636', '#4a3020'), roughness: 0.7 });
+  // A wooden Tau on the pier by the window, Francis's own sign: the T of the
+  // Franciscans, its arms and foot flaring out at the ends, hung on a cord.
+  const tauWood = new THREE.MeshStandardMaterial({ map: wood(47, '#8a6240', '#4a3020'), roughness: 0.65 });
   const tau = new THREE.Group();
-  const stem = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.36, 0.025), tauWood);
-  stem.position.y = -0.03;
-  tau.add(stem);
-  const bar = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, 0.025), tauWood);
-  bar.position.y = 0.15;
-  tau.add(bar);
-  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.002, 0.002, 0.16, 6), new THREE.MeshStandardMaterial({ color: '#8a7a60' }));
-  cord.position.y = 0.25;
-  tau.add(cord);
-  tau.position.set(2.12, 1.95, z0 + 0.03);
+  const shape = new THREE.Shape();
+  shape.moveTo(-0.14, 0.19);
+  shape.quadraticCurveTo(0, 0.172, 0.14, 0.19);
+  shape.lineTo(0.14, 0.1);
+  shape.quadraticCurveTo(0.05, 0.128, 0.022, 0.128);
+  shape.quadraticCurveTo(0.022, -0.06, 0.05, -0.19);
+  shape.lineTo(-0.05, -0.19);
+  shape.quadraticCurveTo(-0.022, -0.06, -0.022, 0.128);
+  shape.quadraticCurveTo(-0.05, 0.128, -0.14, 0.1);
+  shape.closePath();
+  const body = new THREE.ExtrudeGeometry(shape, { depth: 0.018, bevelEnabled: true, bevelThickness: 0.005, bevelSize: 0.005, bevelSegments: 2, curveSegments: 10 });
+  body.translate(0, 0, -0.009);
+  // Stretch the grain along the stem rather than tiling it every meter.
+  const uv = body.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 3 + 0.5, uv.getY(i) * 1.2 + 0.5);
+  tau.add(new THREE.Mesh(body, tauWood));
+  // The cord in a V up to a nail in the wall.
+  const cordMat = new THREE.MeshStandardMaterial({ color: '#9a8662', roughness: 0.9 });
+  const nail = new THREE.Vector3(0, 0.31, -0.005);
+  for (const side of [-1, 1]) {
+    const end = new THREE.Vector3(side * 0.03, 0.182, 0.004);
+    const run = nail.clone().sub(end);
+    const strand = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, run.length(), 6), cordMat);
+    strand.position.copy(end).addScaledVector(run, 0.5);
+    strand.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), run.normalize());
+    tau.add(strand);
+  }
+  const head = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.006, 10), new THREE.MeshStandardMaterial({ color: '#3a3430', metalness: 0.6, roughness: 0.5 }));
+  head.rotation.x = Math.PI / 2;
+  head.position.copy(nail).setZ(-0.004);
+  tau.add(head);
+  tau.position.set(2.12, 1.93, z0 + 0.03);
   tau.traverse((o) => (o.castShadow = true));
   group.add(tau);
 
